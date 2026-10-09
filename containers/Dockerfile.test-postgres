@@ -1,0 +1,13 @@
+FROM public.ecr.aws/docker/library/postgres@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+
+# Build the exact upstream pgvector 0.8.6 source; no Docker Hub authentication.
+# The installed extension retains its upstream license alongside PostgreSQL's.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential ca-certificates curl postgresql-server-dev-17 \
+    && curl --fail --location --retry 3 https://codeload.github.com/pgvector/pgvector/tar.gz/8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c -o /tmp/pgvector.tar.gz \
+    && echo 'd076a3098010905fd60256649327809651f6288327db6413f0938305f62ea299  /tmp/pgvector.tar.gz' | sha256sum --check \
+    && mkdir /tmp/pgvector && tar -xzf /tmp/pgvector.tar.gz -C /tmp/pgvector --strip-components=1 \
+    && make -C /tmp/pgvector OPTFLAGS='' \
+    && make -C /tmp/pgvector install \
+    && mkdir -p /usr/share/licenses/pgvector && cp /tmp/pgvector/LICENSE /usr/share/licenses/pgvector/LICENSE \
+    && rm -rf /tmp/pgvector /tmp/pgvector.tar.gz /var/lib/apt/lists/*

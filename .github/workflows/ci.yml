@@ -26,7 +26,9 @@ jobs:
           python -m pip install --no-deps --force-reinstall dist/*.whl
           python -m pip check
       - name: Start disposable services
-        run: python scripts/dev_services.py start --state "$RUNNER_TEMP/vaelius-services" --engine docker
+        run: |
+          docker build -f containers/Dockerfile.test-postgres -t vaelius-test-postgres:ci .
+          python scripts/dev_services.py start --state "$RUNNER_TEMP/vaelius-services" --engine docker --postgres-image vaelius-test-postgres:ci
       - name: Installed unit and PostgreSQL regressions
         run: python scripts/test.py --installed --services "$RUNNER_TEMP/vaelius-services/services.json" --report "$RUNNER_TEMP/vaelius-tests.json"
       - name: Actual synthetic API and MCP delivery

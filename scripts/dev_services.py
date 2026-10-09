@@ -32,7 +32,7 @@ def run(engine, *args):
     return result.stdout.strip()
 
 
-def start(state, engine):
+def start(state, engine, *, postgres_image='docker.io/pgvector/pgvector:0.8.6-pg17', moto_image='ghcr.io/getmoto/motoserver:5.2.3'):
     from psycopg.conninfo import make_conninfo
     from agenthub.cloud_profile import setup_profile
     from agenthub.postgres import connect
@@ -66,8 +66,8 @@ def start(state, engine):
     names = []
     try:
         for service, image, container_port, host_port, options in (
-            ('postgres', 'docker.io/pgvector/pgvector:0.8.6-pg17', 5432, port, ['--env-file', str(envfile)]),
-            ('moto', 'docker.io/motoserver/moto:5.2.3', 5000, moto_port, []),
+            ('postgres', postgres_image, 5432, port, ['--env-file', str(envfile)]),
+            ('moto', moto_image, 5000, moto_port, []),
         ):
             name = namespace + '-' + service
             run(engine, 'run', '-d', '--name', name, '--label', 'vaelius.disposable=' + namespace,
@@ -139,12 +139,14 @@ def main():
     parser.add_argument('action', choices=('start', 'stop', 'destroy'))
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--engine', default=shutil.which('podman') or shutil.which('docker'))
+    parser.add_argument('--postgres-image', default='docker.io/pgvector/pgvector:0.8.6-pg17')
+    parser.add_argument('--moto-image', default='ghcr.io/getmoto/motoserver:5.2.3')
     args = parser.parse_args()
     if not args.engine:
         raise ValueError('docker_or_podman_required')
     os.umask(0o077)
     state = args.state.expanduser().resolve()
-    result = start(state, args.engine) if args.action == 'start' else stop(state, destroy=args.action == 'destroy')
+    result = start(state, args.engine, postgres_image=args.postgres_image, moto_image=args.moto_image) if args.action == 'start' else stop(state, destroy=args.action == 'destroy')
     print(json.dumps(result, indent=2))
 
 

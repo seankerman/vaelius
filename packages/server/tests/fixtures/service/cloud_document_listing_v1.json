@@ -1,0 +1,11 @@
+{
+  "version": "cloud_document_listing_v1",
+  "kind": "authored authorization-before-limit regression, not held-out",
+  "forbidden_original_metadata_rows": 1001,
+  "forbidden_title_prefix": "A",
+  "allowed_title": "Z Needle original",
+  "reader": "nonowner current team member",
+  "query": "Needle",
+  "limit": 1,
+  "expected": "allowed matching original returned despite preceding forbidden originals"
+}

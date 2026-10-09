@@ -1,0 +1,1231 @@
+{
+  "version": "cloud-readiness-v1",
+  "authored": true,
+  "independent_held_out": false,
+  "created": "2026-09-26T16:26:52.554428+00:00",
+  "sources": [
+    {
+      "id": "development-document-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 0",
+      "kind": "document",
+      "text": "# Project Document 0 recovery runbook\nThe complete original contains the exact recovery command restore-0 --verify. Its archival document key is DOC-0. Never run the example without a review."
+    },
+    {
+      "id": "development-document-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 1",
+      "kind": "document",
+      "text": "# Project Document 1 recovery runbook\nThe complete original contains the exact recovery command restore-1 --verify. Its archival document key is DOC-1. Never run the example without a review."
+    },
+    {
+      "id": "development-document-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 2",
+      "kind": "document",
+      "text": "# Project Document 2 recovery runbook\nThe complete original contains the exact recovery command restore-2 --verify. Its archival document key is DOC-2. Never run the example without a review."
+    },
+    {
+      "id": "development-document-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 3",
+      "kind": "document",
+      "text": "# Project Document 3 recovery runbook\nThe complete original contains the exact recovery command restore-3 --verify. Its archival document key is DOC-3. Never run the example without a review."
+    },
+    {
+      "id": "development-document-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 4",
+      "kind": "document",
+      "text": "# Project Document 4 recovery runbook\nThe complete original contains the exact recovery command restore-4 --verify. Its archival document key is DOC-4. Never run the example without a review."
+    },
+    {
+      "id": "development-semantic-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 0",
+      "kind": "semantic",
+      "text": "Project Semantic 0 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 2 minutes."
+    },
+    {
+      "id": "development-semantic-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 1",
+      "kind": "semantic",
+      "text": "Project Semantic 1 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 3 minutes."
+    },
+    {
+      "id": "development-semantic-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 2",
+      "kind": "semantic",
+      "text": "Project Semantic 2 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 4 minutes."
+    },
+    {
+      "id": "development-semantic-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 3",
+      "kind": "semantic",
+      "text": "Project Semantic 3 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 5 minutes."
+    },
+    {
+      "id": "development-semantic-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 4",
+      "kind": "semantic",
+      "text": "Project Semantic 4 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 6 minutes."
+    },
+    {
+      "id": "development-cross_session-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 0",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 0 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/0/results.parquet."
+    },
+    {
+      "id": "development-cross_session-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 1",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 1 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/1/results.parquet."
+    },
+    {
+      "id": "development-cross_session-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 2",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 2 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/2/results.parquet."
+    },
+    {
+      "id": "development-cross_session-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 3",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 3 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/3/results.parquet."
+    },
+    {
+      "id": "development-cross_session-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 4",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 4 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/4/results.parquet."
+    },
+    {
+      "id": "development-temporal-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 0",
+      "kind": "temporal",
+      "text": "Project Temporal 0 artifact was /synthetic/0/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/0/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "development-temporal-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 1",
+      "kind": "temporal",
+      "text": "Project Temporal 1 artifact was /synthetic/1/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/1/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "development-temporal-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 2",
+      "kind": "temporal",
+      "text": "Project Temporal 2 artifact was /synthetic/2/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/2/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "development-temporal-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 3",
+      "kind": "temporal",
+      "text": "Project Temporal 3 artifact was /synthetic/3/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/3/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "development-temporal-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 4",
+      "kind": "temporal",
+      "text": "Project Temporal 4 artifact was /synthetic/4/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/4/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "development-preference-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 0",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 0 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "development-preference-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 1",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 1 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "development-preference-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 2",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 2 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "development-preference-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 3",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 3 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "development-preference-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 4",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 4 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "development-abstention-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 0",
+      "kind": "abstention",
+      "text": "Project Abstention 0 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "development-abstention-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 1",
+      "kind": "abstention",
+      "text": "Project Abstention 1 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "development-abstention-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 2",
+      "kind": "abstention",
+      "text": "Project Abstention 2 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "development-abstention-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 3",
+      "kind": "abstention",
+      "text": "Project Abstention 3 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "development-abstention-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 4",
+      "kind": "abstention",
+      "text": "Project Abstention 4 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "confirmation-document-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 100",
+      "kind": "document",
+      "text": "# Project Document 100 recovery runbook\nThe complete original contains the exact recovery command restore-100 --verify. Its archival document key is DOC-100. Never run the example without a review."
+    },
+    {
+      "id": "confirmation-document-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 101",
+      "kind": "document",
+      "text": "# Project Document 101 recovery runbook\nThe complete original contains the exact recovery command restore-101 --verify. Its archival document key is DOC-101. Never run the example without a review."
+    },
+    {
+      "id": "confirmation-document-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 102",
+      "kind": "document",
+      "text": "# Project Document 102 recovery runbook\nThe complete original contains the exact recovery command restore-102 --verify. Its archival document key is DOC-102. Never run the example without a review."
+    },
+    {
+      "id": "confirmation-document-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 103",
+      "kind": "document",
+      "text": "# Project Document 103 recovery runbook\nThe complete original contains the exact recovery command restore-103 --verify. Its archival document key is DOC-103. Never run the example without a review."
+    },
+    {
+      "id": "confirmation-document-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Document 104",
+      "kind": "document",
+      "text": "# Project Document 104 recovery runbook\nThe complete original contains the exact recovery command restore-104 --verify. Its archival document key is DOC-104. Never run the example without a review."
+    },
+    {
+      "id": "confirmation-semantic-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 100",
+      "kind": "semantic",
+      "text": "Project Semantic 100 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 2 minutes."
+    },
+    {
+      "id": "confirmation-semantic-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 101",
+      "kind": "semantic",
+      "text": "Project Semantic 101 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 3 minutes."
+    },
+    {
+      "id": "confirmation-semantic-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 102",
+      "kind": "semantic",
+      "text": "Project Semantic 102 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 4 minutes."
+    },
+    {
+      "id": "confirmation-semantic-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 103",
+      "kind": "semantic",
+      "text": "Project Semantic 103 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 5 minutes."
+    },
+    {
+      "id": "confirmation-semantic-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Semantic 104",
+      "kind": "semantic",
+      "text": "Project Semantic 104 keeps copies in three separate zones so a datacenter outage does not erase customer files. The replication interval is 6 minutes."
+    },
+    {
+      "id": "confirmation-cross_session-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 100",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 100 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/100/results.parquet."
+    },
+    {
+      "id": "confirmation-cross_session-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 101",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 101 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/101/results.parquet."
+    },
+    {
+      "id": "confirmation-cross_session-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 102",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 102 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/102/results.parquet."
+    },
+    {
+      "id": "confirmation-cross_session-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 103",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 103 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/103/results.parquet."
+    },
+    {
+      "id": "confirmation-cross_session-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Cross_Session 104",
+      "kind": "cross_session",
+      "text": "Alice chose parquet for Project Cross_Session 104 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/104/results.parquet."
+    },
+    {
+      "id": "confirmation-temporal-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 100",
+      "kind": "temporal",
+      "text": "Project Temporal 100 artifact was /synthetic/100/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/100/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "confirmation-temporal-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 101",
+      "kind": "temporal",
+      "text": "Project Temporal 101 artifact was /synthetic/101/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/101/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "confirmation-temporal-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 102",
+      "kind": "temporal",
+      "text": "Project Temporal 102 artifact was /synthetic/102/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/102/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "confirmation-temporal-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 103",
+      "kind": "temporal",
+      "text": "Project Temporal 103 artifact was /synthetic/103/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/103/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "confirmation-temporal-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Temporal 104",
+      "kind": "temporal",
+      "text": "Project Temporal 104 artifact was /synthetic/104/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/104/current.csv. Bob reported a different path but did not verify it."
+    },
+    {
+      "id": "confirmation-preference-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 100",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 100 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "confirmation-preference-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 101",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 101 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "confirmation-preference-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 102",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 102 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "confirmation-preference-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 103",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 103 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "confirmation-preference-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Preference 104",
+      "kind": "preference",
+      "text": "Alice explicitly prefers tabs for Project Preference 104 project code. Bob prefers spaces. Alice usually prefers spaces in other authorized projects, but the project preference overrides her general default."
+    },
+    {
+      "id": "confirmation-abstention-0",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 100",
+      "kind": "abstention",
+      "text": "Project Abstention 100 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "confirmation-abstention-1",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 101",
+      "kind": "abstention",
+      "text": "Project Abstention 101 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "confirmation-abstention-2",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 102",
+      "kind": "abstention",
+      "text": "Project Abstention 102 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "confirmation-abstention-3",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 103",
+      "kind": "abstention",
+      "text": "Project Abstention 103 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    },
+    {
+      "id": "confirmation-abstention-4",
+      "tenant": "acme",
+      "owner": "alice",
+      "project": "Project Abstention 104",
+      "kind": "abstention",
+      "text": "Project Abstention 104 meeting agenda discusses invoice numbering; it contains no approved budget, launch date or confirmed spending amount."
+    }
+  ],
+  "queries": [
+    {
+      "id": "query-development-document-0",
+      "split": "development",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-0",
+      "expected_sources": [
+        "development-document-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-document-1",
+      "split": "development",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-1",
+      "expected_sources": [
+        "development-document-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-document-2",
+      "split": "development",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-2",
+      "expected_sources": [
+        "development-document-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-document-3",
+      "split": "development",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-3",
+      "expected_sources": [
+        "development-document-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-document-4",
+      "split": "development",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-4",
+      "expected_sources": [
+        "development-document-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-semantic-0",
+      "split": "development",
+      "family": "semantic",
+      "query": "How does Project Semantic 0 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "development-semantic-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-semantic-1",
+      "split": "development",
+      "family": "semantic",
+      "query": "How does Project Semantic 1 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "development-semantic-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-semantic-2",
+      "split": "development",
+      "family": "semantic",
+      "query": "How does Project Semantic 2 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "development-semantic-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-semantic-3",
+      "split": "development",
+      "family": "semantic",
+      "query": "How does Project Semantic 3 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "development-semantic-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-semantic-4",
+      "split": "development",
+      "family": "semantic",
+      "query": "How does Project Semantic 4 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "development-semantic-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-cross_session-0",
+      "split": "development",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 0 and why did she choose that format?",
+      "expected_sources": [
+        "development-cross_session-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-cross_session-1",
+      "split": "development",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 1 and why did she choose that format?",
+      "expected_sources": [
+        "development-cross_session-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-cross_session-2",
+      "split": "development",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 2 and why did she choose that format?",
+      "expected_sources": [
+        "development-cross_session-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-cross_session-3",
+      "split": "development",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 3 and why did she choose that format?",
+      "expected_sources": [
+        "development-cross_session-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-cross_session-4",
+      "split": "development",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 4 and why did she choose that format?",
+      "expected_sources": [
+        "development-cross_session-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-temporal-0",
+      "split": "development",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 0 artifact now?",
+      "expected_sources": [
+        "development-temporal-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-temporal-1",
+      "split": "development",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 1 artifact now?",
+      "expected_sources": [
+        "development-temporal-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-temporal-2",
+      "split": "development",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 2 artifact now?",
+      "expected_sources": [
+        "development-temporal-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-temporal-3",
+      "split": "development",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 3 artifact now?",
+      "expected_sources": [
+        "development-temporal-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-temporal-4",
+      "split": "development",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 4 artifact now?",
+      "expected_sources": [
+        "development-temporal-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-preference-0",
+      "split": "development",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 0?",
+      "expected_sources": [
+        "development-preference-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-preference-1",
+      "split": "development",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 1?",
+      "expected_sources": [
+        "development-preference-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-preference-2",
+      "split": "development",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 2?",
+      "expected_sources": [
+        "development-preference-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-preference-3",
+      "split": "development",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 3?",
+      "expected_sources": [
+        "development-preference-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-preference-4",
+      "split": "development",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 4?",
+      "expected_sources": [
+        "development-preference-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-abstention-0",
+      "split": "development",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 0?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-abstention-1",
+      "split": "development",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 1?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-abstention-2",
+      "split": "development",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 2?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-abstention-3",
+      "split": "development",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 3?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-development-abstention-4",
+      "split": "development",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 4?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-document-0",
+      "split": "confirmation",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-100",
+      "expected_sources": [
+        "confirmation-document-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-document-1",
+      "split": "confirmation",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-101",
+      "expected_sources": [
+        "confirmation-document-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-document-2",
+      "split": "confirmation",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-102",
+      "expected_sources": [
+        "confirmation-document-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-document-3",
+      "split": "confirmation",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-103",
+      "expected_sources": [
+        "confirmation-document-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-document-4",
+      "split": "confirmation",
+      "family": "document",
+      "query": "Give me the original recovery runbook DOC-104",
+      "expected_sources": [
+        "confirmation-document-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-semantic-0",
+      "split": "confirmation",
+      "family": "semantic",
+      "query": "How does Project Semantic 100 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "confirmation-semantic-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-semantic-1",
+      "split": "confirmation",
+      "family": "semantic",
+      "query": "How does Project Semantic 101 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "confirmation-semantic-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-semantic-2",
+      "split": "confirmation",
+      "family": "semantic",
+      "query": "How does Project Semantic 102 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "confirmation-semantic-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-semantic-3",
+      "split": "confirmation",
+      "family": "semantic",
+      "query": "How does Project Semantic 103 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "confirmation-semantic-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-semantic-4",
+      "split": "confirmation",
+      "family": "semantic",
+      "query": "How does Project Semantic 104 protect files if an entire facility goes offline?",
+      "expected_sources": [
+        "confirmation-semantic-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-cross_session-0",
+      "split": "confirmation",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 100 and why did she choose that format?",
+      "expected_sources": [
+        "confirmation-cross_session-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-cross_session-1",
+      "split": "confirmation",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 101 and why did she choose that format?",
+      "expected_sources": [
+        "confirmation-cross_session-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-cross_session-2",
+      "split": "confirmation",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 102 and why did she choose that format?",
+      "expected_sources": [
+        "confirmation-cross_session-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-cross_session-3",
+      "split": "confirmation",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 103 and why did she choose that format?",
+      "expected_sources": [
+        "confirmation-cross_session-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-cross_session-4",
+      "split": "confirmation",
+      "family": "cross_session",
+      "query": "Where did Alice save Project Cross_Session 104 and why did she choose that format?",
+      "expected_sources": [
+        "confirmation-cross_session-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-temporal-0",
+      "split": "confirmation",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 100 artifact now?",
+      "expected_sources": [
+        "confirmation-temporal-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-temporal-1",
+      "split": "confirmation",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 101 artifact now?",
+      "expected_sources": [
+        "confirmation-temporal-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-temporal-2",
+      "split": "confirmation",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 102 artifact now?",
+      "expected_sources": [
+        "confirmation-temporal-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-temporal-3",
+      "split": "confirmation",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 103 artifact now?",
+      "expected_sources": [
+        "confirmation-temporal-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-temporal-4",
+      "split": "confirmation",
+      "family": "temporal",
+      "query": "Where is the verified Project Temporal 104 artifact now?",
+      "expected_sources": [
+        "confirmation-temporal-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-preference-0",
+      "split": "confirmation",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 100?",
+      "expected_sources": [
+        "confirmation-preference-0"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-preference-1",
+      "split": "confirmation",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 101?",
+      "expected_sources": [
+        "confirmation-preference-1"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-preference-2",
+      "split": "confirmation",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 102?",
+      "expected_sources": [
+        "confirmation-preference-2"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-preference-3",
+      "split": "confirmation",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 103?",
+      "expected_sources": [
+        "confirmation-preference-3"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-preference-4",
+      "split": "confirmation",
+      "family": "preference",
+      "query": "What indentation preference applies to Alice in Project Preference 104?",
+      "expected_sources": [
+        "confirmation-preference-4"
+      ],
+      "answerable": true,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-abstention-0",
+      "split": "confirmation",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 100?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-abstention-1",
+      "split": "confirmation",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 101?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-abstention-2",
+      "split": "confirmation",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 102?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-abstention-3",
+      "split": "confirmation",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 103?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    },
+    {
+      "id": "query-confirmation-abstention-4",
+      "split": "confirmation",
+      "family": "abstention",
+      "query": "What is the approved spending budget for Project Abstention 104?",
+      "expected_sources": [],
+      "answerable": false,
+      "speaker": "alice",
+      "as_of": null
+    }
+  ],
+  "security_cases": [
+    "tenant_role_cannot_connect_other_db",
+    "same_external_id_across_tenants",
+    "settings_admin_no_private_reads",
+    "delegated_actor_vs_user",
+    "revocation_before_delivery",
+    "revocation_before_model_install",
+    "stale_acl_no_vector_candidates",
+    "raw_trace_never_automatic",
+    "old_version_current_acl",
+    "restore_missing_deltas_fail_closed"
+  ],
+  "worker_cases": [
+    "two_process_exclusive_claim",
+    "four_workers_conversation_serialization",
+    "stale_fence_install_denial",
+    "dispatch_timeout_consumes_attempt",
+    "persist_result_replay_without_provider",
+    "expired_handle_reconstruct_original_context"
+  ],
+  "load_bounds": {
+    "records": [
+      10000,
+      100000
+    ],
+    "workers": [
+      2,
+      4
+    ],
+    "queries_per_run": 200,
+    "max_seconds_per_run": 60
+  },
+  "gates": {
+    "privacy_failures": 0,
+    "lifecycle_failures": 0,
+    "raw_trace_failures": 0,
+    "recall_at_10": 0.95,
+    "delivered_precision": 0.95,
+    "answerable_coverage": 0.85,
+    "abstention": 0.95
+  }
+}

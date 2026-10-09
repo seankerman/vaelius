@@ -1,0 +1,162 @@
+{
+  "authored": "2026-09-26",
+  "documents": [
+    {
+      "expected_passages": 20,
+      "format": "markdown",
+      "id": "guide",
+      "title": "Maple Guide",
+      "v1": "# Maple Guide\n## Section 1\nExact passage 1: dataset marker MAPLE-01.\n## Section 2\nExact passage 2: dataset marker MAPLE-02.\n## Section 3\nExact passage 3: dataset marker MAPLE-03.\n## Section 4\nExact passage 4: dataset marker MAPLE-04.\n## Section 5\nExact passage 5: dataset marker MAPLE-05.\n## Section 6\nExact passage 6: dataset marker MAPLE-06.\n## Section 7\nExact passage 7: dataset marker MAPLE-07.\n## Section 8\nExact passage 8: dataset marker MAPLE-08.\n## Section 9\nExact passage 9: dataset marker MAPLE-09.\n## Section 10\nExact passage 10: dataset marker MAPLE-10.\n## Section 11\nExact passage 11: dataset marker MAPLE-11.\n## Section 12\nExact passage 12: dataset marker MAPLE-12.\n## Section 13\nExact passage 13: dataset marker MAPLE-13.\n## Section 14\nExact passage 14: dataset marker MAPLE-14.\n## Section 15\nExact passage 15: dataset marker MAPLE-15.\n## Section 16\nExact passage 16: dataset marker MAPLE-16.\n## Section 17\nExact passage 17: dataset marker MAPLE-17.\n## Section 18\nExact passage 18: dataset marker MAPLE-18.\n## Section 19\nExact passage 19: dataset marker MAPLE-19.\n## Section 20\nExact passage 20: dataset marker MAPLE-20.\n",
+      "v2": "# Maple Guide\n## Current location\nDataset is now /synthetic/exports/maple-v2.csv.\n"
+    },
+    {
+      "body": "<html><head><title>Maple Table</title><script>UNTRUSTED_SCRIPT</script></head><body><h1>Maple Table</h1><p>Retain this exact fact.</p><table><tr><th>Owner</th><th>Format</th></tr><tr><td>Alice</td><td>TSV</td></tr></table></body></html>",
+      "excluded": [
+        "UNTRUSTED_SCRIPT"
+      ],
+      "expected": [
+        "Maple Table",
+        "Owner",
+        "Alice",
+        "TSV"
+      ],
+      "format": "html",
+      "id": "html"
+    },
+    {
+      "bytes_hex": "000102ff",
+      "format": "unsupported",
+      "id": "binary",
+      "status": "unsupported"
+    },
+    {
+      "body": "not a PDF",
+      "format": "pdf",
+      "id": "broken_pdf",
+      "status": "parser_failed"
+    },
+    {
+      "format": "pdf",
+      "id": "text_pdf",
+      "text": "Maple PDF dataset /synthetic/maple.pdf"
+    },
+    {
+      "format": "docx",
+      "heading": "Maple Archive",
+      "id": "docx",
+      "table": [
+        [
+          "Owner",
+          "Dataset"
+        ],
+        [
+          "Alice",
+          "maple.csv"
+        ]
+      ],
+      "text": "The original DOCX retains this statement."
+    }
+  ],
+  "object_cases": [
+    "exact_original_bytes",
+    "version_selection_current_policy",
+    "two_tenants_identical_title",
+    "50MiB_stream_bound",
+    "stream_read_bounded",
+    "20_passages_one_original_object",
+    "upload_success_metadata_failure",
+    "missing_object",
+    "checksum_mismatch",
+    "idempotent_upload_conflict",
+    "inflight_or_referenced_cleanup_denied",
+    "parser_independent_fetch",
+    "encrypted_pdf_no_ocr",
+    "safe_download_filename"
+  ],
+  "scope": "synthetic development invariants; not independent held-out",
+  "slack": {
+    "bindings": {
+      "U_ALICE": "alice",
+      "U_BOB": "bob"
+    },
+    "cases": [
+      "explicit_channel_enrollment",
+      "DM_shared_channel_denied",
+      "history_members_replies_pagination",
+      "equal_text_distinct_speakers",
+      "speaker_binding_preserved",
+      "edited_source_revision",
+      "explicit_delete_tombstone",
+      "duplicate_out_of_order_events",
+      "partial_window_no_deletion",
+      "unknown_private_member_holds",
+      "policy_freshness_failclosed",
+      "channel_membership_change",
+      "429_retry_after_per_method",
+      "signed_event_forgery_replay",
+      "restart_resume",
+      "attachments_explicitly_unsupported"
+    ],
+    "channel": "C_SYNTHETIC",
+    "history_pages": [
+      {
+        "has_more": true,
+        "messages": [
+          {
+            "reply_count": 1,
+            "text": "Use TSV because headers stay stable.",
+            "ts": "1000.000001",
+            "type": "message",
+            "user": "U_ALICE"
+          },
+          {
+            "text": "Use TSV because headers stay stable.",
+            "ts": "1000.000002",
+            "type": "message",
+            "user": "U_BOB"
+          }
+        ],
+        "ok": true,
+        "response_metadata": {
+          "next_cursor": "page2"
+        }
+      },
+      {
+        "has_more": false,
+        "messages": [
+          {
+            "text": "Dataset stored at /synthetic/maple.tsv.",
+            "ts": "1000.000003",
+            "type": "message",
+            "user": "U_ALICE"
+          }
+        ],
+        "ok": true,
+        "response_metadata": {
+          "next_cursor": ""
+        }
+      }
+    ],
+    "members": [
+      "U_ALICE",
+      "U_BOB"
+    ],
+    "replies": [
+      {
+        "text": "Use TSV because headers stay stable.",
+        "ts": "1000.000001",
+        "type": "message",
+        "user": "U_ALICE"
+      },
+      {
+        "text": "Verified stable headers.",
+        "thread_ts": "1000.000001",
+        "ts": "1000.000004",
+        "type": "message",
+        "user": "U_BOB"
+      }
+    ],
+    "team": "T_SYNTHETIC"
+  },
+  "version": "cloud_objects_v1"
+}

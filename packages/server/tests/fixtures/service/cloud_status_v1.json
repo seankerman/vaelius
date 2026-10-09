@@ -1,0 +1,6 @@
+{
+  "version": "cloud_status_v1",
+  "classification": "synthetic operational schema regression; development evidence",
+  "counts": ["enterprise_sources", "knowledge_documents", "backend_document_versions"],
+  "provider_calls": 0
+}

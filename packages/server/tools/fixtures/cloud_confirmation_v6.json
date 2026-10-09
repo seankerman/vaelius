@@ -1,0 +1,400 @@
+{
+  "version": "cloud-confirmation-v6",
+  "classification": "fresh authored wordings on reused60-source synthetic corpus/templates; non-independent; no new source-domain evidence",
+  "author_boundary": "Source facts and prior positive IDs only; no current failing development queries, repair proposals or retrieval implementation inspected during authorship. Previous evidence and consumed markers remain unchanged.",
+  "source_fixture": "cloud_readiness_v1.json",
+  "source_fixture_sha256": "561c61b8dcfe0b727b17b14c64c7b213d1032bc5bd57aa9e353193041f9116fc",
+  "tenant": "acme",
+  "actor": "alice",
+  "project_scope": "cloud-fixtures",
+  "gates": {
+    "recall_at_10": 0.95,
+    "answerable_coverage": 0.85,
+    "delivered_precision": 0.95,
+    "abstention": 0.95
+  },
+  "queries": [
+    {
+      "id": "v6-document-01",
+      "family": "document",
+      "query": "I am preparing a recovery for Project Document 1; cite the runbook command and its original document identifier.",
+      "answerable": true,
+      "expected_sources": [
+        "development-document-1"
+      ],
+      "expected_facts": [
+        "restore-1 --verify",
+        "DOC-1"
+      ]
+    },
+    {
+      "id": "v6-document-02",
+      "family": "document",
+      "query": "Locate the saved recovery instructions for Project Document 2 and extract the full example invocation and archive key.",
+      "answerable": true,
+      "expected_sources": [
+        "development-document-2"
+      ],
+      "expected_facts": [
+        "restore-2 --verify",
+        "DOC-2"
+      ]
+    },
+    {
+      "id": "v6-document-03",
+      "family": "document",
+      "query": "From Project Document 3's runbook, what restore command can I review, and which document key identifies the original?",
+      "answerable": true,
+      "expected_sources": [
+        "development-document-3"
+      ],
+      "expected_facts": [
+        "restore-3 --verify",
+        "DOC-3"
+      ]
+    },
+    {
+      "id": "v6-document-04",
+      "family": "document",
+      "query": "For Project Document 101, show the documented restore example alongside the reference used to archive those instructions.",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-document-1"
+      ],
+      "expected_facts": [
+        "restore-101 --verify",
+        "DOC-101"
+      ]
+    },
+    {
+      "id": "v6-document-05",
+      "family": "document",
+      "query": "Which original runbook entry gives Project Document 104's recovery command, including its verification option and archival key?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-document-4"
+      ],
+      "expected_facts": [
+        "restore-104 --verify",
+        "DOC-104"
+      ]
+    },
+    {
+      "id": "v6-semantic-01",
+      "family": "semantic",
+      "query": "Tell me the replica placement and synchronization interval that Project Semantic 0 uses to survive loss of a datacenter.",
+      "answerable": true,
+      "expected_sources": [
+        "development-semantic-0"
+      ],
+      "expected_facts": [
+        "three separate zones",
+        "2 minutes"
+      ]
+    },
+    {
+      "id": "v6-semantic-02",
+      "family": "semantic",
+      "query": "How many separate zones hold copies for Project Semantic 3, and what time interval is specified for replicating them?",
+      "answerable": true,
+      "expected_sources": [
+        "development-semantic-3"
+      ],
+      "expected_facts": [
+        "three separate zones",
+        "5 minutes"
+      ]
+    },
+    {
+      "id": "v6-semantic-03",
+      "family": "semantic",
+      "query": "Explain the stated customer-file protection in Project Semantic 4, retaining the placement of copies and the minutes between replications.",
+      "answerable": true,
+      "expected_sources": [
+        "development-semantic-4"
+      ],
+      "expected_facts": [
+        "three separate zones",
+        "6 minutes"
+      ]
+    },
+    {
+      "id": "v6-semantic-04",
+      "family": "semantic",
+      "query": "What copy-distribution plan and replication timing are documented for Project Semantic 100's outage resilience?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-semantic-0"
+      ],
+      "expected_facts": [
+        "three separate zones",
+        "2 minutes"
+      ]
+    },
+    {
+      "id": "v6-semantic-05",
+      "family": "semantic",
+      "query": "In Project Semantic 102, what protects files from a datacenter outage, and how often does the documented copying run?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-semantic-2"
+      ],
+      "expected_facts": [
+        "three separate zones",
+        "4 minutes"
+      ]
+    },
+    {
+      "id": "v6-cross_session-01",
+      "family": "cross_session",
+      "query": "What explanation is recorded for Alice's dataset-format decision in Project Cross_Session 2, and what saved output can I find afterward?",
+      "answerable": true,
+      "expected_sources": [
+        "development-cross_session-2"
+      ],
+      "expected_facts": [
+        "parquet",
+        "preserves numeric types",
+        "column projection",
+        "/synthetic/2/results.parquet"
+      ]
+    },
+    {
+      "id": "v6-cross_session-02",
+      "family": "cross_session",
+      "query": "For Project Cross_Session 3, identify the reasons behind Alice's selected file format, then name the complete path of the successfully saved dataset.",
+      "answerable": true,
+      "expected_sources": [
+        "development-cross_session-3"
+      ],
+      "expected_facts": [
+        "parquet",
+        "preserves numeric types",
+        "column projection",
+        "/synthetic/3/results.parquet"
+      ]
+    },
+    {
+      "id": "v6-cross_session-03",
+      "family": "cross_session",
+      "query": "What was Alice trying to preserve or enable with the storage format in Project Cross_Session 4, and where was the resulting dataset saved?",
+      "answerable": true,
+      "expected_sources": [
+        "development-cross_session-4"
+      ],
+      "expected_facts": [
+        "parquet",
+        "preserves numeric types",
+        "column projection",
+        "/synthetic/4/results.parquet"
+      ]
+    },
+    {
+      "id": "v6-cross_session-04",
+      "family": "cross_session",
+      "query": "Help me recover Project Cross_Session 100's completed output and the explanation for Alice's format choice.",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-cross_session-0"
+      ],
+      "expected_facts": [
+        "parquet",
+        "preserves numeric types",
+        "column projection",
+        "/synthetic/100/results.parquet"
+      ]
+    },
+    {
+      "id": "v6-cross_session-05",
+      "family": "cross_session",
+      "query": "Connect the later successful save in Project Cross_Session 103 with Alice's earlier choice: which format, benefits and output filename were recorded?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-cross_session-3"
+      ],
+      "expected_facts": [
+        "parquet",
+        "preserves numeric types",
+        "column projection",
+        "/synthetic/103/results.parquet"
+      ]
+    },
+    {
+      "id": "v6-temporal-01",
+      "family": "temporal",
+      "query": "Looking back at September 8, 2026 and then the confirmed move, which old and current artifact paths are supported for Project Temporal 0?",
+      "answerable": true,
+      "expected_sources": [
+        "development-temporal-0"
+      ],
+      "expected_facts": [
+        "/synthetic/0/old.csv",
+        "/synthetic/0/current.csv"
+      ]
+    },
+    {
+      "id": "v6-temporal-02",
+      "family": "temporal",
+      "query": "What are Project Temporal 1's before-and-after artifact filenames across its September 15 relocation?",
+      "answerable": true,
+      "expected_sources": [
+        "development-temporal-1"
+      ],
+      "expected_facts": [
+        "/synthetic/1/old.csv",
+        "/synthetic/1/current.csv"
+      ]
+    },
+    {
+      "id": "v6-temporal-03",
+      "family": "temporal",
+      "query": "For Project Temporal 3, distinguish the artifact's earlier recorded path from its verified current path; also qualify Bob's different report.",
+      "answerable": true,
+      "expected_sources": [
+        "development-temporal-3"
+      ],
+      "expected_facts": [
+        "/synthetic/3/old.csv",
+        "/synthetic/3/current.csv",
+        "did not verify"
+      ]
+    },
+    {
+      "id": "v6-temporal-04",
+      "family": "temporal",
+      "query": "Which full artifact path applied to Project Temporal 100 before September 15, and which one was established by the move that day?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-temporal-0"
+      ],
+      "expected_facts": [
+        "/synthetic/100/old.csv",
+        "/synthetic/100/current.csv"
+      ]
+    },
+    {
+      "id": "v6-temporal-05",
+      "family": "temporal",
+      "query": "I need Project Temporal 104's documented artifact location history: the previous CSV path and the current confirmed CSV path.",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-temporal-4"
+      ],
+      "expected_facts": [
+        "/synthetic/104/old.csv",
+        "/synthetic/104/current.csv"
+      ]
+    },
+    {
+      "id": "v6-preference-01",
+      "family": "preference",
+      "query": "Which indentation follows Alice's instructions in Project Preference 0, and how is her usual setting handled for this project?",
+      "answerable": true,
+      "expected_sources": [
+        "development-preference-0"
+      ],
+      "expected_facts": [
+        "tabs",
+        "Alice usually prefers spaces",
+        "project preference overrides"
+      ]
+    },
+    {
+      "id": "v6-preference-02",
+      "family": "preference",
+      "query": "For Project Preference 1, report Alice's explicit code-indentation setting and the reason her general spaces default does not determine it.",
+      "answerable": true,
+      "expected_sources": [
+        "development-preference-1"
+      ],
+      "expected_facts": [
+        "tabs",
+        "Alice usually prefers spaces",
+        "project preference overrides"
+      ]
+    },
+    {
+      "id": "v6-preference-03",
+      "family": "preference",
+      "query": "How do Alice's project-level indentation instructions for Project Preference 2 interact with her preferences elsewhere?",
+      "answerable": true,
+      "expected_sources": [
+        "development-preference-2"
+      ],
+      "expected_facts": [
+        "tabs",
+        "Alice usually prefers spaces",
+        "project preference overrides"
+      ]
+    },
+    {
+      "id": "v6-preference-04",
+      "family": "preference",
+      "query": "What code formatting did Alice request specifically for Project Preference 100, compared with Bob's preference and her own normal default?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-preference-0"
+      ],
+      "expected_facts": [
+        "tabs",
+        "Alice usually prefers spaces",
+        "project preference overrides",
+        "Bob prefers spaces"
+      ]
+    },
+    {
+      "id": "v6-preference-05",
+      "family": "preference",
+      "query": "When applying Alice's instructions to Project Preference 103, which indentation takes priority over her ordinary default?",
+      "answerable": true,
+      "expected_sources": [
+        "confirmation-preference-3"
+      ],
+      "expected_facts": [
+        "tabs",
+        "Alice usually prefers spaces",
+        "project preference overrides"
+      ]
+    },
+    {
+      "id": "v6-abstention-01",
+      "family": "abstention",
+      "query": "What exact dollar ceiling was approved as Project Abstention 100's budget?",
+      "answerable": false,
+      "expected_sources": [],
+      "expected_facts": []
+    },
+    {
+      "id": "v6-abstention-02",
+      "family": "abstention",
+      "query": "Give the confirmed total expenditure for Project Abstention 101 as a monetary amount.",
+      "answerable": false,
+      "expected_sources": [],
+      "expected_facts": []
+    },
+    {
+      "id": "v6-abstention-03",
+      "family": "abstention",
+      "query": "For Project Abstention 102, state the approved calendar date of its launch.",
+      "answerable": false,
+      "expected_sources": [],
+      "expected_facts": []
+    },
+    {
+      "id": "v6-abstention-04",
+      "family": "abstention",
+      "query": "How much money is authorized for Project Abstention 103? Return the actual budget value.",
+      "answerable": false,
+      "expected_sources": [],
+      "expected_facts": []
+    },
+    {
+      "id": "v6-abstention-05",
+      "family": "abstention",
+      "query": "What is the concrete launch date on the schedule for Project Abstention 104?",
+      "answerable": false,
+      "expected_sources": [],
+      "expected_facts": []
+    }
+  ]
+}

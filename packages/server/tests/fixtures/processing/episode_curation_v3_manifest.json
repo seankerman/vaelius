@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "parent_corpus_sha256": "029b8d123c311fc575fb6c07b73f18b4ba48d8f58d969bbde839bb28ecc609f1",
+  "corpus_sha256": "e6855a397296ec1312ee52a95ec32af7705d569dc99085692dae4607f1896875",
+  "split_sha256": {
+    "development": "aa187aad00dd351a678c3a1149bace609f37b597dd851a3a53a522775c1de813",
+    "confirmation": "0b6cd6f912e2c6f9e0e6bf89383ebfdf7da2f43af2d6a5aef22b49d92ff753ac"
+  },
+  "case_count": 18,
+  "development_cases": 12,
+  "confirmation_cases": 6,
+  "confirmation_created_before_live_evaluation": true,
+  "development_is_tuning_material": true,
+  "authored_cases_are_not_blind_holdout": true,
+  "limits": "All source text is synthetic. V3 changes development taxonomy after V2 results showed that missing verification is a reusable gotcha and source synthesis needs a distinct evidence class. Confirmation cases and their hash remain unchanged from V1 and have not yet been run."
+}

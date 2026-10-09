@@ -1,0 +1,327 @@
+{
+  "purpose": "Provider-free metadata guard only, no retrieval-quality or source corpus",
+  "fixture": {
+    "version": "manifest-validation-only-v1",
+    "queries": [
+      {
+        "id": "document-0",
+        "family": "document",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "document-1",
+        "family": "document",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "document-2",
+        "family": "document",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "document-3",
+        "family": "document",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "document-4",
+        "family": "document",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "semantic-0",
+        "family": "semantic",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "semantic-1",
+        "family": "semantic",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "semantic-2",
+        "family": "semantic",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "semantic-3",
+        "family": "semantic",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "semantic-4",
+        "family": "semantic",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "cross_session-0",
+        "family": "cross_session",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "cross_session-1",
+        "family": "cross_session",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "cross_session-2",
+        "family": "cross_session",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "cross_session-3",
+        "family": "cross_session",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "cross_session-4",
+        "family": "cross_session",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "temporal-0",
+        "family": "temporal",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "temporal-1",
+        "family": "temporal",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "temporal-2",
+        "family": "temporal",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "temporal-3",
+        "family": "temporal",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "temporal-4",
+        "family": "temporal",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "preference-0",
+        "family": "preference",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "preference-1",
+        "family": "preference",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "preference-2",
+        "family": "preference",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "preference-3",
+        "family": "preference",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "preference-4",
+        "family": "preference",
+        "answerable": true,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "abstention-0",
+        "family": "abstention",
+        "answerable": false,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "abstention-1",
+        "family": "abstention",
+        "answerable": false,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "abstention-2",
+        "family": "abstention",
+        "answerable": false,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "abstention-3",
+        "family": "abstention",
+        "answerable": false,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      },
+      {
+        "id": "abstention-4",
+        "family": "abstention",
+        "answerable": false,
+        "query": "synthetic validation placeholder",
+        "expected_sources": [],
+        "expected_facts": []
+      }
+    ]
+  },
+  "valid_manifest": {
+    "families": [
+      "document",
+      "semantic",
+      "cross_session",
+      "temporal",
+      "preference",
+      "abstention"
+    ],
+    "queries": 30,
+    "positive_queries": 25,
+    "answerless_queries": 5,
+    "frozen_before_evaluation": true,
+    "frozen_before_followup_behavior_change": true
+  },
+  "cases": [
+    {
+      "name": "integer_families_exact_historical_failure",
+      "patch": {
+        "families": 6
+      }
+    },
+    {
+      "name": "missing_family",
+      "patch": {
+        "families": [
+          "document",
+          "semantic",
+          "cross_session",
+          "temporal",
+          "preference"
+        ]
+      }
+    },
+    {
+      "name": "duplicate_family",
+      "patch": {
+        "families": [
+          "document",
+          "semantic",
+          "cross_session",
+          "temporal",
+          "preference",
+          "document"
+        ]
+      }
+    },
+    {
+      "name": "wrong_family",
+      "patch": {
+        "families": [
+          "document",
+          "semantic",
+          "cross_session",
+          "temporal",
+          "preference",
+          "unknown"
+        ]
+      }
+    },
+    {
+      "name": "wrong_query_count",
+      "patch": {
+        "queries": 29
+      }
+    },
+    {
+      "name": "wrong_positive_count",
+      "patch": {
+        "positive_queries": 24
+      }
+    },
+    {
+      "name": "wrong_answerless_count",
+      "patch": {
+        "answerless_queries": 4
+      }
+    }
+  ]
+}

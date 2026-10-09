@@ -1,0 +1,65 @@
+{
+  "actual_generated_args": {
+    "as_of": "2026-09-26",
+    "query": "Maple dataset current location and why we chose CSV",
+    "subject": "Maple"
+  },
+  "cases": [
+    {
+      "args": {
+        "query": "Where is the Maple dataset currently, and why did we choose CSV?"
+      },
+      "expected_answerable": true,
+      "name": "current_original",
+      "observed_answerable": true
+    },
+    {
+      "args": {
+        "query": "Where is the Maple dataset currently, and why did we choose CSV?",
+        "subject": "Maple"
+      },
+      "expected_answerable": true,
+      "name": "known_exact_subject",
+      "observed_answerable": true
+    },
+    {
+      "args": {
+        "query": "Maple dataset current location and why we chose CSV"
+      },
+      "expected_answerable": true,
+      "name": "equivalent_current_compound",
+      "observed_answerable": false
+    },
+    {
+      "args": {
+        "as_of": "2026-09-26",
+        "query": "Where is the Maple dataset currently, and why did we choose CSV?"
+      },
+      "expected_semantics": "historical validity selection; no promise that current-only records can answer",
+      "name": "unsolicited_historical_filter",
+      "observed_answerable": false
+    }
+  ],
+  "classification": "authored regression from genuine failed receiving-agent request; frozen before any repair; not held-out",
+  "expected_current_answer": {
+    "location": "/Users/demo/My Data/current-maple.csv",
+    "reason": "stable header"
+  },
+  "prohibited_repairs": [
+    "force a fixed query in receiving prompt",
+    "widen exact subject silently",
+    "change temporal validity semantics to fit current answers",
+    "paste records into receiving prompt"
+  ],
+  "provider_calls": 0,
+  "question": "Where is the Maple dataset currently, and why did we choose CSV?",
+  "schema_requirements": {
+    "as_of": "Historical fact validity selection only when asked; omit for current questions; do not add current date by default.",
+    "event_day": "Activity occurrence day only when the question requests that day.",
+    "query": "Complete natural-language question; preserve requested entities and needs.",
+    "subject": "Optional exact metadata facet, not arbitrary keywords; omit when unknown."
+  },
+  "source_fixture_sha256": "c001deb279d32926f032d386dd9151235a261876394af8c38781d660b89b6d73",
+  "source_type": "agent",
+  "version": "cloud-receiver-generated-query-v1"
+}

@@ -1,0 +1,1104 @@
+{
+  "schema_version": 1,
+  "curator_version": "episode-curator-1",
+  "description": "Synthetic complete-episode curation cases. Raw events are source evidence; expected outputs are atomic learning candidates or explicit no-learning dispositions.",
+  "cases": [
+    {
+      "case_id": "ep-dev-routine-status",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-routine-status-e1",
+          "project": "synthetic",
+          "session": "ep-dev-routine-status",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Show me the current repository status."
+        },
+        {
+          "id": "ep-dev-routine-status-e2",
+          "project": "synthetic",
+          "session": "ep-dev-routine-status",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "On branch codex/example. Nothing to commit, working tree clean."
+        },
+        {
+          "id": "ep-dev-routine-status-e3",
+          "project": "synthetic",
+          "session": "ep-dev-routine-status",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The working tree is clean right now."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "routine_activity",
+        "candidate_count": 0
+      }
+    },
+    {
+      "case_id": "ep-dev-context-transfer",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-context-transfer-e1",
+          "project": "synthetic",
+          "session": "ep-dev-context-transfer",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Check what the other task is doing."
+        },
+        {
+          "id": "ep-dev-context-transfer-e2",
+          "project": "synthetic",
+          "session": "ep-dev-context-transfer",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "mcp__codex_app__read_thread",
+          "source_role": "context_transfer",
+          "exit_code": 0,
+          "body": "A different task printed its entire read_thread transcript, including repeated tool envelopes and speculative conclusions."
+        },
+        {
+          "id": "ep-dev-context-transfer-e3",
+          "project": "synthetic",
+          "session": "ep-dev-context-transfer",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "mcp__codex_app__read_thread",
+          "source_role": "context_transfer",
+          "exit_code": 0,
+          "body": "A different task printed its entire read_thread transcript, including repeated tool envelopes and speculative conclusions."
+        },
+        {
+          "id": "ep-dev-context-transfer-e4",
+          "project": "synthetic",
+          "session": "ep-dev-context-transfer",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "I inspected the other task and reported its status."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "no_durable_learning",
+        "candidate_count": 0,
+        "deterministic_skip_reasons": [
+          "context_transfer",
+          "duplicate_transport"
+        ]
+      }
+    },
+    {
+      "case_id": "ep-dev-unsupported-promise",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-unsupported-promise-e1",
+          "project": "synthetic",
+          "session": "ep-dev-unsupported-promise",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Add a regression test for the parser."
+        },
+        {
+          "id": "ep-dev-unsupported-promise-e2",
+          "project": "synthetic",
+          "session": "ep-dev-unsupported-promise",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "I will add the regression test and run the suite next."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "no_durable_learning",
+        "candidate_count": 0
+      }
+    },
+    {
+      "case_id": "ep-dev-verified-fix",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-verified-fix-e1",
+          "project": "synthetic",
+          "session": "ep-dev-verified-fix",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Fix the local listener restart failure on macOS 15."
+        },
+        {
+          "id": "ep-dev-verified-fix-e2",
+          "project": "synthetic",
+          "session": "ep-dev-verified-fix",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 1,
+          "body": "Restart check failed: address already in use after immediate process restart."
+        },
+        {
+          "id": "ep-dev-verified-fix-e3",
+          "project": "synthetic",
+          "session": "ep-dev-verified-fix",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Applied socket option SO_REUSEADDR before bind. restart_listener_test: PASS on macOS 15; 12 restarts completed."
+        },
+        {
+          "id": "ep-dev-verified-fix-e4",
+          "project": "synthetic",
+          "session": "ep-dev-verified-fix",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The listener now enables SO_REUSEADDR before bind, and the restart regression test passed for 12 immediate restarts on macOS 15."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "procedure",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "so_reuseaddr",
+          "before bind",
+          "restart"
+        ],
+        "forbidden_claim_terms": [
+          "entire transcript"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-verified-fix-e3"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-dev-durable-decision",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-durable-decision-e1",
+          "project": "synthetic",
+          "session": "ep-dev-durable-decision",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "For the early private prototype, keep SQLite as the only local backend. A future hosted version can use a server database with server privacy controls."
+        },
+        {
+          "id": "ep-dev-durable-decision-e2",
+          "project": "synthetic",
+          "session": "ep-dev-durable-decision",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Decision recorded: the local prototype uses SQLite only; hosted storage remains a later server design decision."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "decision",
+        "evidence_status": "user_reported",
+        "required_claim_terms": [
+          "sqlite",
+          "local"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-durable-decision-e1"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-dev-failed-attempt",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-failed-attempt-e1",
+          "project": "synthetic",
+          "session": "ep-dev-failed-attempt",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Check whether increasing the parser batch to 500 fixes the timeout."
+        },
+        {
+          "id": "ep-dev-failed-attempt-e2",
+          "project": "synthetic",
+          "session": "ep-dev-failed-attempt",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 1,
+          "body": "Ran parser with batch size 500 under the 30 second limit. The timeout assertion failed at 30 seconds. No alternative was tested."
+        },
+        {
+          "id": "ep-dev-failed-attempt-e3",
+          "project": "synthetic",
+          "session": "ep-dev-failed-attempt",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Batch size 500 still timed out; no replacement fix was verified."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "failed_attempt",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "batch",
+          "500",
+          "timeout"
+        ],
+        "forbidden_claim_terms": [
+          "caused",
+          "should use",
+          "fix is"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-failed-attempt-e2"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-dev-research-synthesis",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-research-synthesis-e1",
+          "project": "synthetic",
+          "session": "ep-dev-research-synthesis",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Compare established memory systems and identify the safest curation boundary."
+        },
+        {
+          "id": "ep-dev-research-synthesis-e2",
+          "project": "synthetic",
+          "session": "ep-dev-research-synthesis",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "WebSearch",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "System A separates raw episodes from extracted facts and keeps episode provenance on each fact."
+        },
+        {
+          "id": "ep-dev-research-synthesis-e3",
+          "project": "synthetic",
+          "session": "ep-dev-research-synthesis",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "WebSearch",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "System B extracts claims from bounded text units and retains source links for derived summaries."
+        },
+        {
+          "id": "ep-dev-research-synthesis-e4",
+          "project": "synthetic",
+          "session": "ep-dev-research-synthesis",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Across both systems, the reusable design is to keep raw episodes as source evidence and index evidence-linked claims rather than raw event streams."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "fact",
+        "evidence_status": "agent_reported",
+        "required_claim_terms": [
+          "raw",
+          "evidence",
+          "claim"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-research-synthesis-e2",
+          "ep-dev-research-synthesis-e3"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-dev-duplicate-success",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-duplicate-success-e1",
+          "project": "synthetic",
+          "session": "ep-dev-duplicate-success",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Verify the private-source retrieval boundary."
+        },
+        {
+          "id": "ep-dev-duplicate-success-e2",
+          "project": "synthetic",
+          "session": "ep-dev-duplicate-success",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "privacy_boundary_test: PASS. Private source rows were absent from automatic retrieval results."
+        },
+        {
+          "id": "ep-dev-duplicate-success-e3",
+          "project": "synthetic",
+          "session": "ep-dev-duplicate-success",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "privacy_boundary_test: PASS. Private source rows were absent from automatic retrieval results."
+        },
+        {
+          "id": "ep-dev-duplicate-success-e4",
+          "project": "synthetic",
+          "session": "ep-dev-duplicate-success",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The privacy boundary regression passed."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "verified_result",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "private",
+          "retrieval"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-duplicate-success-e2"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": "",
+        "deterministic_skip_reasons": [
+          "duplicate_transport"
+        ]
+      }
+    },
+    {
+      "case_id": "ep-dev-conditional-variant",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-conditional-variant-e1",
+          "project": "synthetic",
+          "session": "ep-dev-conditional-variant",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Find the supported watcher reload method on macOS."
+        },
+        {
+          "id": "ep-dev-conditional-variant-e2",
+          "project": "synthetic",
+          "session": "ep-dev-conditional-variant",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "watcher_reload_test on macOS 15: PASS when the process receives SIGUSR1; SIGHUP was not used."
+        },
+        {
+          "id": "ep-dev-conditional-variant-e3",
+          "project": "synthetic",
+          "session": "ep-dev-conditional-variant",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "On macOS 15, use SIGUSR1 for the tested watcher reload path."
+        }
+      ],
+      "related_artifacts": [
+        {
+          "artifact_id": "art-reload-linux",
+          "revision": "rev-1",
+          "lifecycle": "active",
+          "claim": "Reload the watcher with SIGHUP on Linux.",
+          "evidence_status": "directly_observed",
+          "applicability": {
+            "project_scope": [],
+            "platforms": [
+              "Linux"
+            ],
+            "versions": [],
+            "date_ranges": [],
+            "units": [],
+            "preconditions": [],
+            "exclusions": []
+          }
+        }
+      ],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "procedure",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "sigusr1",
+          "macos"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-conditional-variant-e2"
+        ],
+        "operation": "CONDITIONAL_VARIANT",
+        "target_artifact_id": "art-reload-linux"
+      }
+    },
+    {
+      "case_id": "ep-dev-correction",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-correction-e1",
+          "project": "synthetic",
+          "session": "ep-dev-correction",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The import timeout changed from 10 seconds to 30 seconds; verify the current configuration."
+        },
+        {
+          "id": "ep-dev-correction-e2",
+          "project": "synthetic",
+          "session": "ep-dev-correction",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "effective import_timeout_seconds=30; configuration assertion expected 30 and passed."
+        },
+        {
+          "id": "ep-dev-correction-e3",
+          "project": "synthetic",
+          "session": "ep-dev-correction",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The active import timeout is 30 seconds, replacing the old 10 second value."
+        }
+      ],
+      "related_artifacts": [
+        {
+          "artifact_id": "art-timeout-old",
+          "revision": "rev-1",
+          "lifecycle": "active",
+          "claim": "The import timeout is 10 seconds.",
+          "evidence_status": "user_reported",
+          "applicability": {
+            "project_scope": [],
+            "platforms": [],
+            "versions": [],
+            "date_ranges": [],
+            "units": [],
+            "preconditions": [],
+            "exclusions": []
+          }
+        }
+      ],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "fact",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "timeout",
+          "30"
+        ],
+        "required_evidence_event_ids": [
+          "ep-dev-correction-e2"
+        ],
+        "operation": "CORRECT",
+        "target_artifact_id": "art-timeout-old"
+      }
+    },
+    {
+      "case_id": "ep-dev-search-dump",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-search-dump-e1",
+          "project": "synthetic",
+          "session": "ep-dev-search-dump",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Find a few possible libraries; no decision yet."
+        },
+        {
+          "id": "ep-dev-search-dump-e2",
+          "project": "synthetic",
+          "session": "ep-dev-search-dump",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "WebSearch",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Search results: library alpha, library beta, library gamma. Snippets are unverified."
+        },
+        {
+          "id": "ep-dev-search-dump-e3",
+          "project": "synthetic",
+          "session": "ep-dev-search-dump",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "I listed candidates. We have not evaluated or selected one."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "no_durable_learning",
+        "candidate_count": 0
+      }
+    },
+    {
+      "case_id": "ep-dev-zero-exit-no-proof",
+      "split": "development",
+      "episode": [
+        {
+          "id": "ep-dev-zero-exit-no-proof-e1",
+          "project": "synthetic",
+          "session": "ep-dev-zero-exit-no-proof",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Did the migration preserve every record?"
+        },
+        {
+          "id": "ep-dev-zero-exit-no-proof-e2",
+          "project": "synthetic",
+          "session": "ep-dev-zero-exit-no-proof",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Command completed without terminal errors. No record counts or integrity checks were printed."
+        },
+        {
+          "id": "ep-dev-zero-exit-no-proof-e3",
+          "project": "synthetic",
+          "session": "ep-dev-zero-exit-no-proof",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The command exited successfully, but record preservation was not verified."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "no_durable_learning",
+        "candidate_count": 0
+      }
+    },
+    {
+      "case_id": "ep-confirm-procedure",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-procedure-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-procedure",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Find and verify the recovery sequence for a stale local index on macOS 15."
+        },
+        {
+          "id": "ep-confirm-procedure-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-procedure",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Recovery attempt: close the reader, rebuild the index, then reopen it. stale_index_regression on macOS 15: PASS (8 cases)."
+        },
+        {
+          "id": "ep-confirm-procedure-e3",
+          "project": "synthetic",
+          "session": "ep-confirm-procedure",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Closing the reader before rebuilding and reopening passed the stale-index regression on macOS 15."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "procedure",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "close",
+          "rebuild",
+          "reopen"
+        ],
+        "required_evidence_event_ids": [
+          "ep-confirm-procedure-e2"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-confirm-context-only",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-context-only-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-context-only",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Read the other task for context only."
+        },
+        {
+          "id": "ep-confirm-context-only-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-context-only",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "mcp__codex_app__read_thread",
+          "source_role": "context_transfer",
+          "exit_code": 0,
+          "body": "Copied output from a read_thread call says a remote task might have solved a cache bug, but this episode did not test it."
+        },
+        {
+          "id": "ep-confirm-context-only-e3",
+          "project": "synthetic",
+          "session": "ep-confirm-context-only",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "mcp__codex_app__read_thread",
+          "source_role": "context_transfer",
+          "exit_code": 0,
+          "body": "Copied output from a read_thread call says a remote task might have solved a cache bug, but this episode did not test it."
+        },
+        {
+          "id": "ep-confirm-context-only-e4",
+          "project": "synthetic",
+          "session": "ep-confirm-context-only",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Context was inspected; no result was verified here."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "no_durable_learning",
+        "candidate_count": 0,
+        "deterministic_skip_reasons": [
+          "context_transfer",
+          "duplicate_transport"
+        ]
+      }
+    },
+    {
+      "case_id": "ep-confirm-chatter",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-chatter-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-chatter",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Continue the task."
+        },
+        {
+          "id": "ep-confirm-chatter-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-chatter",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "Poll",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Waiting for the background process."
+        },
+        {
+          "id": "ep-confirm-chatter-e3",
+          "project": "synthetic",
+          "session": "ep-confirm-chatter",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "PostToolUse",
+          "tool_name": "Poll",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "Still waiting for the background process."
+        },
+        {
+          "id": "ep-confirm-chatter-e4",
+          "project": "synthetic",
+          "session": "ep-confirm-chatter",
+          "turn": "turn-1",
+          "created": 4,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Work is still in progress; no conclusion yet."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "routine_activity",
+        "candidate_count": 0
+      }
+    },
+    {
+      "case_id": "ep-confirm-constraint",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-constraint-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-constraint",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Keep private source material out of Git. Store live evaluation details only in the private local data directory."
+        },
+        {
+          "id": "ep-confirm-constraint-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-constraint",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The implementation records only aggregate evidence in Git and keeps live details in private local storage."
+        }
+      ],
+      "related_artifacts": [],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "constraint",
+        "evidence_status": "user_reported",
+        "required_claim_terms": [
+          "private",
+          "git"
+        ],
+        "required_evidence_event_ids": [
+          "ep-confirm-constraint-e1"
+        ],
+        "operation": "CREATE",
+        "target_artifact_id": ""
+      }
+    },
+    {
+      "case_id": "ep-confirm-contradiction",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-contradiction-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-contradiction",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Recheck the worker pool size 4 result on macOS 15."
+        },
+        {
+          "id": "ep-confirm-contradiction-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-contradiction",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 1,
+          "body": "With worker pool size 4 on macOS 15, integration_check failed 3 of 3 runs with queue starvation."
+        },
+        {
+          "id": "ep-confirm-contradiction-e3",
+          "project": "synthetic",
+          "session": "ep-confirm-contradiction",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The new run conflicts with the earlier passing result under the same stated conditions; preserve both results as a disagreement."
+        }
+      ],
+      "related_artifacts": [
+        {
+          "artifact_id": "art-pool-result",
+          "revision": "rev-1",
+          "lifecycle": "active",
+          "claim": "With worker pool size 4 on macOS 15, the integration check passes.",
+          "evidence_status": "directly_observed",
+          "applicability": {
+            "project_scope": [],
+            "platforms": [],
+            "versions": [],
+            "date_ranges": [],
+            "units": [],
+            "preconditions": [],
+            "exclusions": []
+          }
+        }
+      ],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "failed_attempt",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "pool",
+          "4",
+          "failed"
+        ],
+        "required_evidence_event_ids": [
+          "ep-confirm-contradiction-e2"
+        ],
+        "operation": "CONTRADICT",
+        "target_artifact_id": "art-pool-result"
+      }
+    },
+    {
+      "case_id": "ep-confirm-correction",
+      "split": "confirmation",
+      "episode": [
+        {
+          "id": "ep-confirm-correction-e1",
+          "project": "synthetic",
+          "session": "ep-confirm-correction",
+          "turn": "turn-1",
+          "created": 1,
+          "kind": "UserPromptSubmit",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "Verify the current export flag after the CLI update."
+        },
+        {
+          "id": "ep-confirm-correction-e2",
+          "project": "synthetic",
+          "session": "ep-confirm-correction",
+          "turn": "turn-1",
+          "created": 2,
+          "kind": "PostToolUse",
+          "tool_name": "CommandExecution",
+          "source_role": "episode_evidence",
+          "exit_code": 0,
+          "body": "export_cli_contract: PASS. Current accepted flag is --format=json; --legacy-format is rejected as unknown."
+        },
+        {
+          "id": "ep-confirm-correction-e3",
+          "project": "synthetic",
+          "session": "ep-confirm-correction",
+          "turn": "turn-1",
+          "created": 3,
+          "kind": "Stop",
+          "tool_name": "",
+          "source_role": "episode_evidence",
+          "exit_code": null,
+          "body": "The current export flag is --format=json, replacing --legacy-format."
+        }
+      ],
+      "related_artifacts": [
+        {
+          "artifact_id": "art-cli-flag",
+          "revision": "rev-1",
+          "lifecycle": "active",
+          "claim": "The export command uses --legacy-format.",
+          "evidence_status": "agent_reported",
+          "applicability": {
+            "project_scope": [],
+            "platforms": [],
+            "versions": [],
+            "date_ranges": [],
+            "units": [],
+            "preconditions": [],
+            "exclusions": []
+          }
+        }
+      ],
+      "expected": {
+        "disposition": "has_learning",
+        "candidate_count": 1,
+        "knowledge_type": "fact",
+        "evidence_status": "directly_observed",
+        "required_claim_terms": [
+          "--format=json"
+        ],
+        "required_evidence_event_ids": [
+          "ep-confirm-correction-e2"
+        ],
+        "operation": "CORRECT",
+        "target_artifact_id": "art-cli-flag"
+      }
+    }
+  ]
+}

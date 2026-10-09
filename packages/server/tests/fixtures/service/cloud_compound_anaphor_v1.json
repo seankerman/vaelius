@@ -1,0 +1,98 @@
+{
+  "classification": "authored tuned synthetic compound-planner regression, not held-out",
+  "cases": [
+    {
+      "id": "clear-female-antecedent",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": true
+    },
+    {
+      "id": "clear-male-antecedent",
+      "lesson": "Bob chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session he successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Bob save Project Atlas 7 and why did he choose that format?",
+      "expected": true
+    },
+    {
+      "id": "clear-named-actor-option-anaphor",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did Alice choose that format?",
+      "expected": true
+    },
+    {
+      "id": "clear-actor-pronoun-explicit-option",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose parquet?",
+      "expected": true
+    },
+    {
+      "id": "explicit-wrong-option-not-rewritten",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose JSON?",
+      "expected": false
+    },
+    {
+      "id": "ambiguous-query-actors",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet. Bob chose CSV for Project Atlas 7 because his importer needs headers.",
+      "query": "Where did Alice and Bob save Project Atlas 7 and why did they choose that format?",
+      "expected": false
+    },
+    {
+      "id": "multiple-chosen-options",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet. Alice chose CSV for Project Atlas 7 because it supports the later importer.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "other-actor-only-rationale",
+      "lesson": "Bob chose parquet for Project Atlas 7 because it preserves numeric types. Alice successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "no-affirmative-choice",
+      "lesson": "Alice considered parquet for Project Atlas 7 because it preserves numeric types. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "negated-choice",
+      "lesson": "Alice did not choose parquet for Project Atlas 7 because it lost numeric types. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "only-other-actor-location",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types. Bob successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "unattributed-location",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types. The resulting dataset is saved at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false
+    },
+    {
+      "id": "clear-actor-despite-other-actor-comparison",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet. Bob chose CSV for his alternative because he needs headers.",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": true
+    },
+    {
+      "id": "unknown-topic",
+      "lesson": "Alice chose parquet for Project Atlas 7 because it preserves numeric types and enables column projection. In a later session she successfully saved the resulting dataset at /synthetic/atlas/results.parquet.",
+      "query": "Where did Alice save Project Atlas 99 and why did she choose that format?",
+      "expected": false
+    }
+  ],
+  "positive_for_boundaries": "clear-female-antecedent",
+  "boundary_checks": [
+    "domain",
+    "knowledge_type",
+    "subject",
+    "as_of",
+    "withdraw",
+    "private-reader-denial"
+  ]
+}

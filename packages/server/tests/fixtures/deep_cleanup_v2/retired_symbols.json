@@ -1,0 +1,12 @@
+{
+  "version": "deep-cleanup-v2-retirement-controls",
+  "classification": "authored architecture regressions, not held-out retrieval evidence",
+  "retired_exports": {
+    "agenthub.processing.knowledge": ["migrate_curated", "search_documents", "semantic_index_ready", "semantic_index_status", "rebuild_semantic_index", "search_semantic_documents"],
+    "agenthub.processing.semantic": ["pack_vector", "unpack_vector", "cosine", "query_local", "serve_queries", "start_query_server", "_socket_path"]
+  },
+  "retained_exports": {
+    "agenthub.processing.knowledge": ["ingest_observation", "apply_resolved_observation", "retire_memory", "refresh_index"],
+    "agenthub.processing.semantic": ["SemanticModel", "normalize_vector", "prepare_document", "prepare_query"]
+  }
+}

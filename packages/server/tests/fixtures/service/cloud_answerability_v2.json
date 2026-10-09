@@ -1,0 +1,268 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Project Sable 7 recovery uses restore-7 --verify. Its original key is DOC-7.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "instruction-not-entity",
+      "query": "Locate the recovery procedure for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 recovery uses restore-7 --verify. Its original key is DOC-7.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "preamble-not-numbered-name",
+      "query": "For Project Sable 7, explain the recovery procedure."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 recovery uses restore-7 --verify. Its original key is DOC-7.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "wrong-numbered-name",
+      "query": "For Project Sable 8, explain the recovery procedure."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 recovery uses restore-7 --verify. Its original key is DOC-7.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "wrong-identifier",
+      "query": "Locate DOC-8 recovery instructions."
+    },
+    {
+      "claim": {
+        "lesson": "Sable uses CSV because it preserves headers.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "quoted-entity",
+      "query": "Explain why \"Sable\" uses CSV."
+    },
+    {
+      "claim": {
+        "lesson": "Sable uses CSV because it preserves headers.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "wrong-quoted-entity",
+      "query": "Explain why \"Juniper\" uses CSV."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 replicates its files to separate zones every 3 minutes.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "sentence-directives",
+      "query": "What replication supports Project Sable 7? Include the interval."
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "first-name-entity",
+      "query": "Sable dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "unknown-first-name-entity",
+      "query": "Juniper dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves the header. Bob chose JSON because it preserves nested records.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "actor-correct",
+      "query": "Why did Alice choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves the header. Bob chose JSON because it preserves nested records.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "actor-wrong-option",
+      "query": "Why did Bob choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves the header. Bob chose JSON because it preserves nested records.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "actor-unknown",
+      "query": "Why did Cameron choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Bob did not choose CSV. Alice chose CSV because it preserves the header.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "actor-negative-reason",
+      "query": "Why did Bob choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed artifact move to /synthetic/current.csv. Bob reported a different path but did not verify it.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "unrelated-negation",
+      "query": "Where is the confirmed artifact for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed artifact move to /synthetic/current.csv. Bob reported a different path but did not verify it.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "negative-yes-no",
+      "query": "Was Bob's competing report verified for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed artifact move to /synthetic/current.csv. Bob reported a different path but did not verify it.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "negative-not-positive",
+      "query": "Give the verified location reported by Bob for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed artifact move to /synthetic/current.csv. Bob reported a different path but did not verify it.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "positive-and-negative-questions",
+      "query": "What is the confirmed path for Project Sable 7, and was Bob's report verified?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "missing-amount",
+      "query": "What exact amount did leadership authorize for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "missing-total",
+      "query": "Which purchase total was approved for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "missing-budget",
+      "query": "List the signed-off budget figure for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "missing-launch",
+      "query": "Give the officially confirmed go-live day for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "missing-combined",
+      "query": "What launch commitment and confirmed spend exist for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 meeting discusses invoice numbering. It contains no approved budget, launch date or confirmed spending amount.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "negative-budget-fact",
+      "query": "Is there an approved budget for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "The approved budget for Project Sable 7 is $5,000.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "affirmed-budget",
+      "query": "What amount did leadership authorize for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has an estimated budget of $5,000, which has not been approved.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "money-not-approved",
+      "query": "What amount did leadership authorize for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has no confirmed spending amount. Another project has an approved budget of $5,000.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "unrelated-money",
+      "query": "What confirmed spend exists for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed launch date of September 20, 2026.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": true,
+      "id": "affirmed-launch",
+      "query": "Give the confirmed go-live day for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "The meeting for Project Sable 7 happened September 20, 2026. No launch date was confirmed.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "unrelated-date",
+      "query": "Give the confirmed go-live day for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 proposes a launch date of September 20, 2026; it remains unconfirmed.",
+        "title": "Source-backed synthetic fact"
+      },
+      "expected": false,
+      "id": "tentative-launch",
+      "query": "Give the confirmed go-live day for Project Sable 7."
+    }
+  ],
+  "classification": "authored supplemental paired regressions frozen before general answerability repair; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-answerability-v2"
+}

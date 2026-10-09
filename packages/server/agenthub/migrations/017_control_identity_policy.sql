@@ -1,0 +1,1 @@
+CREATE TABLE cloud_identity_tenant_policy(tenant TEXT PRIMARY KEY REFERENCES cloud_tenants(id),federation_required INTEGER NOT NULL DEFAULT 0,allowed_providers TEXT NOT NULL,epoch BIGINT NOT NULL DEFAULT 1);

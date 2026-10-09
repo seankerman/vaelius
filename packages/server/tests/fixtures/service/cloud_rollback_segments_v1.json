@@ -1,0 +1,1 @@
+{"version":"cloud_rollback_segments_v1","classification":"synthetic added object-segment rollback invariant","required_tables":["cloud_segment_uploads","cloud_conversation_segments"],"provider_calls":0}

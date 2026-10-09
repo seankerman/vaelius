@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agentnetwork:enterprise-local-1",
+  "$defs": {
+    "sourceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "external_id", "session", "turn", "project", "kind", "body", "occurred_at"],
+      "properties": {
+        "version": {"const": "enterprise-local-1"},
+        "external_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "session": {"type": "string", "minLength": 1, "maxLength": 256},
+        "turn": {"type": "string", "minLength": 1, "maxLength": 128},
+        "project": {"type": "string", "minLength": 1, "maxLength": 256},
+        "kind": {"enum": ["UserPromptSubmit", "Stop", "PostToolUse", "SessionStart", "gap"]},
+        "body": {"type": "string", "maxLength": 180000},
+        "occurred_at": {"oneOf": [{"type": "string"}, {"type": "number"}]},
+        "precision": {"type": "string", "maxLength": 256},
+        "timezone": {"type": "string", "maxLength": 256},
+        "speaker": {"type": "string", "maxLength": 256},
+        "tool_name": {"type": "string", "maxLength": 256},
+        "source_role": {"type": "string", "maxLength": 256},
+        "capture_id": {"type": "string", "maxLength": 256},
+        "event_fields": {"type": "array", "maxItems": 128},
+        "response_shape": {},
+        "visibility": {"enum": ["private", "team", "organization"]},
+        "raw_visibility": {"const": "private"},
+        "outcome": {},
+        "exit_code": {"type": "integer", "minimum": -65535, "maximum": 65535},
+        "excluded_reason": {"type": "string", "maxLength": 256}
+      }
+    },
+    "searchRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "query"],
+      "properties": {
+        "version": {"const": "enterprise-local-1"},
+        "query": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "project": {"type": "string", "minLength": 1, "maxLength": 256},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+        "mode": {"enum": ["automatic", "explicit"]},
+        "as_of": {"type": "string", "minLength": 1, "maxLength": 40},
+        "session": {"type": "string", "maxLength": 256},
+        "boundary_id": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    },
+    "lifecycleRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "target_id", "expected_revision", "idempotency_key", "reason", "operation"],
+      "properties": {
+        "version": {"const": "enterprise-local-1"},
+        "target_id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "expected_revision": {"type": "string", "minLength": 1, "maxLength": 512},
+        "idempotency_key": {"type": "string", "minLength": 1, "maxLength": 512},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 512},
+        "operation": {"enum": ["correct", "withdraw", "delete", "policy"]},
+        "visibility": {"enum": ["private", "team", "organization"]},
+        "replacement": {"type": "object"}
+      }
+    },
+    "receiptRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "session", "cards", "serialized_chars"],
+      "properties": {
+        "version": {"const": "enterprise-local-1"},
+        "session": {"type": "string", "minLength": 1, "maxLength": 256},
+        "cards": {"type": "array", "maxItems": 3, "items": {"type": "object", "additionalProperties": false, "required": ["id", "revision"], "properties": {"id": {"type": "string"}, "revision": {"type": "string"}}}},
+        "serialized_chars": {"type": "integer", "minimum": 0, "maximum": 1500},
+        "request_id": {"type": "string", "maxLength": 128}
+      }
+    },
+    "boundaryRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "event"],
+      "properties": {
+        "version": {"const": "enterprise-local-1"},
+        "event": {"type": "object", "additionalProperties": false,
+          "required": ["hook_event_name", "trigger", "session_id", "turn_id"],
+          "properties": {"hook_event_name": {"const": "PostCompact"},
+            "trigger": {"enum": ["auto", "manual"]},
+            "session_id": {"type": "string"}, "turn_id": {"type": "string"}}}
+      }
+    },
+    "searchResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["results", "answerable"],
+      "properties": {
+        "results": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/knowledgeCard"}},
+        "answerable": {"type": "boolean"},
+        "coverage_gaps": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "knowledgeCard": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "revision", "title", "lesson", "evidence_status"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "lesson": {"type": "string"},
+        "evidence_status": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

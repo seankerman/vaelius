@@ -1,0 +1,46 @@
+{
+  "version": "cloud-conversation-segments-v1",
+  "classification": "authored synthetic regression; no held-out claim",
+  "events": [
+    {
+      "version": "enterprise-local-2", "connection": "segment-agent",
+      "external_id": "event-tool-1", "revision": "1", "source_type": "agent",
+      "project": "maple", "conversation": "synthetic-chat", "turn": "turn-1",
+      "event": {"kind": "PostToolUse", "role": "tool", "channel": "commentary", "order": 2,
+        "tool_name": "exec_command", "call_id": "call-1", "parent_id": "user-1",
+        "complete": false, "expected_events": [], "exit_code": 0},
+      "blocks": [
+        {"type": "tool_arguments", "value": {"cmd": "save_dataset --output /synthetic/maple.csv"}},
+        {"type": "tool_result", "value": {"path": "/synthetic/maple.csv", "rows": 23, "unicode": "α😀", "status": "saved"}}
+      ],
+      "occurred_at": "2026-09-26T10:00:02Z", "actor": "alice", "source_url": "",
+      "disposition": "accepted", "redactions": [], "origin": "codex"
+    },
+    {
+      "version": "enterprise-local-2", "connection": "segment-agent",
+      "external_id": "event-stop-1", "revision": "1", "source_type": "agent",
+      "project": "maple", "conversation": "synthetic-chat", "turn": "turn-1",
+      "event": {"kind": "Stop", "role": "assistant", "channel": "final", "order": 3,
+        "tool_name": "", "call_id": "", "parent_id": "user-1", "complete": true,
+        "expected_events": ["event-tool-1"], "exit_code": null},
+      "blocks": [{"type": "text", "value": "Saved the dataset at /synthetic/maple.csv because CSV preserves the column names."}],
+      "occurred_at": "2026-09-26T10:00:03Z", "actor": "alice", "source_url": "",
+      "disposition": "accepted", "redactions": [], "origin": "codex"
+    }
+  ],
+  "cases": [
+    "canonical redacted structured event/version segment bytes round-trip exactly including actor, conversation, turn, order, tool inputs and outputs",
+    "one immutable object per bounded event/version, completed turn observation retains several segment references",
+    "SDK against explicit loopback Moto and private-file adapters; zero provider calls",
+    "object put failure rolls back source and no model input is eligible",
+    "object succeeds then source database transaction aborts; durable uploaded reservation survives and identical retry reuses key without duplication",
+    "same accepted idempotency verifies retained bytes; missing or corrupt bytes fail instead of trusting PostgreSQL payload cache",
+    "source_read and current policy required; cross-tenant/direct-ID and unknown mapping denied",
+    "current source revocation, withdrawal, revision supersession and deletion deny segment fetch; historical object does not restore grants",
+    "verified current sources only reach observer dispatch/install guards; missing segment fails with zero runner calls",
+    "explicit deletion removes retained current object and logical restore manifest respects deletion journals",
+    "unaccepted uploaded orphan cleanup obeys reservation grace and refuses accepted/in-flight references",
+    "logical backup/restore contains matching individual segment objects and detects missing segment",
+    "existing SQLite general sources keep their prior standalone behavior without cloud object configuration"
+  ]
+}

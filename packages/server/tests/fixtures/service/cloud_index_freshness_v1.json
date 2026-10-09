@@ -1,0 +1,14 @@
+{
+  "version": "cloud-index-freshness-v1",
+  "accepted_updates": [
+    {"document_id": "doc-a", "revision_id": "revision-a2", "claim": {"title": "A", "lesson": "Updated location is /synthetic/a2.csv.", "applicability": "team"}},
+    {"document_id": "doc-b", "revision_id": "revision-b1", "claim": {"title": "B", "lesson": "Current location is /synthetic/b1.csv.", "applicability": "team"}}
+  ],
+  "expected": {
+    "after_reconcile": {"doc-a": "pending", "doc-b": "pending"},
+    "after_worker": {"doc-a": "searchable", "doc-b": "searchable"},
+    "provider_calls": 0,
+    "model_startup_calls": 0
+  },
+  "faults": ["crash_after_claim", "transient_embedding_failure", "poison_embedding_failure", "generation_replacement", "revision_replacement"]
+}

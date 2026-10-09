@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vaelius-client"
+version = "0.3.0"
+description = "Model-free agent capture and transport for Vaelius"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Vaelius contributors"}]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.urls]
+Homepage = "https://vaelius.com"
+Repository = "https://github.com/seankerman/vaelius"
+Issues = "https://github.com/seankerman/vaelius/issues"
+
+[project.scripts]
+vaelius-client = "agentclient.cli:vaelius_main"
+agentclient = "agentclient.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentclient*"]
+
+[tool.setuptools.package-data]
+agentclient = ["BUILD_ID.json"]

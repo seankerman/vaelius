@@ -1,0 +1,43 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed location /synthetic/current.csv. Bob did not approve his alternative.",
+        "title": "Synthetic verification facets"
+      },
+      "expected": false,
+      "id": "verified-other-operation-negation",
+      "query": "Compare the confirmed location for Project Sable 7 with Bob's unverified alternative."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed location /synthetic/current.csv. Bob did not verify his alternative.",
+        "title": "Synthetic verification facets"
+      },
+      "expected": true,
+      "id": "verified-matching-negation",
+      "query": "Compare the confirmed location for Project Sable 7 with Bob's unverified alternative."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed location /synthetic/current.csv. Bob did not verify his alternative.",
+        "title": "Synthetic verification facets"
+      },
+      "expected": false,
+      "id": "confirmed-other-operation-negation",
+      "query": "Compare the confirmed location for Project Sable 7 with Bob's unconfirmed alternative."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a confirmed location /synthetic/current.csv. Bob did not confirm his alternative.",
+        "title": "Synthetic verification facets"
+      },
+      "expected": true,
+      "id": "confirmed-matching-negation",
+      "query": "Compare the confirmed location for Project Sable 7 with Bob's unconfirmed alternative."
+    }
+  ],
+  "classification": "authored facet-scoped negative verification pairs before guard tightening; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-verification-facets-v1"
+}

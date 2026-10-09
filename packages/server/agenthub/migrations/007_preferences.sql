@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS cloud_preferences(origin_id TEXT PRIMARY KEY,document_id TEXT NOT NULL REFERENCES knowledge_documents(document_id),revision_id TEXT NOT NULL REFERENCES knowledge_revisions(revision_id),tenant TEXT NOT NULL,owner TEXT NOT NULL,preference_key TEXT NOT NULL,scope TEXT NOT NULL CHECK(scope IN ('user','project','task')),project TEXT,task TEXT,valid_from DOUBLE PRECISION NOT NULL,valid_until DOUBLE PRECISION,source_id TEXT NOT NULL REFERENCES enterprise_sources(id));
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_preference_revision ON cloud_preferences(document_id,revision_id);
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_preference_current ON cloud_preferences(tenant,owner,preference_key,scope,COALESCE(project,''),COALESCE(task,'')) WHERE valid_until IS NULL;

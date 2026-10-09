@@ -1,0 +1,8 @@
+{
+  "sha256": "62b182b8866922a76a7d1c1b9150e5b385982e30c0160fb9f90f7eded071ad35",
+  "frozen_at": 1790457055.4524858,
+  "classification": "authored tuned synthetic compound-planner regression, not held-out",
+  "cases": 14,
+  "production_before_sha256": "d80938276480d162fe291ce89e4d351f53c3d1e807be1d3da438c029f12318e8",
+  "evidence": "Fixture before planner edit; only known-development failure inspected. V4/V5/freshV6 unread."
+}

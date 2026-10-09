@@ -1,0 +1,12 @@
+{
+  "version": "staging-execution-walltime-v1",
+  "source": "synthetic loopback HTTP server; no provider calls",
+  "timeout_seconds": 1,
+  "maximum_return_seconds": 1.6,
+  "blocked_headers_seconds": 3,
+  "trickle_interval_seconds": 0.25,
+  "trickle_chunks": 12,
+  "cancel_after_seconds": 0.2,
+  "expected_http_attempts": 1,
+  "expected_late_commit": false
+}

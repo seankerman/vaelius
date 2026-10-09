@@ -1,0 +1,449 @@
+{
+  "development_sha256": "6679c5f321517c31b4352d9ddedf9830bb1c8c32e39b2918c8da82fac42e4d2d",
+  "records": [
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-reversion-e1",
+      "source_quote_sha256": "68c14c632d0d65703aabebbb2a1bac243386bf9d010188dcbcab1db9e1f064b5",
+      "temporal": {
+        "predicate": "route",
+        "subject": "Cedar routing",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "route A"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-reversion-e2",
+      "source_quote_sha256": "acc5297d18f9b311a8af0c1e288390e2a0c60af912fc66e5b228bba612baa89e",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-reversion-e1",
+          "relation": "supersedes",
+          "reviewed": true
+        },
+        "predicate": "route",
+        "subject": "Cedar routing",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "route B"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-reversion-e3",
+      "source_quote_sha256": "d268f3ccd4eb576bf3a8a0f469d6b8376f89d6a37711499dc75ced7587ba8174",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-reversion-e2",
+          "relation": "supersedes",
+          "reviewed": true
+        },
+        "predicate": "route",
+        "subject": "Cedar routing",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "route A"
+      }
+    },
+    {
+      "claim_kind": "reported_unverified",
+      "episode_kind": "occurrence",
+      "event_id": "dev-corrected_report-e1",
+      "source_quote_sha256": "dd1ebe0e43ddd602d10eecbceea306ec023d58eda1bd7f106fed0e09cf256091",
+      "temporal": {
+        "predicate": "completion",
+        "subject": "Elm migration",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "completed successfully"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-corrected_report-e2",
+      "source_quote_sha256": "75711a1941883ba150292047bb8f2f482079534f616ddab64b32cc555a219bfe",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-corrected_report-e1",
+          "relation": "corrects",
+          "reviewed": true
+        },
+        "predicate": "completion",
+        "subject": "Elm migration",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "failed"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-corrected_report-e3",
+      "source_quote_sha256": "1a4a7f00fb69f1c475d09ae1d66fcb911f33c57fc23ca19600784d5acb3d395b",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-corrected_report-e2",
+          "relation": "supersedes",
+          "reviewed": true
+        },
+        "predicate": "completion",
+        "subject": "Elm migration",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "complete"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-late_import-e1",
+      "source_quote_sha256": "cd399d92a98b33ec93fdb4fea2a7fba480e2aeb178d098a0efb2549f1afcf386",
+      "temporal": {
+        "predicate": "batch size",
+        "subject": "Birch queue",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "20-item"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-late_import-e2",
+      "source_quote_sha256": "04f3f87c1e7be75b8b4a66af7bbac71f62c292919e8732f00f228572e8e15072",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-late_import-e1",
+          "relation": "supersedes",
+          "reviewed": true
+        },
+        "predicate": "batch size",
+        "subject": "Birch queue",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "30-item"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-late_import-e3",
+      "source_quote_sha256": "ab751ccfb5ccf61781d8211f22d8d567def06dd8e08104517c055b40b9667817",
+      "temporal": {
+        "predicate": "batch size",
+        "subject": "Birch queue",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "30-item"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-unknown_dst-e1",
+      "source_quote_sha256": "b487ab4fdbc19f64d589d6ffb6b693b8366d777a9aba2ff46c1f41b3923bdc85"
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-unknown_dst-e2",
+      "source_quote_sha256": "0caaf13fb42a9abae0ad527966017af56fd23cad6232e7b9b438bdc6835912cf"
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-unknown_dst-e3",
+      "source_quote_sha256": "6b7b4d599e81889bf7b0f01d3c32a586973c8a1886f9101c1e6cd50a8dfdf583"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-replay_repeat-e1",
+      "source_quote_sha256": "59036df82d464e8e2305401d3a55147de071642e59e81a555c911cb0dfed836a"
+    },
+    {
+      "claim_kind": "none",
+      "episode_kind": "transport_receipt",
+      "event_id": "dev-replay_repeat-e2",
+      "source_quote_sha256": "35be79e9c91c0f6185b4792dfd576b33649c9816ec6cdad03f88ca11bea40336"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-replay_repeat-e3",
+      "source_quote_sha256": "526fc526269b103165466ed2afb8a483cd8888887522567a05f8ced547a8d10d"
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-quoted_lineage-e1",
+      "source_quote_sha256": "9933cdc2f49cb16004723fbfe38db783a0915854a344704449590b881a907663",
+      "temporal": {
+        "predicate": "duration",
+        "subject": "Maple inspection",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "12 minutes per unit"
+      }
+    },
+    {
+      "claim_kind": "quotation_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-quoted_lineage-e2",
+      "source_quote_sha256": "12a8eaeadc5bc9a3e1ed94a5b27ef567372f46c9bad8416447ebc1e92068895d"
+    },
+    {
+      "claim_kind": "quotation_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-quoted_lineage-e3",
+      "source_quote_sha256": "40b5e406ce77a54f4e804f8f228ff59dd8460aec0ae144558e5afc7139279e76"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-proposal_attempt-e1",
+      "source_quote_sha256": "7b1d56c6aab7d308f21e2881bb80ffbc7a80a2a1279ee8f0c3b1bd46608ef285"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-proposal_attempt-e2",
+      "source_quote_sha256": "bef16d817dfd9700dbf9f61f1b26fa040cac725001cb922c6e9d05c292aeb590"
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-proposal_attempt-e3",
+      "source_quote_sha256": "06591acbbdc152c0cfffe3f979d2be6f3ad7ee1be37be2597332441f55ab8851",
+      "temporal": {
+        "predicate": "window",
+        "subject": "Juniper release",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "Thursday"
+      }
+    },
+    {
+      "claim_kind": "conflicted_report",
+      "episode_kind": "occurrence",
+      "event_id": "dev-conflicts-e1",
+      "source_quote_sha256": "478bd64e7f0005618b44aa7e113108dc616d6b6917a7ea182f4849c40559ff92",
+      "temporal": {
+        "predicate": "amount",
+        "subject": "Willow v2 shared budget",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "80 EUR"
+      }
+    },
+    {
+      "claim_kind": "conflicted_report",
+      "episode_kind": "occurrence",
+      "event_id": "dev-conflicts-e2",
+      "source_quote_sha256": "767759cb67e23f362df652c2a1f1acb5849031cb74e1853232ec437374e6c452",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-conflicts-e1",
+          "relation": "conflicts",
+          "reviewed": true
+        },
+        "predicate": "amount",
+        "subject": "Willow v2 shared budget",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "95 EUR"
+      }
+    },
+    {
+      "claim_kind": "conflicted_report",
+      "episode_kind": "occurrence",
+      "event_id": "dev-conflicts-e3",
+      "source_quote_sha256": "530d23b6ba45e86a118472b0bc4a9b9861b1ff4f5c15c9c53ba11b89857488a4",
+      "temporal": {
+        "change": {
+          "prior_event_id": "dev-conflicts-e2",
+          "relation": "conflicts",
+          "reviewed": true
+        },
+        "predicate": "amount",
+        "subject": "Willow v2 shared budget",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "70 GBP"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-conflicts-e4",
+      "source_quote_sha256": "ea60d1026614848160dcadb909a76924262605b6a472740aa79499596defe026",
+      "temporal": {
+        "predicate": "amount",
+        "subject": "Willow v3 sandbox budget",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "120 USD"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-deep_history-e1",
+      "source_quote_sha256": "060ff6588760494d0bcd71bc94c5f9e52da157a266d7ff9908cb3f367b87c3ba",
+      "temporal": {
+        "predicate": "method",
+        "subject": "Poplar archive lookup",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "three-letter shelf tag"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-deep_history-e2",
+      "source_quote_sha256": "b0253d4344b25208181e6956dbec4c04bb6c9b68be0722e6a36c37f468dd0c39",
+      "temporal": {
+        "predicate": "method",
+        "subject": "Poplar archive lookup",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "short alphabetic rack code"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-identity_private-e1",
+      "source_quote_sha256": "5fd52dc5a3a1846015d15efdbba7e392aa29677a3269e5811caeb512c04a21b5",
+      "temporal": {
+        "predicate": "color",
+        "subject": "Larch-team dashboard",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "green"
+      }
+    },
+    {
+      "claim_kind": "private_preference",
+      "episode_kind": "occurrence",
+      "event_id": "dev-identity_private-e2",
+      "source_quote_sha256": "f887c1bee8e980c272ad50486225c1a2461233daf70f6b4f275925a9c4057831",
+      "temporal": {
+        "predicate": "color",
+        "subject": "Larch-personal dashboard",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "violet"
+      }
+    },
+    {
+      "claim_kind": "operative",
+      "episode_kind": "occurrence",
+      "event_id": "dev-identity_private-e3",
+      "source_quote_sha256": "49ec9fb23ad99d40f283a7e7fc48709d712453a0fdffa2b5f51d604923b9f5b5",
+      "temporal": {
+        "predicate": "color",
+        "subject": "Larch-team dashboard",
+        "time_basis": "authored_record_not_source_proven",
+        "value": "green"
+      }
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-concurrency_lifecycle-e1",
+      "source_quote_sha256": "e2e5ca71345fa86d82ea7f9b4b2648eaa520987524bf1e54104cca97f443a816"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-concurrency_lifecycle-e2",
+      "source_quote_sha256": "5ce92a592ded7a7eb4a30ff313250af3177b9c8669ec4dec4ba3f8247b262e85"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-concurrency_lifecycle-e3",
+      "source_quote_sha256": "bb27fdcb508087b7eb6ec634b69f24b82ddc540ef3c5e8f7fc24dec17aa8aa50"
+    },
+    {
+      "claim_kind": "policy_event",
+      "episode_kind": "occurrence",
+      "event_id": "dev-concurrency_lifecycle-e4",
+      "source_quote_sha256": "4c8f73fce168b4eebf27e28777b2a4cb2bd4e46814169770543c886f17e3e871"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e01",
+      "source_quote_sha256": "019b3672cf1d31669e265ad0a071908fa1e2f8523fb8f33a2a0107d7a1fcc0bd"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e02",
+      "source_quote_sha256": "53c5881989a81b2dee5d56049e8c7b36bdee404e149101df6d32c592eecbbc50"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e03",
+      "source_quote_sha256": "e44d2224a83e45fab6ac7564d3f242b5e115501d8b01ef490fd6c563ce417678"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e04",
+      "source_quote_sha256": "e7ed161333a6141eae0ea1c550ce7f6beaab7668d7ced5e0043643162ed3270d"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e05",
+      "source_quote_sha256": "f4655e5823eea5e9d9d59a0afb7e830b64d99fbe59033964fdb13192db7607f0"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e06",
+      "source_quote_sha256": "a43be3712e4fc71ffaf25799246d2b3c2ed819cc626de6a5c1d57390e84d7b14"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e07",
+      "source_quote_sha256": "16a134537809cf66000f0c8f335976bd5f46d751b964d5861dc42ea2ef206020"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e08",
+      "source_quote_sha256": "fdeda074c985f669eaa96eddecb174a05d8e927e997b95d568b1a03785adb5ad"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e09",
+      "source_quote_sha256": "03f51ea66fcaceea4116a6a39233677237070c67a7e3b464c525a51dca1fab52"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e10",
+      "source_quote_sha256": "87ae275da3d208fc66f262adebd1e6881f5feca915ccacfbbf4df36faef4b05f"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e11",
+      "source_quote_sha256": "224b6776edc46b716f781d750cc4106cc65c33d0c70b90fc672291be8f5f5f07"
+    },
+    {
+      "claim_kind": "activity_only",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-e12",
+      "source_quote_sha256": "b53cb71cd59ede11dc67d14c470ee4d78067b708f4d684945bfc517c2e552a2a"
+    },
+    {
+      "claim_kind": "original_document",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-document1",
+      "source_quote_sha256": "56eb9868c57f2aaadad8acac29e96bffbbcc3ba5f7e3f2aa26fdc6d3707429f0"
+    },
+    {
+      "claim_kind": "original_document",
+      "episode_kind": "occurrence",
+      "event_id": "dev-long_pages-document2",
+      "source_quote_sha256": "3e4315a5db488a2c9111d233984808cb25ac67de7fff5c2a5fbd4d848caa6143"
+    }
+  ],
+  "version": 1
+}

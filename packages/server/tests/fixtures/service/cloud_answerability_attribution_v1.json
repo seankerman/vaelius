@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves headers while Bob chose JSON because it preserves nested records.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": false,
+      "id": "same-sentence-wrong-choice",
+      "query": "Why did Bob choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves headers while Bob chose JSON because it preserves nested records.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": true,
+      "id": "same-sentence-right-choice",
+      "query": "Why did Bob choose JSON?"
+    },
+    {
+      "claim": {
+        "lesson": "Bob rejected CSV because the importer cannot parse it.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": false,
+      "id": "rejected-option-is-not-chosen",
+      "query": "Why did Bob choose CSV?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a proposed budget of $5000.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": false,
+      "id": "proposed-budget-not-approved-status",
+      "query": "Is there an approved budget for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has a proposed budget of $5000 that has not been approved.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": true,
+      "id": "negative-budget-status",
+      "query": "Is there an approved budget for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice reported the verified Project Sable 7 path /synthetic/current.csv while Bob did not verify his different path.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": true,
+      "id": "same-sentence-unrelated-uncertainty",
+      "query": "Where is the verified path reported by Alice for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice reported the verified Project Sable 7 path /synthetic/current.csv while Bob did not verify his different path.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": false,
+      "id": "same-sentence-uncertain-actor",
+      "query": "Give the verified path reported by Bob for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has no confirmed spend. Project Juniper 9 has confirmed spend of $5000.",
+        "title": "Synthetic attributed fact"
+      },
+      "expected": false,
+      "id": "other-project-cannot-donate-money",
+      "query": "What confirmed spend exists for Project Sable 7?"
+    }
+  ],
+  "classification": "authored paired attribution regressions before additional clause guard repair; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-answerability-attribution-v1"
+}

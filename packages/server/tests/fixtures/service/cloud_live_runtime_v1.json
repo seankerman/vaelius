@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "allowed": true,
+      "health": {
+        "build_ids": {
+          "agentclient": "client-current",
+          "agenthub": "hub-current"
+        },
+        "models": "idle",
+        "service": "AgentHub"
+      }
+    },
+    {
+      "allowed": false,
+      "health": {
+        "build_ids": {
+          "agentclient": "client-current",
+          "agenthub": "hub-old"
+        },
+        "models": "idle",
+        "service": "AgentHub"
+      }
+    },
+    {
+      "allowed": false,
+      "health": {
+        "models": "idle",
+        "service": "AgentHub"
+      }
+    }
+  ],
+  "classification": "synthetic transport invariant frozen before behavior change",
+  "expected_build_ids": {
+    "agentclient": "client-current",
+    "agenthub": "hub-current"
+  },
+  "on_mismatch": "no registry/project/source/worker/ledger allocation mutation",
+  "provider_calls": 0,
+  "version": "cloud-live-runtime-v1"
+}

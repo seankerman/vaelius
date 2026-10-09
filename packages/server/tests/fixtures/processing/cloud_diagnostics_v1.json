@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "reason": "service_unavailable_or_denied",
+      "capture_gap": false
+    },
+    {
+      "reason": "receipt_unconfirmed",
+      "capture_gap": false
+    },
+    {
+      "reason": "boundary_unavailable_or_untrusted",
+      "capture_gap": false
+    },
+    {
+      "reason": "structured_capture_backpressure_or_invalid",
+      "capture_gap": true
+    },
+    {
+      "reason": "excluded_or_truncated",
+      "capture_gap": true
+    }
+  ]
+}

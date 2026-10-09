@@ -1,0 +1,14 @@
+ALTER TABLE enterprise_credentials ADD COLUMN IF NOT EXISTS expires_at DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE enterprise_credentials ADD COLUMN IF NOT EXISTS identity_issuer TEXT;
+ALTER TABLE enterprise_credentials ADD COLUMN IF NOT EXISTS identity_subject TEXT;
+ALTER TABLE enterprise_credentials ADD COLUMN IF NOT EXISTS identity_provider TEXT;
+ALTER TABLE enterprise_credentials ADD COLUMN IF NOT EXISTS rotated_from TEXT;
+CREATE TABLE IF NOT EXISTS cloud_login_states(digest TEXT PRIMARY KEY,request_json TEXT NOT NULL,expires_at DOUBLE PRECISION NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_source_acl(source_id TEXT PRIMARY KEY REFERENCES enterprise_sources(id),state TEXT NOT NULL CHECK(state IN ('current','unknown','stale')),valid_until DOUBLE PRECISION NOT NULL,epoch BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_directory_users(external_id TEXT PRIMARY KEY,principal TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_directory_group_projects(external_id TEXT NOT NULL,project TEXT NOT NULL,PRIMARY KEY(external_id,project));
+CREATE TABLE IF NOT EXISTS cloud_directory_resources(kind TEXT NOT NULL,external_id TEXT NOT NULL,sequence BIGINT NOT NULL,active INTEGER NOT NULL,payload_json TEXT NOT NULL,requires_reconcile INTEGER NOT NULL,PRIMARY KEY(kind,external_id));
+CREATE TABLE IF NOT EXISTS cloud_directory_events(key TEXT PRIMARY KEY,payload_hash TEXT NOT NULL,requires_reconcile INTEGER NOT NULL,created DOUBLE PRECISION NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_explicit_memberships(project TEXT NOT NULL,principal TEXT NOT NULL,PRIMARY KEY(project,principal));
+CREATE TABLE IF NOT EXISTS cloud_directory_memberships(project TEXT NOT NULL,principal TEXT NOT NULL,PRIMARY KEY(project,principal));
+INSERT INTO cloud_explicit_memberships(project,principal) SELECT project,principal FROM enterprise_memberships WHERE active=1 ON CONFLICT DO NOTHING;

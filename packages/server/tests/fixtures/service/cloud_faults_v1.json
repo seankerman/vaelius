@@ -1,0 +1,15 @@
+{
+  "version": "cloud_faults_v1",
+  "kind": "authored supplementary failure invariants, not held-out or real outage acceptance",
+  "cases": [
+    "slow_object_read_then_current_policy_revoke_denies_before_return",
+    "two_independent_query_processes_and_source_ingestion_progress",
+    "one_tenant_unreachable_transport_does_not_reconfigure_other_tenant"
+  ],
+  "limits": {
+    "query_processes": 2,
+    "queries_per_process": 10,
+    "max_seconds_per_process": 20,
+    "slow_object_wait_seconds": 5
+  }
+}

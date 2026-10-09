@@ -1,0 +1,7 @@
+{
+  "sha256": "18cd7e15033f96d764227114b41679bd7821e589d59c213613343ec59507fff2",
+  "frozen_at": 1790453356.996635,
+  "cases": 14,
+  "classification": "authored paired regressions from consumed V3 failures before repair; not held-out",
+  "provider_calls": 0
+}

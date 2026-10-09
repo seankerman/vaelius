@@ -1,0 +1,31 @@
+{
+  "version": "cloud-execution-deadline-v1",
+  "classification": "synthetic deterministic regression; no provider dispatch",
+  "timeout_seconds": 2,
+  "slow_stream": {
+    "chunk_elapsed_seconds": 1,
+    "chunks": ["{\"status\":", "\"completed\",", "\"output\":[]}"],
+    "unbounded_previous_elapsed_seconds": 3,
+    "expected_error": "dispatch_uncertain_timeout",
+    "expected_elapsed_seconds": 2,
+    "expected_chunks_read": 2
+  },
+  "headers_past_deadline": {
+    "elapsed_seconds": 3,
+    "expected_error": "dispatch_uncertain_timeout",
+    "expected_chunks_read": 0
+  },
+  "cancel_before_dispatch": {
+    "expected_error": "cancelled_before_dispatch",
+    "expected_http_attempts": 0
+  },
+  "cancel_at_stream_end": {
+    "expected_error": "dispatch_uncertain_cancelled",
+    "expected_http_attempts": 1
+  },
+  "normal_response": {
+    "chunk_elapsed_seconds": 0.25,
+    "expected_elapsed_seconds": 0.75,
+    "expected_http_attempts": 1
+  }
+}

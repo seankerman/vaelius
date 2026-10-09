@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "corpus_sha256": "a2a5ce81597e10c3e4cdf24d5bf945393efc55c42a513cb6e2eb7f0f62c05c11",
+  "split_sha256": {
+    "development": "0b017b0c712c06466645f1d2b3dbfbae83235736e8fd30bf380ba254c855a071",
+    "confirmation": "0b6cd6f912e2c6f9e0e6bf89383ebfdf7da2f43af2d6a5aef22b49d92ff753ac"
+  },
+  "case_count": 18,
+  "development_cases": 12,
+  "confirmation_cases": 6,
+  "created_before_live_evaluation": true,
+  "authored_cases_are_not_blind_holdout": true,
+  "limits": "All source text is synthetic. Development cases may be used for prompt iteration. Confirmation cases were frozen before their first Luna call but were authored in this workspace, so they are regression confirmation rather than independent blind holdout evidence."
+}

@@ -1,0 +1,7 @@
+{
+  "classification": "synthetic rollback harness regression; development evidence",
+  "version": "cloud_rollback_v1",
+  "tables": ["enterprise_sources", "enterprise_lifecycle", "knowledge_documents", "knowledge_revisions", "enterprise_audit", "enterprise_deletion_journal", "enterprise_memberships", "backend_connections"],
+  "operations": ["fingerprint_real_schema", "post_baseline_withdrawal_changes_fingerprint", "read_only_probe_preserves_current_authority"],
+  "provider_calls": 0
+}

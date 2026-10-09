@@ -1,0 +1,18 @@
+{
+  "version": "cloud_refresh_v1",
+  "kind": "authored policy invariant fixtures frozen before batching; not held-out",
+  "cases": [
+    "known_direct_member_and_observation_provenance",
+    "all_active_revision_support_sources_required",
+    "episode_source_ids_backend_dependencies_related_document_support_and_dependencies",
+    "missing_source_denies_registration",
+    "inactive_source_denies_registration",
+    "cross_project_or_tenant_denies_registration",
+    "no_members_denies_registration",
+    "building_generation_denies_registration",
+    "blocked_document_does_not_reactivate",
+    "building_document_reactivates_only_with_valid_sources",
+    "repeat_registration_preserves_dependency_union",
+    "100k_existing_records_no_per_document_roundtrips"
+  ]
+}

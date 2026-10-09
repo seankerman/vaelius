@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vaelius-server"
+version = "0.3.0"
+description = "PostgreSQL shared knowledge service for people and agents"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Vaelius contributors"}]
+requires-python = ">=3.12"
+dependencies = ["vaelius-client==0.3.0"]
+
+[project.optional-dependencies]
+semantic = ["numpy==2.5.3", "onnxruntime==1.30.0", "tokenizers==0.23.2"]
+cloud = [
+  "mcp==2.3.0",
+  "psycopg[binary]==3.2.10", "starlette==0.48.0", "uvicorn==0.35.0",
+  "boto3==1.43.103", "pypdf==6.19.0", "python-docx==1.2.0",
+  "joserfc==1.7.5", "authlib==1.8.0", "requests==2.34.2",
+  "jsonschema==4.26.0",
+]
+cloud-test = ["moto[server]==5.2.3", "httpx==0.28.1"]
+
+[project.urls]
+Homepage = "https://vaelius.com"
+Repository = "https://github.com/seankerman/vaelius"
+Issues = "https://github.com/seankerman/vaelius/issues"
+
+[project.scripts]
+vaelius = "agenthub.cloud_local:main"
+agenthub = "agenthub.cloud_local:main"
+
+[tool.setuptools.packages.find]
+include = ["agenthub*"]
+
+[tool.setuptools.package-data]
+agenthub = ["CLIENT_PIPELINE_PIN.json", "BUILD_ID.json", "migrations/*.sql"]

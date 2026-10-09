@@ -1,0 +1,7 @@
+{
+  "sha256": "03b3f118eb29432e1ef8f794e541626d13429f52602f0169ae363349c6f996fa",
+  "frozen_at": 1790454904.506804,
+  "cases": 14,
+  "classification": "actual synthetic live regression and canonical compiled-record pairs frozen before structured evidence guard; not held-out",
+  "provider_calls": 0
+}

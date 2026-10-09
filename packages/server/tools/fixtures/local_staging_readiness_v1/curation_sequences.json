@@ -1,0 +1,34 @@
+{
+  "version": "staging-curation-sequences-v1",
+  "provenance": "New deliberately synthetic authored conversation sequences. No private import, live calls or extraction claim.",
+  "project": "maple",
+  "cases": [
+    {"id": "routine", "session": "staging-chat", "turn": "1", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "routine-u", "prompt": "Check the process status."},
+      {"hook_event_name": "PostToolUse", "event_id": "routine-t", "tool_name": "exec_command", "tool_input": {"cmd": "status"}, "tool_response": "routine status only; still running", "exit_code": 0},
+      {"hook_event_name": "Stop", "event_id": "routine-s", "last_assistant_message": "It is still running."}
+    ], "expected": {"durable": [], "non_durable": ["process status", "routine command"], "uncertainty": []}},
+    {"id": "decision", "session": "staging-chat", "turn": "2", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "decision-u", "prompt": "Use CSV because it preserves a stable header."},
+      {"hook_event_name": "Stop", "event_id": "decision-s", "last_assistant_message": "The chosen CSV format retains the stable header."}
+    ], "expected": {"durable": [{"fact": "User chose CSV", "actor": "user", "quote": "Use CSV because it preserves a stable header.", "event_id": "decision-u", "rationale": "because it preserves a stable header."}], "non_durable": [], "uncertainty": []}},
+    {"id": "location", "session": "staging-chat", "turn": "3", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "location-u", "prompt": "Save the reviewed Slate dataset."},
+      {"hook_event_name": "PostToolUse", "event_id": "location-t", "tool_name": "save_file", "tool_use_id": "save-slate", "tool_input": {"path": "/Users/demo/My Data/slate-reviewed.csv"}, "tool_response": {"status": "saved"}, "exit_code": 0},
+      {"hook_event_name": "Stop", "event_id": "location-s", "last_assistant_message": "Saved the reviewed Slate dataset."}
+    ], "expected": {"durable": [{"fact": "Slate dataset saved", "actor": "agent", "quote": "/Users/demo/My Data/slate-reviewed.csv", "event_id": "location-t", "location": "/Users/demo/My Data/slate-reviewed.csv"}], "non_durable": ["tool call envelope"], "uncertainty": []}},
+    {"id": "correction", "session": "staging-chat", "turn": "4", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "correction-u", "prompt": "Move Slate into the final reviewed folder."},
+      {"hook_event_name": "PostToolUse", "event_id": "correction-t", "tool_name": "exec_command", "tool_input": {"cmd": "move slate"}, "tool_response": "Moved Slate dataset to reviewed/slate-final.csv.", "exit_code": 0},
+      {"hook_event_name": "Stop", "event_id": "correction-s", "last_assistant_message": "The old staging location is superseded."}
+    ], "expected": {"durable": [{"fact": "Slate moved", "actor": "agent", "quote": "Moved Slate dataset to reviewed/slate-final.csv.", "event_id": "correction-t", "location": "reviewed/slate-final.csv"}], "non_durable": [], "uncertainty": ["No source supplies an explicit event date"]}},
+    {"id": "preferences", "session": "staging-chat", "turn": "5", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "preference-u", "prompt": "I prefer CSV exports. My coworker Mira prefers JSON exports. For this task use JSON."},
+      {"hook_event_name": "Stop", "event_id": "preference-s", "last_assistant_message": "I will use JSON for this task."}
+    ], "expected": {"durable": [{"fact": "Owner prefers CSV", "actor": "user", "quote": "I prefer CSV exports.", "event_id": "preference-u"}], "non_durable": ["Mira preference must not become the owner's preference", "one-task JSON instruction must not replace permanent default"], "uncertainty": ["Mira's preference is a reported assertion, not verified owner identity"]}},
+    {"id": "incomplete-handoff", "session": "staging-later-chat", "turn": "6", "events": [
+      {"hook_event_name": "UserPromptSubmit", "event_id": "handoff-u", "prompt": "Explain why the earlier Slate export used CSV."},
+      {"hook_event_name": "Stop", "event_id": "handoff-s", "expected_events": ["handoff-u", "missing-handoff-tool", "handoff-s"], "last_assistant_message": "Capture omitted one tool event; no execution outcome is verified."}
+    ], "expected": {"durable": [], "non_durable": ["unverified execution outcome"], "uncertainty": ["incomplete_capture", "previous session rationale requires original prior evidence"]}}
+  ]
+}

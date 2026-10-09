@@ -1,0 +1,25 @@
+{
+  "classification": "synthetic development fixture frozen before operator behavior",
+  "connection": "maintenance-agent",
+  "correction_body": "The synthetic dataset is now at /tmp/current-maple.csv.",
+  "expected": {
+    "connection_refresh_narrowing_only": true,
+    "hold_fences_old_claim": true,
+    "reconcile_attempts": 1,
+    "retained_backups_preserved": true,
+    "retire_requires_explicit_database": true,
+    "retry_never_dispatches": true,
+    "route_disabled_before_drop": true,
+    "source_owner_only": true
+  },
+  "jobs": [
+    "selected",
+    "unselected"
+  ],
+  "max_jobs": 1,
+  "project": "maple",
+  "provider_calls": 0,
+  "source_body": "The synthetic dataset is saved at /tmp/maple.csv.",
+  "tenant": "acme",
+  "version": "cloud_maintenance_v1"
+}

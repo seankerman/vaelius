@@ -1,0 +1,67 @@
+{
+  "all_curations_canonical_validated": 20,
+  "amended_utc": "2026-09-27T04:58:51.419198+00:00",
+  "amendment": "five newly authored decision records corrected to canonical decision/fact facets plus source-attributed rationale; original texts, source IDs, spans, revisions and sealed questions unchanged",
+  "amends_corpus_sha256": "d9b479d6bc8b3f79c0ac94731d3b651722bf3f806b085bbd8f81920884661150",
+  "author_separate_from_retrieval_developer": true,
+  "classification": "authored synthetic validation; not independent real-team held-out",
+  "confirmation_consumed": false,
+  "confirmation_sha256": "a41fea2bc3983d8e99ea3dcdfcd7f419d4250ac325e0bd2fb151979c086fb79f",
+  "corpus_path": "corpus-v2.json",
+  "corpus_sha256": "e6446aeef33224e122ce3c56ba003aeb3ae6b9e70955a1c28a4e588287a8646e",
+  "created_utc": "2026-09-27T04:38:55.014643+00:00",
+  "development_sha256": "3725fc7ebf87cb6a703266d8564052956b9f2bfd9c43e507e53aeca22bd3e2b0",
+  "new_substantive_scenarios": true,
+  "old_consumed_suite_replayed": false,
+  "regressions_sha256": "091c525d06bd4a1058fff1c4afe9d8f5d11b2248ef4eb6ed5ba436fd62cfa291",
+  "source_scenario_overlap_with_development": 0,
+  "summary": {
+    "scenario_groups": 24,
+    "source_kinds": {
+      "curated_memory": 20,
+      "native_document": 220
+    },
+    "sources": 240,
+    "splits": {
+      "confirmation": {
+        "families": {
+          "abstention": 6,
+          "artifact_location": 6,
+          "decisions_rationale": 6,
+          "exact_discovery": 6,
+          "long_documents_originals": 6,
+          "multiple_sources": 6,
+          "procedures": 6,
+          "semantic_paraphrase": 6,
+          "speaker_ownership": 6,
+          "time_changes": 6,
+          "user_preferences": 6,
+          "values_numbers": 6
+        },
+        "negative": 17,
+        "positive": 55,
+        "questions": 72
+      },
+      "development": {
+        "families": {
+          "abstention": 6,
+          "artifact_location": 6,
+          "decisions_rationale": 6,
+          "exact_discovery": 6,
+          "long_documents_originals": 6,
+          "multiple_sources": 6,
+          "procedures": 6,
+          "semantic_paraphrase": 6,
+          "speaker_ownership": 6,
+          "time_changes": 6,
+          "user_preferences": 6,
+          "values_numbers": 6
+        },
+        "negative": 17,
+        "positive": 55,
+        "questions": 72
+      }
+    }
+  },
+  "version": "local-staging-fixtures-v1"
+}

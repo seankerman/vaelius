@@ -1,0 +1,6 @@
+{
+  "corpus_sha256": "795d8348a7ed7103a238b3908bc376058a4d0223702f964fd72e6ff5af738fbe",
+  "case_count": 4,
+  "classification": "authored development evidence, not held out",
+  "frozen_before": "durable-memory-1 implementation and live model calls"
+}

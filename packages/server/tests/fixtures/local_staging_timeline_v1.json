@@ -1,0 +1,25 @@
+{
+  "version": "local-staging-timeline-v1",
+  "provenance": "Deliberately synthetic authored fixture; no source import or provider call.",
+  "project": "fixture",
+  "generation": "fixture-generation",
+  "episodes": [
+    {"session": "a-session", "turn": "export", "created": 100, "tools": ["export-t", "verify-t"]},
+    {"session": "b-session", "turn": "verify", "created": 100, "tools": ["review-t"]},
+    {"session": "c-session", "turn": "handoff", "created": 100, "tools": ["handoff-t"]},
+    {"session": "d-session", "turn": "old", "created": 90, "tools": ["old-t"]}
+  ],
+  "claim": "Saved Slate dataset at datasets/slate-reviewed.csv.",
+  "intent": "Verify the saved Slate dataset location.",
+  "artifact": {"name": "Slate dataset", "location": "datasets/slate-reviewed.csv"},
+  "duplicates": [{"source_id": "export-t", "span_id": "second-span-same-original"}],
+  "withdraw": "handoff-t",
+  "historical": "old-t",
+  "expected": {
+    "before": ["d-session/old", "a-session/export", "b-session/verify", "c-session/handoff"],
+    "after": ["a-session/export", "b-session/verify"],
+    "first_supports": ["export-t", "verify-t"],
+    "independent_support": false,
+    "event_day_known": false
+  }
+}

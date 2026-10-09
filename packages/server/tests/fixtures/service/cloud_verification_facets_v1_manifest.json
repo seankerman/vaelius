@@ -1,0 +1,6 @@
+{
+  "sha256": "90ea7c70333b02731651c88810ce26cccf240f46c9d95705028e6b9ada2ca793",
+  "frozen_at": 1790453576.119421,
+  "cases": 4,
+  "classification": "authored facet-scoped negative verification pairs before guard tightening; not held-out"
+}

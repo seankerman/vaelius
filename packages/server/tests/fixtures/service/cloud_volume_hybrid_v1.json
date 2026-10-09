@@ -1,0 +1,16 @@
+{
+  "version": "cloud_volume_hybrid_v1",
+  "kind": "authored supplementary non-exact hybrid volume workload, not held-out quality",
+  "model_key": "synthetic-volume-onehot-512-v1",
+  "tenant_selection": "query_index modulo two tenants",
+  "record_selection": "1+(query_index*7919) modulo seeded tenant records",
+  "query_template": "Where is the dataset for Volume Record {index:06d} saved?",
+  "requested_queries": 200,
+  "maximum_seconds": 60,
+  "correctness": [
+    "expected specific source path appears in delivered answer",
+    "actual vector channel exercised"
+  ],
+  "privacy": "existing canonical compiled/current authorization oracle",
+  "provider_calls": 0
+}

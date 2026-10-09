@@ -1,0 +1,33 @@
+{
+  "fixture": "cloud_confirmation_v6.json",
+  "fixture_sha256": "7def968701aa235959bb83b0227066ec56fd8313c2f50431d2b49ef2c289bbaf",
+  "frozen_at_unix": 1790457106.194921,
+  "frozen_before_evaluation": true,
+  "frozen_before_followup_behavior_change": true,
+  "source_fixture": "cloud_readiness_v1.json",
+  "source_fixture_sha256": "561c61b8dcfe0b727b17b14c64c7b213d1032bc5bd57aa9e353193041f9116fc",
+  "source_corpus_count": 60,
+  "queries": 30,
+  "positive_queries": 25,
+  "answerless_queries": 5,
+  "families": [
+    "document",
+    "semantic",
+    "cross_session",
+    "temporal",
+    "preference",
+    "abstention"
+  ],
+  "positive_source_ids_disjoint_from_v5": true,
+  "expected_facts_verified_in_original_source_text": true,
+  "independent_held_out": false,
+  "author_scope": "Fresh authored wordings and complement positive IDs on reused source/templates; source identities have appeared in earlier authored confirmations; not independent held-out evidence.",
+  "asset_boundary": "External tools fixture, excluded from installed runtime package.",
+  "during_authorship": {
+    "query_api_calls": 0,
+    "provider_calls": 0,
+    "model_calls": 0,
+    "current_development_queries_read": false,
+    "retrieval_implementation_read": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "classification": "synthetic regression from an actual receiving agent; development, not held-out",
+  "query": "Maple dataset current location and why we chose CSV",
+  "supplied_optional_filters": {"subject": "Maple", "as_of": "2026-09-26"},
+  "current_question": "Where is the Maple dataset now and why did we choose CSV?",
+  "historical_question": "Where was the Maple dataset as of 2026-09-26?",
+  "requirements": {
+    "query": ["question"],
+    "subject": ["exact", "omit"],
+    "as_of": ["historical", "omit", "current"]
+  },
+  "transport_policy": "Preserve explicitly supplied filters; never silently broaden a request."
+}

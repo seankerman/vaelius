@@ -1,0 +1,108 @@
+{
+  "version": "staging-retrieval-lane-v1",
+  "classification": "synthetic authored development regressions; not extraction or untouched confirmation",
+  "authorization_contract": {
+    "compare": "complete authorized document ID and active revision pairs, including reviewed releases, against the canonical current per-document policy oracle",
+    "dependencies": "zero dependencies deny; all linked dependencies must be currently readable; no permission cache; explicit release exceptions retain exact version binding",
+    "cases": [
+      "private owner versus other principal and administrator",
+      "team membership and active project",
+      "organization visibility and delegated project limits",
+      "multiple readable dependencies versus a single forbidden dependency",
+      "empty or removed dependency set",
+      "current, unknown and expired source ACL",
+      "empty connection readers, explicit readers and removed reader",
+      "stale connection freshness and inactive connection",
+      "mapped inactive generation",
+      "owner-private current preference and withdrawn or pending preference",
+      "explicit reviewed release then source-policy change",
+      "correction, withdrawal and revocation after candidate generation"
+    ]
+  },
+  "selection_cases": [
+    {
+      "id": "represented_actor",
+      "title": "Seal repair dialogue",
+      "source_owner": "alice",
+      "body": "Bob replaced the torn seal because it leaked dye. Alice photographed the undamaged spare.",
+      "questions": [
+        {"principal": "alice", "query": "Why did I replace the torn seal?", "answerable": false, "facets": []},
+        {"principal": "bob", "query": "Why did I replace the torn seal?", "answerable": true, "facets": [{"kind": "rationale", "actor": "bob", "value": "it leaked dye"}]},
+        {"principal": "alice", "query": "Why did Bob replace the torn seal?", "answerable": true, "facets": [{"kind": "rationale", "actor": "bob", "value": "it leaked dye"}]}
+      ]
+    },
+    {
+      "id": "reason_missing",
+      "title": "Indicator choice",
+      "source_owner": "alice",
+      "body": "Alice selected the amber indicator. The reason was not recorded.",
+      "questions": [
+        {"principal": "alice", "query": "Why did Alice select the amber indicator?", "answerable": false, "facets": []},
+        {"principal": "alice", "query": "Which indicator did Alice select?", "answerable": true, "facets": [{"kind": "choice", "actor": "alice", "value": "amber indicator"}]}
+      ]
+    },
+    {
+      "id": "requested_procedure",
+      "title": "Nozzle servicing",
+      "source_owner": "alice",
+      "body": "To depressurize the nozzle before servicing, close the inlet valve, then vent the chamber, and finally verify the gauge reads zero.",
+      "questions": [
+        {"principal": "bob", "query": "How do I depressurize the nozzle before service?", "answerable": true, "facets": [{"kind": "procedure", "actor": null, "value": "close the inlet valve"}, {"kind": "procedure", "actor": null, "value": "vent the chamber"}, {"kind": "procedure", "actor": null, "value": "verify the gauge reads zero"}]}
+      ]
+    },
+    {
+      "id": "missing_numeric_fact",
+      "title": "Nozzle operating pressure discussion",
+      "source_owner": "alice",
+      "body": "This discussion lists nozzle pressure options. An approved operating pressure was never recorded.",
+      "questions": [
+        {"principal": "alice", "query": "What is the approved operating pressure for the nozzle?", "answerable": false, "facets": []}
+      ]
+    },
+    {
+      "id": "quantity_not_identifier",
+      "title": "Exposure allocation",
+      "source_owner": "alice",
+      "body": "The approved exposure allocation is 300000 frames for the photometer.",
+      "questions": [
+        {"principal": "alice", "query": "Does the photometer allocation exceed 250000 frames?", "answerable": true, "facets": [{"kind": "quantity", "actor": null, "value": "300000 frames"}]}
+      ]
+    },
+    {
+      "id": "operative_preference",
+      "title": "Meeting preference notes",
+      "source_owner": "alice",
+      "body": "Alice heard that Bob sometimes starts with an unsigned checklist. Alice prefers reviewing the access list first.",
+      "questions": [
+        {"principal": "alice", "query": "What is Bob's private audit preference?", "answerable": false, "facets": []},
+        {"principal": "alice", "query": "What did Alice report hearing about Bob's checklist order?", "answerable": true, "facets": [{"kind": "reported", "actor": "alice", "value": "Bob sometimes starts with an unsigned checklist"}]}
+      ]
+    }
+  ],
+  "compound": {
+    "sources": [
+      {"title": "Cold box contents", "body": "The cold box contains three culture plates and one blank control."},
+      {"title": "Cold box release", "body": "Bob authorized the cold box release only after the blank control stayed clear for 48 hours."}
+    ],
+    "query": "What plates and controls are in the cold box, and when may it be released?",
+    "required_facets": [{"kind": "inventory", "value": "three culture plates", "source": 0}, {"kind": "inventory", "value": "one blank control", "source": 0}, {"kind": "release_condition", "value": "48 hours", "source": 1}],
+    "missing_second_source": "partial evidence may be reported but must not be labeled a complete answer"
+  },
+  "originals": {
+    "title": "Donation schedule",
+    "versions": [
+      {"external_id": "signed-donation", "version": "1", "filename": "signed-board.md", "bytes": "# Donation schedule\nThe signed museum board schedule assigns pickup to Tuesday.\n"},
+      {"external_id": "draft-donation", "version": "1", "filename": "draft-staff.md", "bytes": "# Donation schedule\nThe staff draft assigns pickup to Thursday.\n"}
+    ],
+    "contract": "distinct originals with the same title remain ambiguous; exact filename/source ID or explicit selection resolves one; passages from one original collapse to a single choice; explicit version and current access are checked before exact-byte delivery"
+  },
+  "history": {
+    "title": "Leaf dryer specification",
+    "external_id": "leaf-dryer",
+    "versions": [
+      {"version": "1", "effective_at": "2026-09-01T00:00:00Z", "captured_at": "2026-09-10T12:00:00Z", "filename": "leaf-dryer-v1.md", "bytes": "# Leaf dryer specification\nFrom 2026-09-01 the moisture threshold is 9 percent.\n"},
+      {"version": "2", "effective_at": "2026-09-21T00:00:00Z", "captured_at": "2026-09-24T12:00:00Z", "filename": "leaf-dryer-v2.md", "bytes": "# Leaf dryer specification\nFrom 2026-09-21 the moisture threshold is 6 percent.\n"}
+    ],
+    "contract": "current threshold is 6 percent; as-of September 15 threshold is 9 percent; retired original bytes remain available only under current access and no explicit lifecycle denial; capture time does not invent effective time"
+  }
+}

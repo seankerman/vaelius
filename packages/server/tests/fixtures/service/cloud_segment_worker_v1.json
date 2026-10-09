@@ -1,0 +1,131 @@
+{
+  "cases": [
+    "missing beforedispatch means zero runner and zero installed docs",
+    "corrupt beforedispatch means zero runner and zero installed docs",
+    "exact original restored plus explicit canonical worker recover completes under same policy",
+    "permission revoked during return prevents install and private provider-return cache",
+    "delete during return purges original object and private recovery payload"
+  ],
+  "classification": "authored development failure fixture frozen before tests; no held-out claim",
+  "events": [
+    {
+      "actor": "alice",
+      "blocks": [
+        {
+          "type": "text",
+          "value": "Save the synthetic Maple dataset as CSV because CSV preserves the column names."
+        }
+      ],
+      "connection": "segment-agent",
+      "conversation": "synthetic-chat",
+      "disposition": "accepted",
+      "event": {
+        "call_id": "",
+        "channel": "commentary",
+        "complete": false,
+        "exit_code": null,
+        "expected_events": [],
+        "kind": "UserPromptSubmit",
+        "order": 1,
+        "parent_id": "",
+        "role": "user",
+        "tool_name": ""
+      },
+      "external_id": "event-user-1",
+      "occurred_at": "2026-09-26T10:00:01Z",
+      "origin": "codex",
+      "project": "maple",
+      "redactions": [],
+      "revision": "1",
+      "source_type": "agent",
+      "source_url": "",
+      "turn": "turn-1",
+      "version": "enterprise-local-2"
+    },
+    {
+      "actor": "alice",
+      "blocks": [
+        {
+          "type": "tool_arguments",
+          "value": {
+            "cmd": "save_dataset --output /synthetic/maple.csv"
+          }
+        },
+        {
+          "type": "tool_result",
+          "value": {
+            "path": "/synthetic/maple.csv",
+            "rows": 23,
+            "status": "saved",
+            "unicode": "\u03b1\ud83d\ude00"
+          }
+        }
+      ],
+      "connection": "segment-agent",
+      "conversation": "synthetic-chat",
+      "disposition": "accepted",
+      "event": {
+        "call_id": "call-1",
+        "channel": "commentary",
+        "complete": false,
+        "exit_code": 0,
+        "expected_events": [],
+        "kind": "PostToolUse",
+        "order": 2,
+        "parent_id": "user-1",
+        "role": "tool",
+        "tool_name": "exec_command"
+      },
+      "external_id": "event-tool-1",
+      "occurred_at": "2026-09-26T10:00:02Z",
+      "origin": "codex",
+      "project": "maple",
+      "redactions": [],
+      "revision": "1",
+      "source_type": "agent",
+      "source_url": "",
+      "turn": "turn-1",
+      "version": "enterprise-local-2"
+    },
+    {
+      "actor": "alice",
+      "blocks": [
+        {
+          "type": "text",
+          "value": "Saved the dataset at /synthetic/maple.csv because CSV preserves the column names."
+        }
+      ],
+      "connection": "segment-agent",
+      "conversation": "synthetic-chat",
+      "disposition": "accepted",
+      "event": {
+        "call_id": "",
+        "channel": "final",
+        "complete": true,
+        "exit_code": null,
+        "expected_events": [
+          "event-user-1",
+          "event-tool-1"
+        ],
+        "kind": "Stop",
+        "order": 3,
+        "parent_id": "user-1",
+        "role": "assistant",
+        "tool_name": ""
+      },
+      "external_id": "event-stop-1",
+      "occurred_at": "2026-09-26T10:00:03Z",
+      "origin": "codex",
+      "project": "maple",
+      "redactions": [],
+      "revision": "1",
+      "source_type": "agent",
+      "source_url": "",
+      "turn": "turn-1",
+      "version": "enterprise-local-2"
+    }
+  ],
+  "parent_sha256": "4b372809578ca29d23d12db3995740843e7a21066116cb5fc8b7c8fd0a82c8bf",
+  "provider_calls": 0,
+  "version": "cloud-segment-worker-v1"
+}

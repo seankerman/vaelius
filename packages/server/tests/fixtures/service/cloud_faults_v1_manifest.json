@@ -1,0 +1,5 @@
+{
+  "fixture": "cloud_faults_v1.json",
+  "sha256": "afeaa551cb4269aea57fac4c6a5f4d71a534a59576540e458160e3f36a070aa3",
+  "frozen_before_test_execution": true
+}

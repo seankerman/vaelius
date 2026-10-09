@@ -1,0 +1,16 @@
+{
+  "version": "staging-transport-v1",
+  "provenance": "Deliberately synthetic authored provider-free transport fixture.",
+  "event": {
+    "hook_event_name": "PostToolUse",
+    "event_id": "staging-save",
+    "session_id": "transport-chat",
+    "turn_id": "save",
+    "tool_name": "save_file",
+    "tool_use_id": "save-slate",
+    "tool_input": {"path": "/tmp/synthetic/slate.csv", "api_key": "sk-synthetic-secret-never-send"},
+    "tool_response": {"status": "saved", "note": "PRIVATE_SYNTHETIC_PAYLOAD_CANARY"},
+    "exit_code": 0
+  },
+  "expected": {"path": "/tmp/synthetic/slate.csv", "secret": "sk-synthetic-secret-never-send", "payload_canary": "PRIVATE_SYNTHETIC_PAYLOAD_CANARY"}
+}

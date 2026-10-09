@@ -1,0 +1,12 @@
+{
+  "classification": "synthetic installed-failure regression frozen before behavior change",
+  "expected_integer_metrics": {
+    "source_bytes": 17
+  },
+  "metric": {
+    "amount": 17,
+    "id": "synthetic-source-bytes",
+    "kind": "source_bytes"
+  },
+  "provider_calls": 0
+}

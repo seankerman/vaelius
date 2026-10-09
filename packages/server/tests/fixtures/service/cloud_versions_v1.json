@@ -1,0 +1,10 @@
+{
+  "classification": "synthetic operator original-version regression; not held-out",
+  "filename": "versions.md",
+  "external_id": "operator-versions",
+  "revisions": [
+    {"version": "1", "body": "# Maple dataset\nThe dataset is at /synthetic/first.csv.\n"},
+    {"version": "2", "body": "# Maple dataset\nThe dataset is now at /synthetic/current.csv.\n"}
+  ],
+  "columns": ["source_id", "version", "sha256", "byte_length", "parser_status"]
+}

@@ -1,0 +1,1926 @@
+{
+  "version": 1,
+  "limits": "Synthetic state-machine repairs, reserved version variants within known families. This is not real-world productivity evidence.",
+  "cases": [
+    {
+      "id": "migration-v1",
+      "family": "migration",
+      "split": "development",
+      "task": "Migrate a durable queue without losing recovery data. Use the public migration fixture version 1 recovery procedure.",
+      "query": "migration fixture version 1",
+      "source": "Public migration fixture version 1. Successful recovery used snapshot_8d28e, then checkpoint_8d28e, then migrate_8d28e. Migration before snapshot destroys recovery. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "snapshot_8d28e": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "checkpoint_8d28e": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "migrate_8d28e": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "snapshot_8d28e",
+        "checkpoint_8d28e",
+        "migrate_8d28e"
+      ],
+      "minimum_lesson_terms": [
+        "snapshot_8d28e",
+        "checkpoint_8d28e",
+        "migrate_8d28e"
+      ]
+    },
+    {
+      "id": "migration-v2",
+      "family": "migration",
+      "split": "development",
+      "task": "Migrate a durable queue without losing recovery data. Use the public migration fixture version 2 recovery procedure.",
+      "query": "migration fixture version 2",
+      "source": "Public migration fixture version 2. Successful recovery used snapshot_b8fdc, then checkpoint_b8fdc, then migrate_b8fdc. Migration before snapshot destroys recovery. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "snapshot_b8fdc": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "checkpoint_b8fdc": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "migrate_b8fdc": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "snapshot_b8fdc",
+        "checkpoint_b8fdc",
+        "migrate_b8fdc"
+      ],
+      "minimum_lesson_terms": [
+        "snapshot_b8fdc",
+        "checkpoint_b8fdc",
+        "migrate_b8fdc"
+      ]
+    },
+    {
+      "id": "migration-v3",
+      "family": "migration",
+      "split": "reserved",
+      "task": "Migrate a durable queue without losing recovery data. Use the public migration fixture version 3 recovery procedure.",
+      "query": "migration fixture version 3",
+      "source": "Public migration fixture version 3. Successful recovery used snapshot_9d389, then checkpoint_9d389, then migrate_9d389. Migration before snapshot destroys recovery. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "snapshot_9d389": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "checkpoint_9d389": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "migrate_9d389": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "snapshot_9d389",
+        "checkpoint_9d389",
+        "migrate_9d389"
+      ],
+      "minimum_lesson_terms": [
+        "snapshot_9d389",
+        "checkpoint_9d389",
+        "migrate_9d389"
+      ]
+    },
+    {
+      "id": "retry-v1",
+      "family": "retry",
+      "split": "development",
+      "task": "Recover a transient queue failure without repeating a write. Use the public retry fixture version 1 recovery procedure.",
+      "query": "retry fixture version 1",
+      "source": "Public retry fixture version 1. Successful recovery used deduplicate_96682, then backoff_96682, then retry_96682. Retry before installing deduplication repeats writes. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "deduplicate_96682": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "backoff_96682": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "retry_96682": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "deduplicate_96682",
+        "backoff_96682",
+        "retry_96682"
+      ],
+      "minimum_lesson_terms": [
+        "deduplicate_96682",
+        "backoff_96682",
+        "retry_96682"
+      ]
+    },
+    {
+      "id": "retry-v2",
+      "family": "retry",
+      "split": "development",
+      "task": "Recover a transient queue failure without repeating a write. Use the public retry fixture version 2 recovery procedure.",
+      "query": "retry fixture version 2",
+      "source": "Public retry fixture version 2. Successful recovery used deduplicate_014d2, then backoff_014d2, then retry_014d2. Retry before installing deduplication repeats writes. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "deduplicate_014d2": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "backoff_014d2": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "retry_014d2": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "deduplicate_014d2",
+        "backoff_014d2",
+        "retry_014d2"
+      ],
+      "minimum_lesson_terms": [
+        "deduplicate_014d2",
+        "backoff_014d2",
+        "retry_014d2"
+      ]
+    },
+    {
+      "id": "retry-v3",
+      "family": "retry",
+      "split": "reserved",
+      "task": "Recover a transient queue failure without repeating a write. Use the public retry fixture version 3 recovery procedure.",
+      "query": "retry fixture version 3",
+      "source": "Public retry fixture version 3. Successful recovery used deduplicate_89ff4, then backoff_89ff4, then retry_89ff4. Retry before installing deduplication repeats writes. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "deduplicate_89ff4": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "backoff_89ff4": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "retry_89ff4": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "deduplicate_89ff4",
+        "backoff_89ff4",
+        "retry_89ff4"
+      ],
+      "minimum_lesson_terms": [
+        "deduplicate_89ff4",
+        "backoff_89ff4",
+        "retry_89ff4"
+      ]
+    },
+    {
+      "id": "cache-v1",
+      "family": "cache",
+      "split": "development",
+      "task": "Replace stale service metadata while keeping readers available. Use the public cache fixture version 1 recovery procedure.",
+      "query": "cache fixture version 1",
+      "source": "Public cache fixture version 1. Successful recovery used warm_95ff9, then switch_95ff9, then expire_95ff9. Expiring before the new cache is warm causes missing reads. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "warm_95ff9": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_95ff9": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "expire_95ff9": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "warm_95ff9",
+        "switch_95ff9",
+        "expire_95ff9"
+      ],
+      "minimum_lesson_terms": [
+        "warm_95ff9",
+        "switch_95ff9",
+        "expire_95ff9"
+      ]
+    },
+    {
+      "id": "cache-v2",
+      "family": "cache",
+      "split": "development",
+      "task": "Replace stale service metadata while keeping readers available. Use the public cache fixture version 2 recovery procedure.",
+      "query": "cache fixture version 2",
+      "source": "Public cache fixture version 2. Successful recovery used warm_103aa, then switch_103aa, then expire_103aa. Expiring before the new cache is warm causes missing reads. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "warm_103aa": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_103aa": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "expire_103aa": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "warm_103aa",
+        "switch_103aa",
+        "expire_103aa"
+      ],
+      "minimum_lesson_terms": [
+        "warm_103aa",
+        "switch_103aa",
+        "expire_103aa"
+      ]
+    },
+    {
+      "id": "cache-v3",
+      "family": "cache",
+      "split": "reserved",
+      "task": "Replace stale service metadata while keeping readers available. Use the public cache fixture version 3 recovery procedure.",
+      "query": "cache fixture version 3",
+      "source": "Public cache fixture version 3. Successful recovery used warm_0aead, then switch_0aead, then expire_0aead. Expiring before the new cache is warm causes missing reads. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "warm_0aead": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_0aead": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "expire_0aead": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "warm_0aead",
+        "switch_0aead",
+        "expire_0aead"
+      ],
+      "minimum_lesson_terms": [
+        "warm_0aead",
+        "switch_0aead",
+        "expire_0aead"
+      ]
+    },
+    {
+      "id": "locking-v1",
+      "family": "locking",
+      "split": "development",
+      "task": "Repair an abandoned lease without two simultaneous writers. Use the public locking fixture version 1 recovery procedure.",
+      "query": "locking fixture version 1",
+      "source": "Public locking fixture version 1. Successful recovery used fence_7a3f8, then release_7a3f8, then acquire_7a3f8. Releasing before fencing allows an old writer to mutate data. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "fence_7a3f8": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "release_7a3f8": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acquire_7a3f8": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "fence_7a3f8",
+        "release_7a3f8",
+        "acquire_7a3f8"
+      ],
+      "minimum_lesson_terms": [
+        "fence_7a3f8",
+        "release_7a3f8",
+        "acquire_7a3f8"
+      ]
+    },
+    {
+      "id": "locking-v2",
+      "family": "locking",
+      "split": "development",
+      "task": "Repair an abandoned lease without two simultaneous writers. Use the public locking fixture version 2 recovery procedure.",
+      "query": "locking fixture version 2",
+      "source": "Public locking fixture version 2. Successful recovery used fence_9d57b, then release_9d57b, then acquire_9d57b. Releasing before fencing allows an old writer to mutate data. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "fence_9d57b": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "release_9d57b": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acquire_9d57b": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "fence_9d57b",
+        "release_9d57b",
+        "acquire_9d57b"
+      ],
+      "minimum_lesson_terms": [
+        "fence_9d57b",
+        "release_9d57b",
+        "acquire_9d57b"
+      ]
+    },
+    {
+      "id": "locking-v3",
+      "family": "locking",
+      "split": "reserved",
+      "task": "Repair an abandoned lease without two simultaneous writers. Use the public locking fixture version 3 recovery procedure.",
+      "query": "locking fixture version 3",
+      "source": "Public locking fixture version 3. Successful recovery used fence_3c7b9, then release_3c7b9, then acquire_3c7b9. Releasing before fencing allows an old writer to mutate data. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "fence_3c7b9": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "release_3c7b9": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acquire_3c7b9": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "fence_3c7b9",
+        "release_3c7b9",
+        "acquire_3c7b9"
+      ],
+      "minimum_lesson_terms": [
+        "fence_3c7b9",
+        "release_3c7b9",
+        "acquire_3c7b9"
+      ]
+    },
+    {
+      "id": "compatibility-v1",
+      "family": "compatibility",
+      "split": "development",
+      "task": "Upgrade a message reader while preserving version compatibility. Use the public compatibility fixture version 1 recovery procedure.",
+      "query": "compatibility fixture version 1",
+      "source": "Public compatibility fixture version 1. Successful recovery used negotiate_2d7d0, then translate_2d7d0, then consume_2d7d0. Consuming before translation misinterprets payload fields. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "negotiate_2d7d0": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "translate_2d7d0": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "consume_2d7d0": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "negotiate_2d7d0",
+        "translate_2d7d0",
+        "consume_2d7d0"
+      ],
+      "minimum_lesson_terms": [
+        "negotiate_2d7d0",
+        "translate_2d7d0",
+        "consume_2d7d0"
+      ]
+    },
+    {
+      "id": "compatibility-v2",
+      "family": "compatibility",
+      "split": "development",
+      "task": "Upgrade a message reader while preserving version compatibility. Use the public compatibility fixture version 2 recovery procedure.",
+      "query": "compatibility fixture version 2",
+      "source": "Public compatibility fixture version 2. Successful recovery used negotiate_59607, then translate_59607, then consume_59607. Consuming before translation misinterprets payload fields. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "negotiate_59607": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "translate_59607": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "consume_59607": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "negotiate_59607",
+        "translate_59607",
+        "consume_59607"
+      ],
+      "minimum_lesson_terms": [
+        "negotiate_59607",
+        "translate_59607",
+        "consume_59607"
+      ]
+    },
+    {
+      "id": "compatibility-v3",
+      "family": "compatibility",
+      "split": "reserved",
+      "task": "Upgrade a message reader while preserving version compatibility. Use the public compatibility fixture version 3 recovery procedure.",
+      "query": "compatibility fixture version 3",
+      "source": "Public compatibility fixture version 3. Successful recovery used negotiate_771a6, then translate_771a6, then consume_771a6. Consuming before translation misinterprets payload fields. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "negotiate_771a6": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "translate_771a6": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "consume_771a6": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "negotiate_771a6",
+        "translate_771a6",
+        "consume_771a6"
+      ],
+      "minimum_lesson_terms": [
+        "negotiate_771a6",
+        "translate_771a6",
+        "consume_771a6"
+      ]
+    },
+    {
+      "id": "cancellation-v1",
+      "family": "cancellation",
+      "split": "development",
+      "task": "Cancel a pending export without publishing partial output. Use the public cancellation fixture version 1 recovery procedure.",
+      "query": "cancellation fixture version 1",
+      "source": "Public cancellation fixture version 1. Successful recovery used cancel_d6f36, then discard_d6f36, then acknowledge_d6f36. Acknowledging before discarding exposes partial output. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "cancel_d6f36": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "discard_d6f36": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acknowledge_d6f36": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "cancel_d6f36",
+        "discard_d6f36",
+        "acknowledge_d6f36"
+      ],
+      "minimum_lesson_terms": [
+        "cancel_d6f36",
+        "discard_d6f36",
+        "acknowledge_d6f36"
+      ]
+    },
+    {
+      "id": "cancellation-v2",
+      "family": "cancellation",
+      "split": "development",
+      "task": "Cancel a pending export without publishing partial output. Use the public cancellation fixture version 2 recovery procedure.",
+      "query": "cancellation fixture version 2",
+      "source": "Public cancellation fixture version 2. Successful recovery used cancel_f9047, then discard_f9047, then acknowledge_f9047. Acknowledging before discarding exposes partial output. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "cancel_f9047": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "discard_f9047": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acknowledge_f9047": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "cancel_f9047",
+        "discard_f9047",
+        "acknowledge_f9047"
+      ],
+      "minimum_lesson_terms": [
+        "cancel_f9047",
+        "discard_f9047",
+        "acknowledge_f9047"
+      ]
+    },
+    {
+      "id": "cancellation-v3",
+      "family": "cancellation",
+      "split": "reserved",
+      "task": "Cancel a pending export without publishing partial output. Use the public cancellation fixture version 3 recovery procedure.",
+      "query": "cancellation fixture version 3",
+      "source": "Public cancellation fixture version 3. Successful recovery used cancel_07b2d, then discard_07b2d, then acknowledge_07b2d. Acknowledging before discarding exposes partial output. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "cancel_07b2d": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "discard_07b2d": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acknowledge_07b2d": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "cancel_07b2d",
+        "discard_07b2d",
+        "acknowledge_07b2d"
+      ],
+      "minimum_lesson_terms": [
+        "cancel_07b2d",
+        "discard_07b2d",
+        "acknowledge_07b2d"
+      ]
+    },
+    {
+      "id": "index-v1",
+      "family": "index",
+      "split": "development",
+      "task": "Refresh a search index after an authorized record removal. Use the public index fixture version 1 recovery procedure.",
+      "query": "index fixture version 1",
+      "source": "Public index fixture version 1. Successful recovery used tombstone_ec68d, then invalidate_ec68d, then refresh_ec68d. Refreshing before recording the tombstone resurrects a deleted record. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "tombstone_ec68d": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "invalidate_ec68d": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "refresh_ec68d": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "tombstone_ec68d",
+        "invalidate_ec68d",
+        "refresh_ec68d"
+      ],
+      "minimum_lesson_terms": [
+        "tombstone_ec68d",
+        "invalidate_ec68d",
+        "refresh_ec68d"
+      ]
+    },
+    {
+      "id": "index-v2",
+      "family": "index",
+      "split": "development",
+      "task": "Refresh a search index after an authorized record removal. Use the public index fixture version 2 recovery procedure.",
+      "query": "index fixture version 2",
+      "source": "Public index fixture version 2. Successful recovery used tombstone_4cb48, then invalidate_4cb48, then refresh_4cb48. Refreshing before recording the tombstone resurrects a deleted record. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "tombstone_4cb48": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "invalidate_4cb48": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "refresh_4cb48": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "tombstone_4cb48",
+        "invalidate_4cb48",
+        "refresh_4cb48"
+      ],
+      "minimum_lesson_terms": [
+        "tombstone_4cb48",
+        "invalidate_4cb48",
+        "refresh_4cb48"
+      ]
+    },
+    {
+      "id": "index-v3",
+      "family": "index",
+      "split": "reserved",
+      "task": "Refresh a search index after an authorized record removal. Use the public index fixture version 3 recovery procedure.",
+      "query": "index fixture version 3",
+      "source": "Public index fixture version 3. Successful recovery used tombstone_6c372, then invalidate_6c372, then refresh_6c372. Refreshing before recording the tombstone resurrects a deleted record. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "tombstone_6c372": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "invalidate_6c372": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "refresh_6c372": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "tombstone_6c372",
+        "invalidate_6c372",
+        "refresh_6c372"
+      ],
+      "minimum_lesson_terms": [
+        "tombstone_6c372",
+        "invalidate_6c372",
+        "refresh_6c372"
+      ]
+    },
+    {
+      "id": "credentials-v1",
+      "family": "credentials",
+      "split": "development",
+      "task": "Rotate a service token without giving a revoked client access. Use the public credentials fixture version 1 recovery procedure.",
+      "query": "credentials fixture version 1",
+      "source": "Public credentials fixture version 1. Successful recovery used issue_2a797, then switch_2a797, then revoke_2a797. Switching before issuing breaks access; revocation must follow switching. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "issue_2a797": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_2a797": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "revoke_2a797": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "issue_2a797",
+        "switch_2a797",
+        "revoke_2a797"
+      ],
+      "minimum_lesson_terms": [
+        "issue_2a797",
+        "switch_2a797",
+        "revoke_2a797"
+      ]
+    },
+    {
+      "id": "credentials-v2",
+      "family": "credentials",
+      "split": "development",
+      "task": "Rotate a service token without giving a revoked client access. Use the public credentials fixture version 2 recovery procedure.",
+      "query": "credentials fixture version 2",
+      "source": "Public credentials fixture version 2. Successful recovery used issue_7c34f, then switch_7c34f, then revoke_7c34f. Switching before issuing breaks access; revocation must follow switching. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "issue_7c34f": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_7c34f": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "revoke_7c34f": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "issue_7c34f",
+        "switch_7c34f",
+        "revoke_7c34f"
+      ],
+      "minimum_lesson_terms": [
+        "issue_7c34f",
+        "switch_7c34f",
+        "revoke_7c34f"
+      ]
+    },
+    {
+      "id": "credentials-v3",
+      "family": "credentials",
+      "split": "reserved",
+      "task": "Rotate a service token without giving a revoked client access. Use the public credentials fixture version 3 recovery procedure.",
+      "query": "credentials fixture version 3",
+      "source": "Public credentials fixture version 3. Successful recovery used issue_73e27, then switch_73e27, then revoke_73e27. Switching before issuing breaks access; revocation must follow switching. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "issue_73e27": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_73e27": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "revoke_73e27": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "issue_73e27",
+        "switch_73e27",
+        "revoke_73e27"
+      ],
+      "minimum_lesson_terms": [
+        "issue_73e27",
+        "switch_73e27",
+        "revoke_73e27"
+      ]
+    },
+    {
+      "id": "scope-v1",
+      "family": "scope",
+      "split": "development",
+      "task": "Recover a resumed task while keeping another project isolated. Use the public scope fixture version 1 recovery procedure.",
+      "query": "scope fixture version 1",
+      "source": "Public scope fixture version 1. Successful recovery used bind_91639, then validate_91639, then restore_91639. Restoring before validating the project binding loads another project memory. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "bind_91639": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "validate_91639": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "restore_91639": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "bind_91639",
+        "validate_91639",
+        "restore_91639"
+      ],
+      "minimum_lesson_terms": [
+        "bind_91639",
+        "validate_91639",
+        "restore_91639"
+      ]
+    },
+    {
+      "id": "scope-v2",
+      "family": "scope",
+      "split": "development",
+      "task": "Recover a resumed task while keeping another project isolated. Use the public scope fixture version 2 recovery procedure.",
+      "query": "scope fixture version 2",
+      "source": "Public scope fixture version 2. Successful recovery used bind_f6845, then validate_f6845, then restore_f6845. Restoring before validating the project binding loads another project memory. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "bind_f6845": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "validate_f6845": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "restore_f6845": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "bind_f6845",
+        "validate_f6845",
+        "restore_f6845"
+      ],
+      "minimum_lesson_terms": [
+        "bind_f6845",
+        "validate_f6845",
+        "restore_f6845"
+      ]
+    },
+    {
+      "id": "scope-v3",
+      "family": "scope",
+      "split": "reserved",
+      "task": "Recover a resumed task while keeping another project isolated. Use the public scope fixture version 3 recovery procedure.",
+      "query": "scope fixture version 3",
+      "source": "Public scope fixture version 3. Successful recovery used bind_cb14d, then validate_cb14d, then restore_cb14d. Restoring before validating the project binding loads another project memory. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "bind_cb14d": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "validate_cb14d": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "restore_cb14d": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "bind_cb14d",
+        "validate_cb14d",
+        "restore_cb14d"
+      ],
+      "minimum_lesson_terms": [
+        "bind_cb14d",
+        "validate_cb14d",
+        "restore_cb14d"
+      ]
+    },
+    {
+      "id": "rollback-v1",
+      "family": "rollback",
+      "split": "development",
+      "task": "Roll back a failed release while preserving migration history. Use the public rollback fixture version 1 recovery procedure.",
+      "query": "rollback fixture version 1",
+      "source": "Public rollback fixture version 1. Successful recovery used freeze_0656a, then restore_0656a, then verify_0656a. Restoring before freezing writes corrupts the recovery point. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "freeze_0656a": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "restore_0656a": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "verify_0656a": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "freeze_0656a",
+        "restore_0656a",
+        "verify_0656a"
+      ],
+      "minimum_lesson_terms": [
+        "freeze_0656a",
+        "restore_0656a",
+        "verify_0656a"
+      ]
+    },
+    {
+      "id": "rollback-v2",
+      "family": "rollback",
+      "split": "development",
+      "task": "Roll back a failed release while preserving migration history. Use the public rollback fixture version 2 recovery procedure.",
+      "query": "rollback fixture version 2",
+      "source": "Public rollback fixture version 2. Successful recovery used freeze_4e3e2, then restore_4e3e2, then verify_4e3e2. Restoring before freezing writes corrupts the recovery point. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "freeze_4e3e2": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "restore_4e3e2": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "verify_4e3e2": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "freeze_4e3e2",
+        "restore_4e3e2",
+        "verify_4e3e2"
+      ],
+      "minimum_lesson_terms": [
+        "freeze_4e3e2",
+        "restore_4e3e2",
+        "verify_4e3e2"
+      ]
+    },
+    {
+      "id": "rollback-v3",
+      "family": "rollback",
+      "split": "reserved",
+      "task": "Roll back a failed release while preserving migration history. Use the public rollback fixture version 3 recovery procedure.",
+      "query": "rollback fixture version 3",
+      "source": "Public rollback fixture version 3. Successful recovery used freeze_6b3ab, then restore_6b3ab, then verify_6b3ab. Restoring before freezing writes corrupts the recovery point. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "freeze_6b3ab": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "restore_6b3ab": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "verify_6b3ab": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "freeze_6b3ab",
+        "restore_6b3ab",
+        "verify_6b3ab"
+      ],
+      "minimum_lesson_terms": [
+        "freeze_6b3ab",
+        "restore_6b3ab",
+        "verify_6b3ab"
+      ]
+    }
+  ]
+}

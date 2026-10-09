@@ -1,0 +1,3028 @@
+{
+  "version": "retrieval-experiments-v1",
+  "split": "development",
+  "classification": "separate-author synthetic retrieval validation; not ordinary use or independent real-team evidence",
+  "questions": [
+    {
+      "id": "rex-dev-exact_discovery-1",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Find the Harbor pager ownership register.",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "platform duty officer",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-exact_discovery-1-a"
+            ],
+            "quote": "platform duty officer",
+            "start": 130,
+            "end": 151,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-exact_discovery-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-exact_discovery-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-exact_discovery-2",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What does validate_rotation reject?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "issuer differs from the pinned intermediate",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-exact_discovery-2-a"
+            ],
+            "quote": "issuer differs from the pinned intermediate",
+            "start": 137,
+            "end": 180,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-exact_discovery-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-exact_discovery-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-exact_discovery-3",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What is the remedy in ticket INC-742819?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "invalidate the endpoint map",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-exact_discovery-3-a"
+            ],
+            "quote": "invalidate the endpoint map",
+            "start": 142,
+            "end": 169,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-exact_discovery-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-exact_discovery-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-exact_discovery-4",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Give me the Tide export compatibility contract requirements.",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "UTF-8",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-exact_discovery-4-a"
+            ],
+            "quote": "UTF-8",
+            "start": 107,
+            "end": 112,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "timezone offset",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-exact_discovery-4-a"
+            ],
+            "quote": "timezone offset",
+            "start": 127,
+            "end": 142,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-exact_discovery-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-exact_discovery-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-exact_discovery-5",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where does the Desert sampling notebook index point for the bias audit?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "notebooks/desert/bias_audit.ipynb",
+            "type": "path",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-exact_discovery-5-a"
+            ],
+            "quote": "notebooks/desert/bias_audit.ipynb",
+            "start": 118,
+            "end": 151,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-exact_discovery-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-exact_discovery-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-exact_discovery-negative-1",
+      "split": "development",
+      "family": "exact_discovery",
+      "scenario": "development-exact_discovery",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Find the non-existent Nacre approval specification.",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-1",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How does Beacon stop senders overwhelming the work buffer?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "suspending producers",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-1-a"
+            ],
+            "quote": "suspending producers",
+            "start": 84,
+            "end": 104,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-semantic_paraphrase-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-semantic_paraphrase-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-2",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How are duplicate purchase submissions prevented from billing someone twice?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "idempotency key",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-2-a"
+            ],
+            "quote": "idempotency key",
+            "start": 72,
+            "end": 87,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "previously recorded receipt",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-2-a"
+            ],
+            "quote": "previously recorded receipt",
+            "start": 143,
+            "end": 170,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-semantic_paraphrase-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-semantic_paraphrase-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-3",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What stops removed account information reappearing after a recovery?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "tombstone",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-3-a"
+            ],
+            "quote": "tombstone",
+            "start": 122,
+            "end": 131,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-semantic_paraphrase-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-semantic_paraphrase-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-4",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Can a broken file transfer pick up where it left off?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "next byte offset",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-4-a"
+            ],
+            "quote": "next byte offset",
+            "start": 97,
+            "end": 113,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-semantic_paraphrase-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-semantic_paraphrase-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-5",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How do we notice predictions getting unfamiliar inputs before the server crashes?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "distribution of input features",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-semantic_paraphrase-5-a"
+            ],
+            "quote": "distribution of input features",
+            "start": 88,
+            "end": 118,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-semantic_paraphrase-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-semantic_paraphrase-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-semantic_paraphrase-negative-1",
+      "split": "development",
+      "family": "semantic_paraphrase",
+      "scenario": "development-semantic_paraphrase",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How do we ensure Beacon never loses data during a whole-region failure?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-1",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where did I save the reviewed Juniper rainfall dataset?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/juniper/validated/rainfall_2026.parquet",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-artifact_location-1-a"
+            ],
+            "quote": "/synthetic/juniper/validated/rainfall_2026.parquet",
+            "start": 40,
+            "end": 90,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-artifact_location-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-artifact_location-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-2",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Remind me where I put the final Orchid accessibility report.",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/orchid/reports/accessibility_final.pdf",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-artifact_location-2-a"
+            ],
+            "quote": "/synthetic/orchid/reports/accessibility_final.pdf",
+            "start": 41,
+            "end": 90,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-artifact_location-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-artifact_location-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-3",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where are the saved Kite replay fixtures?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "tests/data/kite/replay_cases.jsonl",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-artifact_location-3-a"
+            ],
+            "quote": "tests/data/kite/replay_cases.jsonl",
+            "start": 36,
+            "end": 70,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-artifact_location-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-artifact_location-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-4",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where is the Bracken classifier checkpoint I wrote?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/bracken/models/classifier_v7.safetensors",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-artifact_location-4-a"
+            ],
+            "quote": "/synthetic/bracken/models/classifier_v7.safetensors",
+            "start": 45,
+            "end": 96,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-artifact_location-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-artifact_location-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-5",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where did I save the Amber revenue workbook?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/amber/finance/revenue_review.xlsx",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-artifact_location-5-a"
+            ],
+            "quote": "/synthetic/amber/finance/revenue_review.xlsx",
+            "start": 38,
+            "end": 82,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-artifact_location-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-artifact_location-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-artifact_location-negative-1",
+      "split": "development",
+      "family": "artifact_location",
+      "scenario": "development-artifact_location",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where is the approved Juniper encrypted off-site backup? No backup location was recorded.",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-procedures-1",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What are the prerequisites and sequence for routine Spruce signing-key rotation?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "export the public key inventory",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-1-a"
+            ],
+            "quote": "export the public key inventory",
+            "start": 98,
+            "end": 129,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "register the new verifier",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-1-a"
+            ],
+            "quote": "register the new verifier",
+            "start": 136,
+            "end": 161,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "old-token grace period",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-1-a"
+            ],
+            "quote": "old-token grace period",
+            "start": 176,
+            "end": 198,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f4",
+            "value": "revoke the retired signer",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-1-a"
+            ],
+            "quote": "revoke the retired signer",
+            "start": 204,
+            "end": 229,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-procedures-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-procedures-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-procedures-2",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How do I safely retry a Pollen import?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "failed batch digest",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-2-a"
+            ],
+            "quote": "failed batch digest",
+            "start": 85,
+            "end": 104,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "Clear only the batch lease",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-2-a"
+            ],
+            "quote": "Clear only the batch lease",
+            "start": 106,
+            "end": 132,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "idempotency token",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-2-a"
+            ],
+            "quote": "idempotency token",
+            "start": 167,
+            "end": 184,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f4",
+            "value": "compare row counts",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-2-a"
+            ],
+            "quote": "compare row counts",
+            "start": 190,
+            "end": 208,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-procedures-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-procedures-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-procedures-3",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Which checks are necessary before reopening Cobalt after restoring it?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "isolate the restored database",
+            "type": "procedure",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-procedures-3-a"
+            ],
+            "quote": "isolate the restored database",
+            "start": 86,
+            "end": 115,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "apply the deletion journal",
+            "type": "procedure",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-procedures-3-a"
+            ],
+            "quote": "apply the deletion journal",
+            "start": 135,
+            "end": 161,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "validate foreign-key checks",
+            "type": "procedure",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-procedures-3-a"
+            ],
+            "quote": "validate foreign-key checks",
+            "start": 163,
+            "end": 190,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-procedures-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-procedures-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-procedures-4",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How should a Finch dataset be reviewed, including missing measurements?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "accepted schema",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-4-a"
+            ],
+            "quote": "accepted schema",
+            "start": 91,
+            "end": 106,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "duplicate sample identifiers",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-4-a"
+            ],
+            "quote": "duplicate sample identifiers",
+            "start": 116,
+            "end": 144,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "declared unit",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-4-a"
+            ],
+            "quote": "declared unit",
+            "start": 187,
+            "end": 200,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f4",
+            "value": "remain null",
+            "type": "procedure",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-procedures-4-a"
+            ],
+            "quote": "remain null",
+            "start": 228,
+            "end": 239,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-procedures-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-procedures-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-procedures-5",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How do I roll Lumen back without losing new deletions?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "pausing writes",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-5-a"
+            ],
+            "quote": "pausing writes",
+            "start": 80,
+            "end": 94,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "verified prior build",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-5-a"
+            ],
+            "quote": "verified prior build",
+            "start": 166,
+            "end": 186,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "preserve new deletion markers",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-5-a"
+            ],
+            "quote": "preserve new deletion markers",
+            "start": 188,
+            "end": 217,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f4",
+            "value": "read-only smoke test",
+            "type": "procedure",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-procedures-5-a"
+            ],
+            "quote": "read-only smoke test",
+            "start": 229,
+            "end": 249,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-procedures-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-procedures-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-procedures-negative-1",
+      "split": "development",
+      "family": "procedures",
+      "scenario": "development-procedures",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What is the approved Spruce emergency bypass procedure without operator approval?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-1",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why did I choose a sequence number for Quartz?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "wall clocks can move backwards",
+            "type": "reason",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-decisions_rationale-1-a"
+            ],
+            "quote": "wall clocks can move backwards",
+            "start": 57,
+            "end": 87,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-decisions_rationale-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-decisions_rationale-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-2",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why did I choose Parquet for Hawthorn?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "column pruning",
+            "type": "reason",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-decisions_rationale-2-a"
+            ],
+            "quote": "column pruning",
+            "start": 37,
+            "end": 51,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-decisions_rationale-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-decisions_rationale-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-3",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Explain why I chose randomized delay for Pebble retries.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "synchronized clients amplified overload",
+            "type": "reason",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-decisions_rationale-3-a"
+            ],
+            "quote": "synchronized clients amplified overload",
+            "start": 50,
+            "end": 89,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-decisions_rationale-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-decisions_rationale-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-4",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why do I check Marigold permissions when delivering results?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "cache entry can outlive a revocation",
+            "type": "reason",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-decisions_rationale-4-a"
+            ],
+            "quote": "cache entry can outlive a revocation",
+            "start": 77,
+            "end": 113,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-decisions_rationale-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-decisions_rationale-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-5",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why did I choose individual Sable source objects?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "without rewriting an unrelated archive",
+            "type": "reason",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-decisions_rationale-5-a"
+            ],
+            "quote": "without rewriting an unrelated archive",
+            "start": 97,
+            "end": 135,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-decisions_rationale-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-decisions_rationale-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-decisions_rationale-negative-1",
+      "split": "development",
+      "family": "decisions_rationale",
+      "scenario": "development-decisions_rationale",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why did Bob choose Parquet for Hawthorn? Bob has not supplied a reason.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-1",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "For the budget of 123456, what currency does Willow use?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "123456 USD",
+            "type": "number",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-values_numbers-1-a"
+            ],
+            "quote": "123456 USD",
+            "start": 88,
+            "end": 98,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-values_numbers-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-values_numbers-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-2",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How many accepted records are in Horizon, and does 640000 include quarantine rows?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "640000",
+            "type": "number",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-values_numbers-2-a"
+            ],
+            "quote": "640000",
+            "start": 82,
+            "end": 88,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "not included",
+            "type": "number",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-values_numbers-2-a"
+            ],
+            "quote": "not included",
+            "start": 173,
+            "end": 185,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-values_numbers-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-values_numbers-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-3",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What date does Mercury encode as 20260926?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "September 26, 2026",
+            "type": "number",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-values_numbers-3-a"
+            ],
+            "quote": "September 26, 2026",
+            "start": 129,
+            "end": 147,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-values_numbers-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-values_numbers-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-4",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "For Slate, which pool gets 200000 and which gets 300000 messages?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "200000 messages for the live queue",
+            "type": "number",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-values_numbers-4-a"
+            ],
+            "quote": "200000 messages for the live queue",
+            "start": 66,
+            "end": 100,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "300000 messages for replay",
+            "type": "number",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-values_numbers-4-a"
+            ],
+            "quote": "300000 messages for replay",
+            "start": 105,
+            "end": 131,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-values_numbers-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-values_numbers-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-5",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What is the nitrate result for Aster, including its unit?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "2.4 milligrams per liter",
+            "type": "number",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-values_numbers-5-a"
+            ],
+            "quote": "2.4 milligrams per liter",
+            "start": 89,
+            "end": 113,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-values_numbers-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-values_numbers-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-values_numbers-negative-1",
+      "split": "development",
+      "family": "values_numbers",
+      "scenario": "development-values_numbers",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What currency is the unrecorded 777777 Willow maintenance budget denominated in?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-1",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What credentials and completion checks are required for an Elm transfer?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "client certificate",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-1-a"
+            ],
+            "quote": "client certificate",
+            "start": 76,
+            "end": 94,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "SHA-256 digest",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-1-b"
+            ],
+            "quote": "SHA-256 digest",
+            "start": 137,
+            "end": 151,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "acknowledgement",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-1-b"
+            ],
+            "quote": "acknowledgement",
+            "start": 165,
+            "end": 180,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-multiple_sources-1-a",
+            "rex-dev-multiple_sources-1-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-multiple_sources-1-a",
+          "rex-dev-multiple_sources-1-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-2",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What approval and rollback preparation are required for a Coral release?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "duty engineer",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-multiple_sources-2-a"
+            ],
+            "quote": "duty engineer",
+            "start": 87,
+            "end": 100,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "verified rollback image",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-multiple_sources-2-b"
+            ],
+            "quote": "verified rollback image",
+            "start": 82,
+            "end": 105,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "full observation window",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-multiple_sources-2-b"
+            ],
+            "quote": "full observation window",
+            "start": 129,
+            "end": 152,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-multiple_sources-2-a",
+            "rex-dev-multiple_sources-2-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-multiple_sources-2-a",
+          "rex-dev-multiple_sources-2-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-3",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What consent and retention constraints govern Wren survey responses?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "explicit respondent consent",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-multiple_sources-3-a"
+            ],
+            "quote": "explicit respondent consent",
+            "start": 88,
+            "end": 115,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "45 days",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-multiple_sources-3-b"
+            ],
+            "quote": "45 days",
+            "start": 106,
+            "end": 113,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-multiple_sources-3-a",
+            "rex-dev-multiple_sources-3-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-multiple_sources-3-a",
+          "rex-dev-multiple_sources-3-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-4",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Which Opal fields and integrity check do downstream consumers need?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "customer reference",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-4-a"
+            ],
+            "quote": "customer reference",
+            "start": 81,
+            "end": 99,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "event timezone",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-4-a"
+            ],
+            "quote": "event timezone",
+            "start": 104,
+            "end": 118,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f3",
+            "value": "row count",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-4-b"
+            ],
+            "quote": "row count",
+            "start": 116,
+            "end": 125,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f4",
+            "value": "content checksum",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-multiple_sources-4-b"
+            ],
+            "quote": "content checksum",
+            "start": 130,
+            "end": 146,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-multiple_sources-4-a",
+            "rex-dev-multiple_sources-4-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-multiple_sources-4-a",
+          "rex-dev-multiple_sources-4-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-5",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What are the scope and expiry rules for Pine access?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "specific project",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-multiple_sources-5-a"
+            ],
+            "quote": "specific project",
+            "start": 97,
+            "end": 113,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "seven days",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-multiple_sources-5-b"
+            ],
+            "quote": "seven days",
+            "start": 97,
+            "end": 107,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-multiple_sources-5-a",
+            "rex-dev-multiple_sources-5-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-multiple_sources-5-a",
+          "rex-dev-multiple_sources-5-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-multiple_sources-negative-1",
+      "split": "development",
+      "family": "multiple_sources",
+      "scenario": "development-multiple_sources",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What are the Elm transfer rules for a third-party destination without any grant?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-1",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Where is the Delta staging dataset now?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/delta/reviewed/current.csv",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-time_changes-1-a"
+            ],
+            "quote": "/synthetic/delta/reviewed/current.csv",
+            "start": 113,
+            "end": 150,
+            "revision": "2",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-time_changes-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-time_changes-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-2",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "When is the Ivory review meeting now?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "Thursday at 15:00 UTC",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-time_changes-2-a"
+            ],
+            "quote": "Thursday at 15:00 UTC",
+            "start": 99,
+            "end": 120,
+            "revision": "2",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-time_changes-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-time_changes-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-3",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What error threshold did Fern use on 2026-09-10?",
+      "project": "research",
+      "filters": {},
+      "as_of": "2026-09-10T12:00:00Z",
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "3 percent",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-time_changes-3-b"
+            ],
+            "quote": "3 percent",
+            "start": 117,
+            "end": 126,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-time_changes-3-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-time_changes-3-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-4",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "How long does Topaz retain trace evidence currently?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "14 days",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-time_changes-4-a"
+            ],
+            "quote": "14 days",
+            "start": 106,
+            "end": 113,
+            "revision": "2",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-time_changes-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-time_changes-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-5",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Where was the Reed archive on 2026-09-12?",
+      "project": "research",
+      "filters": {},
+      "as_of": "2026-09-12T12:00:00Z",
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/reed/experiment/archive.zip",
+            "type": "path",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-time_changes-5-b"
+            ],
+            "quote": "/synthetic/reed/experiment/archive.zip",
+            "start": 122,
+            "end": 160,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-time_changes-5-b"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-time_changes-5-b"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-time_changes-negative-1",
+      "split": "development",
+      "family": "time_changes",
+      "scenario": "development-time_changes",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Where is the withdrawn Delta prototype checksum registry now?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-1",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Which parser did I implement for Laurel?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "streaming parser",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-speaker_ownership-1-a"
+            ],
+            "quote": "streaming parser",
+            "start": 106,
+            "end": 122,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-speaker_ownership-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-speaker_ownership-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-2",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Where did Bob store his Nimbus report?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "/synthetic/nimbus/reports/bob_run.md",
+            "type": "path",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-speaker_ownership-2-a"
+            ],
+            "quote": "/synthetic/nimbus/reports/bob_run.md",
+            "start": 100,
+            "end": 136,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-speaker_ownership-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-speaker_ownership-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-3",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Why did Charlie choose immutable snapshots for Iris?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "reviewers need to reproduce the same evidence",
+            "type": "text",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-speaker_ownership-3-a"
+            ],
+            "quote": "reviewers need to reproduce the same evidence",
+            "start": 102,
+            "end": 147,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-speaker_ownership-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-speaker_ownership-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-4",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What did I work on for Moss on 2026-09-21?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "reviewed the Moss schema",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-speaker_ownership-4-a"
+            ],
+            "quote": "reviewed the Moss schema",
+            "start": 75,
+            "end": 99,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "missing-unit report",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-speaker_ownership-4-a"
+            ],
+            "quote": "missing-unit report",
+            "start": 114,
+            "end": 133,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-speaker_ownership-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-speaker_ownership-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-5",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "charlie",
+      "query": "Which planning meeting time does Bob prefer for Finch?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "afternoon",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-speaker_ownership-5-a"
+            ],
+            "quote": "afternoon",
+            "start": 68,
+            "end": 77,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-speaker_ownership-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-speaker_ownership-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-speaker_ownership-negative-1",
+      "split": "development",
+      "family": "speaker_ownership",
+      "scenario": "development-speaker_ownership",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What did my coworker decide for Laurel? I have not said which coworker.",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "clarification",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-1",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What is my preferred testing order?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "complete test suite",
+            "type": "preference",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-user_preferences-1-a"
+            ],
+            "quote": "complete test suite",
+            "start": 71,
+            "end": 90,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-user_preferences-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-user_preferences-1-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-2",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "bob",
+      "query": "What is my preferred testing order?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "targeted regression command",
+            "type": "preference",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-user_preferences-2-a"
+            ],
+            "quote": "targeted regression command",
+            "start": 63,
+            "end": 90,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-user_preferences-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-user_preferences-2-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-3",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "charlie",
+      "query": "When should I receive progress updates?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "decision, blocker, or result changes",
+            "type": "preference",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-user_preferences-3-a"
+            ],
+            "quote": "decision, blocker, or result changes",
+            "start": 105,
+            "end": 141,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-user_preferences-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-user_preferences-3-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-4",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What do I prefer for figure labels and colors?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "labeled units",
+            "type": "preference",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-user_preferences-4-a"
+            ],
+            "quote": "labeled units",
+            "start": 77,
+            "end": 90,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "readable without distinguishing red from green",
+            "type": "preference",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-user_preferences-4-a"
+            ],
+            "quote": "readable without distinguishing red from green",
+            "start": 110,
+            "end": 156,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-user_preferences-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-user_preferences-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-5",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "bob",
+      "query": "How long should my incident report be?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "two-paragraph incident report",
+            "type": "preference",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-user_preferences-5-a"
+            ],
+            "quote": "two-paragraph incident report",
+            "start": 67,
+            "end": 96,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "links to detailed evidence",
+            "type": "preference",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-user_preferences-5-a"
+            ],
+            "quote": "links to detailed evidence",
+            "start": 109,
+            "end": 135,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-user_preferences-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-user_preferences-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-user_preferences-negative-1",
+      "split": "development",
+      "family": "user_preferences",
+      "scenario": "development-user_preferences",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What is Bob’s private testing-order preference?",
+      "project": "operations",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-1",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Give me the Osprey recovery field manual.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "checkpoint/osprey/reconcile-v4",
+            "type": "path",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-long_documents_originals-1-a"
+            ],
+            "quote": "checkpoint/osprey/reconcile-v4",
+            "start": 119,
+            "end": 149,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-long_documents_originals-1-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-long_documents_originals-1-a"
+        ],
+        "response_type": "original",
+        "original_source_id": "rex-dev-long_documents_originals-1-a",
+        "original_sha256": "e36fc77962b1c54ef684ae6d630723428d59130cf97446dbdc68b610d95e3b99",
+        "original_version": "1"
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-2",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Give me the current Tamarind laboratory data dictionary.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "degrees Celsius",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-long_documents_originals-2-a"
+            ],
+            "quote": "degrees Celsius",
+            "start": 144,
+            "end": 159,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "missing values are null",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-long_documents_originals-2-a"
+            ],
+            "quote": "missing values are null",
+            "start": 164,
+            "end": 187,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-long_documents_originals-2-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-long_documents_originals-2-a"
+        ],
+        "response_type": "original",
+        "original_source_id": "rex-dev-long_documents_originals-2-a",
+        "original_sha256": "f10f58ba6241ff4cdc38f1be234ceaceb227a0b8fbbcf140692768268219ebfb",
+        "original_version": "1"
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-3",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Give me the Copper handover handbook original.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "acceptance/copper/signoff.yml",
+            "type": "path",
+            "actor": "charlie",
+            "source_ids": [
+              "rex-dev-long_documents_originals-3-a"
+            ],
+            "quote": "acceptance/copper/signoff.yml",
+            "start": 119,
+            "end": 148,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-long_documents_originals-3-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-long_documents_originals-3-a"
+        ],
+        "response_type": "original",
+        "original_source_id": "rex-dev-long_documents_originals-3-a",
+        "original_sha256": "d22f984b97789d76e4f57b632da50ef9a5a6cd27a8b2be48c1b09ca2b9ec1946",
+        "original_version": "1"
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-4",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What must be verified before acknowledging a Sequoia chunk, and what must its acknowledgement contain?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "chunk checksum",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-long_documents_originals-4-a"
+            ],
+            "quote": "chunk checksum",
+            "start": 108,
+            "end": 122,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "accepted byte offset",
+            "type": "text",
+            "actor": "alice",
+            "source_ids": [
+              "rex-dev-long_documents_originals-4-a"
+            ],
+            "quote": "accepted byte offset",
+            "start": 195,
+            "end": 215,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-long_documents_originals-4-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-long_documents_originals-4-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-5",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "What unit does Plume use for turbidity, and how is the instrument identified?",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": true,
+        "facets": [
+          {
+            "id": "f1",
+            "value": "nephelometric units",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-long_documents_originals-5-a"
+            ],
+            "quote": "nephelometric units",
+            "start": 99,
+            "end": 118,
+            "revision": "1",
+            "aliases": []
+          },
+          {
+            "id": "f2",
+            "value": "instrument serial",
+            "type": "text",
+            "actor": "bob",
+            "source_ids": [
+              "rex-dev-long_documents_originals-5-a"
+            ],
+            "quote": "instrument serial",
+            "start": 124,
+            "end": 141,
+            "revision": "1",
+            "aliases": []
+          }
+        ],
+        "evidence_sets": [
+          [
+            "rex-dev-long_documents_originals-5-a"
+          ]
+        ],
+        "source_ids": [
+          "rex-dev-long_documents_originals-5-a"
+        ],
+        "response_type": "supported_answer"
+      }
+    },
+    {
+      "id": "rex-dev-long_documents_originals-negative-1",
+      "split": "development",
+      "family": "long_documents_originals",
+      "scenario": "development-long_documents_originals",
+      "tenant": "acme",
+      "principal": "alice",
+      "query": "Give me the unrecorded Osprey recovery handbook third edition.",
+      "project": "research",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-1",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Where is the reviewed Basil dataset?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-2",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Why did we choose streaming for Ochre?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-3",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What is the confirmed Jade concentration?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-4",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "bob",
+      "query": "Where did Alice save her private Palm notes?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-5",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "What did my coworker review for Pearl?",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "clarification",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    },
+    {
+      "id": "rex-dev-abstention-negative-6",
+      "split": "development",
+      "family": "abstention",
+      "scenario": "development-abstention",
+      "tenant": "bravo",
+      "principal": "alice",
+      "query": "Which tenant does the secret Brine customer contract belong to? That contract was never ingested.",
+      "project": "finance",
+      "filters": {},
+      "as_of": null,
+      "expected": {
+        "answerable": false,
+        "facets": [],
+        "evidence_sets": [],
+        "source_ids": [],
+        "response_type": "abstention",
+        "reason": "No complete currently authorized evidence set establishes the requested answer."
+      }
+    }
+  ]
+}

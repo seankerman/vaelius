@@ -1,0 +1,36 @@
+{
+  "classification": "authored development regression frozen before behavior; no held-out claim",
+  "failure": "Code Mode is unavailable because code-mode host is disabled.",
+  "forbidden": [
+    "shell_tool",
+    "unified_exec",
+    "hooks",
+    "plugins",
+    "apps",
+    "web_search"
+  ],
+  "negative_cases": [
+    "stale_api_build",
+    "different_profile",
+    "different_core_code",
+    "changed_source",
+    "changed_policy",
+    "different_active_generation",
+    "already_revoked",
+    "reused_report"
+  ],
+  "provider_calls": 0,
+  "required_transport": "code_mode_host enabled with only cloud-live.search_memory allowlisted",
+  "retry": {
+    "automatic_retries": 0,
+    "campaign_is_retry": true,
+    "original_ledgers": true,
+    "preserve_failed_report": true,
+    "provider_attempts": 1,
+    "same_active_generation": true,
+    "same_core_production_code": true,
+    "same_current_sources_and_policy": true,
+    "same_profile": true
+  },
+  "version": "cloud-receiver-retry-v1"
+}

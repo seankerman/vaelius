@@ -1,0 +1,14 @@
+{
+  "S_confirmation_sha256": "a41fea2bc3983d8e99ea3dcdfcd7f419d4250ac325e0bd2fb151979c086fb79f",
+  "confirmation_abstention_or_denial": 12,
+  "confirmation_body_location": "private history-retrieval-v1/sealed/; never load for DEV or guard tests",
+  "confirmation_classification": "separate authored synthetic supplement, private sealed; not independent real-team evidence",
+  "confirmation_positive": 36,
+  "confirmation_questions": 48,
+  "confirmation_sha256": "6272eaccdb7d7b2f044f0e7ffa8efd24d95f496454aa90da3c9d31676f0e7315",
+  "development_families": 12,
+  "development_path": "development.json",
+  "development_questions": 48,
+  "development_sha256": "6679c5f321517c31b4352d9ddedf9830bb1c8c32e39b2918c8da82fac42e4d2d",
+  "version": "history-retrieval-h1-manifest-v1"
+}

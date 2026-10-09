@@ -1,0 +1,9 @@
+{
+  "synthetic": true,
+  "version": "preference-race-1",
+  "source": "Please remember: I prefer pytest for my projects.",
+  "canonical_claim": "Alice prefers pytest for her projects.",
+  "visibility": "team",
+  "expected_before_bridge": "pending derived preference denied to all",
+  "expected_after_bridge": "private preference available only to verified Alice; shared original remains team"
+}

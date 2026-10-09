@@ -1,0 +1,1 @@
+{"version":"cloud_rollback_interpreter_v1","classification":"synthetic installed-interpreter regression","oracle":"previous virtualenv sys.prefix remains its configured directory","provider_calls":0}

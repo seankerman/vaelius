@@ -1,0 +1,16 @@
+{
+  "classification": "synthetic development regression, frozen before final hardening; not held-out",
+  "sha256": "45f928ced8108b207f68df4d8bd8680b7644a328c9416348f9dc90e4123f4408",
+  "expected_sections": [
+    {
+      "start": 0,
+      "end": 41,
+      "heading": "Maple"
+    },
+    {
+      "start": 41,
+      "end": 104,
+      "heading": "Dataset location"
+    }
+  ]
+}

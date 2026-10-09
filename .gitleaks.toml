@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Generated module checksums, independently verified by check_public_files.py"
+paths = ['packages/(client/agentclient|server/agenthub)/BUILD_ID\.json$']
+regexTarget = "secret"
+regexes = ['^[a-f0-9]{64}$']
+
+[[rules.allowlists]]
+description = "Synthetic candidate hashes in one frozen consolidation fixture"
+paths = ['packages/server/tests/fixtures/processing/consolidation_facets_v2\.json$']
+regexTarget = "match"
+regexes = ['candidate_key"\s*:\s*"[a-f0-9]{64}"']

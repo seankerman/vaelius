@@ -1,0 +1,12 @@
+{
+  "version":"cloud-segment-metrics-v1",
+  "classification":"authored synthetic regression; no held-out claim",
+  "definition":"input_bytes means canonical deterministically redacted retained segment bytes, excluding transport/base64 overhead; source_revisions means accepted logical source versions, including explicit pre019 retention once",
+  "cases":[
+    "accepted segment counts retained input_bytes and one source_revisions atomically in source transaction",
+    "identical accepted retry and explicit retain-existing do not double-count",
+    "object failure or canonical database transaction abort count zero accepted bytes/revisions",
+    "a fresh source revision counts new canonical bytes and one revision",
+    "pre019 explicit backfill counts one retained logical projection and labels capture stage only with no source payload in metric details"
+  ]
+}

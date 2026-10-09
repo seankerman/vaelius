@@ -1,0 +1,647 @@
+{
+  "cases": [
+    {
+      "boundary_paths": [],
+      "contract": "timeline must retain source chronology, actor and exact spans; duplicate source joins do not duplicate episodes",
+      "forbidden_neighbor_generator": null,
+      "id": "populated_episode",
+      "required_values": [
+        "Alice corrected the dispatch date to 2026-09-24",
+        "18.4 kilograms"
+      ],
+      "source_spans": [
+        {
+          "end": 113,
+          "quote": "Alice corrected the dispatch date to 2026-09-24",
+          "revision": "1",
+          "source_id": "s1-reg-populated_episode-1",
+          "start": 66,
+          "value": "Alice corrected the dispatch date to 2026-09-24"
+        },
+        {
+          "end": 47,
+          "quote": "18.4 kilograms",
+          "revision": "1",
+          "source_id": "s1-reg-populated_episode-2",
+          "start": 33,
+          "value": "18.4 kilograms"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-populated_episode-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "9ec046702cbf5dee2e84a290d6b6cc212b2eb8218c2949cc03b68294a60e7f9c",
+          "tenant": "acme",
+          "text": "Alice opened the packing checklist. Bob weighed the sealed crate. Alice corrected the dispatch date to 2026-09-24.",
+          "title": "Assembly handoff"
+        },
+        {
+          "id": "s1-reg-populated_episode-2",
+          "kind": "native_document",
+          "owner": "bob",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "c6b13b6e855fafb7bc6087c2d06cf0ee49041968d4c5ffeb93729ecdc6c77893",
+          "tenant": "acme",
+          "text": "Bob measured the sealed crate at 18.4 kilograms before dispatch.",
+          "title": "Crate mass record"
+        }
+      ],
+      "title": "Populated multi-source assembly handoff"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "1000 higher-ranked forbidden neighbors cannot exhaust authorized top-k; no neighbor text or IDs are delivered",
+      "forbidden_neighbor_generator": {
+        "count": 1000,
+        "owner": "bob",
+        "permitted_id": "s1-reg-forbidden_neighbors-1",
+        "reader_ids": [
+          "bob"
+        ],
+        "text_prefix": "Private water gauge calibration"
+      },
+      "id": "forbidden_neighbors",
+      "required_values": [
+        "40 millimetre"
+      ],
+      "source_spans": [
+        {
+          "end": 46,
+          "quote": "40 millimetre",
+          "revision": "1",
+          "source_id": "s1-reg-forbidden_neighbors-1",
+          "start": 33,
+          "value": "40 millimetre"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-forbidden_neighbors-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "5c0b620bb47a7ef31793ab109602e2b1ba54f6679fcd9c5e220b504bbe96e52a",
+          "tenant": "acme",
+          "text": "The permitted water gauge uses a 40 millimetre reference tube.",
+          "title": "Water gauge service sheet"
+        }
+      ],
+      "title": "Authorized anchor behind forbidden neighbors"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "literal identifier lookup and quantity intent are distinct; numeric token must not force identifier route",
+      "forbidden_neighbor_generator": null,
+      "id": "identifier_quantity",
+      "required_values": [
+        "RA-6817"
+      ],
+      "source_spans": [
+        {
+          "end": 28,
+          "quote": "RA-6817",
+          "revision": "1",
+          "source_id": "s1-reg-identifier_quantity-1",
+          "start": 21,
+          "value": "RA-6817"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-identifier_quantity-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "376345bc6c3324c63ebf8629610085696604e1d7e524f8e1a058c3832961cce8",
+          "tenant": "acme",
+          "text": "Return authorization RA-6817 covers the cracked photometer.",
+          "title": "Instrument return approval"
+        },
+        {
+          "id": "s1-reg-identifier_quantity-2",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "3217847bef78f6994a561a3797d39836e2371971510346c0ac5577615c8681ff",
+          "tenant": "acme",
+          "text": "The photometer collected 6817 exposures; this is a quantity, not a return authorization.",
+          "title": "Instrument exposure budget"
+        }
+      ],
+      "title": "Identifiers and quantities with same digits"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "source owner Alice does not make Bob first-person actions Alice actions; requested actor and explanation must bind",
+      "forbidden_neighbor_generator": null,
+      "id": "cross_principal_i",
+      "required_values": [
+        "Bob replaced the torn seal",
+        "it leaked dye"
+      ],
+      "source_spans": [
+        {
+          "end": 51,
+          "quote": "it leaked dye",
+          "revision": "1",
+          "source_id": "s1-reg-cross_principal_i-1",
+          "start": 38,
+          "value": "it leaked dye"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-cross_principal_i-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "d9a383f5072cf0892c2b9921c8b9d86fd8340e3950460dfcbd3a531a3943fc23",
+          "tenant": "acme",
+          "text": "Bob: I replaced the torn seal because it leaked dye. Alice: I photographed the undamaged spare.",
+          "title": "Repair dialogue"
+        }
+      ],
+      "title": "Uploader versus first-person actor"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "Alice may read her note but may not receive or apply Bob operative preference; secondhand authorized mention is not an ACL leak or operative record",
+      "forbidden_neighbor_generator": null,
+      "id": "attributed_preference",
+      "required_values": [
+        "reviewing the access list first"
+      ],
+      "source_spans": [
+        {
+          "end": 111,
+          "quote": "reviewing the access list first",
+          "revision": "1",
+          "source_id": "s1-reg-attributed_preference-2",
+          "start": 80,
+          "value": "reviewing the access list first"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-attributed_preference-1",
+          "kind": "native_document",
+          "owner": "bob",
+          "project": "operations",
+          "reader_ids": [
+            "bob"
+          ],
+          "revision": "1",
+          "sha256": "59185217b34fe204cd4d4e5a8cc0a4df5908adf3040f5e8c28c2d0df20790486",
+          "tenant": "acme",
+          "text": "Bob prefers a signed checklist before every audit. This is Bob's operative private preference.",
+          "title": "Bob private audit preference"
+        },
+        {
+          "id": "s1-reg-attributed_preference-2",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice"
+          ],
+          "revision": "1",
+          "sha256": "f945511857a40ab3c92cd7efa833f3fd67a3fe27754e7a2aabf46d04d0289118",
+          "tenant": "acme",
+          "text": "Alice heard that Bob sometimes starts with an unsigned checklist. Alice prefers reviewing the access list first.",
+          "title": "Alice meeting notes"
+        }
+      ],
+      "title": "Operative preference versus secondhand mention"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "what decision is answerable; why question abstains or clearly states reason unavailable",
+      "forbidden_neighbor_generator": null,
+      "id": "missing_rationale",
+      "required_values": [
+        "amber indicator"
+      ],
+      "source_spans": [
+        {
+          "end": 34,
+          "quote": "amber indicator",
+          "revision": "1",
+          "source_id": "s1-reg-missing_rationale-1",
+          "start": 19,
+          "value": "amber indicator"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-missing_rationale-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "fdf3ee4d25b821a9c9345546824498d97ef15326b75fcd8e3d16c0b782c8b8ba",
+          "tenant": "acme",
+          "text": "Alice selected the amber indicator. The reason was not recorded.",
+          "title": "Color selection record"
+        }
+      ],
+      "title": "Decision without invented rationale"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "complete answer requires both source records, typed count and release condition; one record cannot stand in for complete evidence",
+      "forbidden_neighbor_generator": null,
+      "id": "multiple_facets",
+      "required_values": [
+        "three culture plates",
+        "one blank control",
+        "48 hours"
+      ],
+      "source_spans": [
+        {
+          "end": 42,
+          "quote": "three culture plates",
+          "revision": "1",
+          "source_id": "s1-reg-multiple_facets-1",
+          "start": 22,
+          "value": "three culture plates"
+        },
+        {
+          "end": 64,
+          "quote": "one blank control",
+          "revision": "1",
+          "source_id": "s1-reg-multiple_facets-1",
+          "start": 47,
+          "value": "one blank control"
+        },
+        {
+          "end": 90,
+          "quote": "48 hours",
+          "revision": "1",
+          "source_id": "s1-reg-multiple_facets-2",
+          "start": 82,
+          "value": "48 hours"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-multiple_facets-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "5d3c2126a7c64b3422a46e5cc8472aa747fe737f73a8431840ade457e280bc10",
+          "tenant": "acme",
+          "text": "The cold box contains three culture plates and one blank control.",
+          "title": "Cold box contents"
+        },
+        {
+          "id": "s1-reg-multiple_facets-2",
+          "kind": "native_document",
+          "owner": "bob",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "dd0d1d092cb56ecc60c2e7c11d4304e69f750d92ca897d868a84b52b9fe19343",
+          "tenant": "acme",
+          "text": "Bob authorized the cold box release only after the blank control stayed clear for 48 hours.",
+          "title": "Cold box release"
+        }
+      ],
+      "title": "Complementary inventory and signoff sources"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "original retrieval disambiguates requested edition from actual returned evidence, then compares faithful bytes/version; gold ID must not select original",
+      "forbidden_neighbor_generator": null,
+      "id": "original_ambiguity",
+      "required_values": [
+        "signed-board",
+        "Tuesday"
+      ],
+      "source_spans": [
+        {
+          "end": 99,
+          "quote": "signed-board",
+          "revision": "1",
+          "source_id": "s1-reg-original_ambiguity-1",
+          "start": 87,
+          "value": "signed-board"
+        },
+        {
+          "end": 76,
+          "quote": "Tuesday",
+          "revision": "1",
+          "source_id": "s1-reg-original_ambiguity-1",
+          "start": 69,
+          "value": "Tuesday"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-original_ambiguity-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "54d126861d02798fa6ebbab3729c4cb3358e1b21460e740ba5a5c1d6f8f7a485",
+          "tenant": "acme",
+          "text": "The signed donation schedule from the museum board assigns pickup to Tuesday. Edition: signed-board.",
+          "title": "Donation schedule"
+        },
+        {
+          "id": "s1-reg-original_ambiguity-2",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "40b6cc4d6d2f48471307df8be67a359ef1d97b250d6e8575b3aaa0a60141436a",
+          "tenant": "acme",
+          "text": "The draft donation schedule assigns pickup to Thursday. Edition: draft-staff.",
+          "title": "Donation schedule"
+        }
+      ],
+      "title": "Two originals with exact same display title"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "current and as-of requests resolve canonical native revisions separately; current permission still applies",
+      "forbidden_neighbor_generator": null,
+      "id": "native_history",
+      "required_values": [
+        "9 percent",
+        "6 percent"
+      ],
+      "source_spans": [
+        {
+          "end": 65,
+          "quote": "9 percent",
+          "revision": "1",
+          "source_id": "s1-reg-native_history-1",
+          "start": 56,
+          "value": "9 percent"
+        },
+        {
+          "end": 62,
+          "quote": "6 percent",
+          "revision": "2",
+          "source_id": "s1-reg-native_history-2",
+          "start": 53,
+          "value": "6 percent"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-native_history-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "11ddad229d18e3e202c937f71fc0544a9f0813201ad1e3fa0268588aae0ad4fc",
+          "tenant": "acme",
+          "text": "Before 2026-09-21 the leaf dryer moisture threshold was 9 percent.",
+          "title": "Leaf dryer moisture specification"
+        },
+        {
+          "id": "s1-reg-native_history-2",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "2",
+          "sha256": "ae3c9327f474e03e1a844403a0afe1cd241c8315182c5a9dffadf30a3ce3e716",
+          "tenant": "acme",
+          "text": "From 2026-09-21 the leaf dryer moisture threshold is 6 percent.",
+          "title": "Leaf dryer moisture specification"
+        }
+      ],
+      "title": "A native specification changes across revisions"
+    },
+    {
+      "boundary_paths": [
+        "search",
+        "detail",
+        "timeline",
+        "history",
+        "original"
+      ],
+      "contract": "revoke requester after candidates and before each search/detail/timeline/history/original return; every path denies without stale-policy escape",
+      "forbidden_neighbor_generator": null,
+      "id": "return_revocation",
+      "required_values": [
+        "0.4 degree"
+      ],
+      "source_spans": [
+        {
+          "end": 54,
+          "quote": "0.4 degree",
+          "revision": "1",
+          "source_id": "s1-reg-return_revocation-1",
+          "start": 44,
+          "value": "0.4 degree"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-return_revocation-1",
+          "kind": "native_document",
+          "owner": "bob",
+          "project": "operations",
+          "reader_ids": [
+            "bob"
+          ],
+          "revision": "1",
+          "sha256": "2a0549a7500f50f87bf9ea8abc8b1ce6b4250f5fb075682deae5b83ac78eb584",
+          "tenant": "acme",
+          "text": "The restricted calibration report records a 0.4 degree correction.",
+          "title": "Restricted calibration report"
+        }
+      ],
+      "title": "Permission change between discovery and return"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "later correction replaces current location but preserves supported rationale and earlier as-of evidence; no-learning turn adds no invented fact",
+      "forbidden_neighbor_generator": null,
+      "id": "continuous_correction",
+      "required_values": [
+        "/synthetic/teaching/locked-crate",
+        "the lid locks"
+      ],
+      "source_spans": [
+        {
+          "end": 72,
+          "quote": "/synthetic/teaching/locked-crate",
+          "revision": "1",
+          "source_id": "s1-reg-continuous_correction-2",
+          "start": 40,
+          "value": "/synthetic/teaching/locked-crate"
+        },
+        {
+          "end": 80,
+          "quote": "the lid locks",
+          "revision": "1",
+          "source_id": "s1-reg-continuous_correction-1",
+          "start": 67,
+          "value": "the lid locks"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-continuous_correction-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "cb14c1f5a27e0084303ec21059142a9f64055119b9bc1af43876b312b751e67b",
+          "tenant": "acme",
+          "text": "I packed the teaching kit in /synthetic/teaching/old-crate because the lid locks.",
+          "title": "Observer source turn one"
+        },
+        {
+          "id": "s1-reg-continuous_correction-2",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "dd01ce0b3b4a7fc2396df029584003c9f8dd280eab9fe5de9e0ae3d981a5bcd9",
+          "tenant": "acme",
+          "text": "Correction: I moved the teaching kit to /synthetic/teaching/locked-crate; the locking-lid reason still holds.",
+          "title": "Observer source correction"
+        }
+      ],
+      "title": "Continuous observer keeps rationale after correction"
+    },
+    {
+      "boundary_paths": [],
+      "contract": "verify Alice source ownership without requiring her name in a non-person factual answer; explicit Bob action still cannot be inferred from Alice ownership",
+      "forbidden_neighbor_generator": null,
+      "id": "source_author",
+      "required_values": [
+        "two attendants",
+        "18 degrees"
+      ],
+      "source_spans": [
+        {
+          "end": 41,
+          "quote": "two attendants",
+          "revision": "1",
+          "source_id": "s1-reg-source_author-1",
+          "start": 27,
+          "value": "two attendants"
+        },
+        {
+          "end": 76,
+          "quote": "18 degrees",
+          "revision": "1",
+          "source_id": "s1-reg-source_author-1",
+          "start": 66,
+          "value": "18 degrees"
+        }
+      ],
+      "sources": [
+        {
+          "id": "s1-reg-source_author-1",
+          "kind": "native_document",
+          "owner": "alice",
+          "project": "operations",
+          "reader_ids": [
+            "alice",
+            "bob",
+            "charlie"
+          ],
+          "revision": "1",
+          "sha256": "813d0846c0fe971316860cbac93509a66267951a62ec1f294cfb82796b3eb861",
+          "tenant": "acme",
+          "text": "The night exhibit requires two attendants and a temperature below 18 degrees.",
+          "title": "Night exhibit handling"
+        }
+      ],
+      "title": "Provenance owner is not the factual actor"
+    }
+  ],
+  "classification": "authored synthetic development regressions; not extraction scores or sealed confirmation",
+  "created_utc": "2026-09-27T04:30:16.331165+00:00",
+  "version": "local-staging-regressions-v1"
+}

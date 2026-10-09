@@ -1,0 +1,1 @@
+CREATE TABLE cloud_preference_candidates(document_id TEXT NOT NULL REFERENCES knowledge_documents(document_id),source_id TEXT NOT NULL REFERENCES enterprise_sources(id),owner TEXT NOT NULL,candidate_json TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','promoted','held')),created DOUBLE PRECISION NOT NULL,PRIMARY KEY(document_id,source_id));

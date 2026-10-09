@@ -1,0 +1,104 @@
+{
+  "cases": [
+    "valid_native_login",
+    "valid_brokered_federation",
+    "wrong_issuer",
+    "wrong_audience",
+    "expired_token",
+    "future_token",
+    "unsigned_token",
+    "unknown_signing_key_bounded_refresh",
+    "replayed_callback_state",
+    "callback_mismatch",
+    "PKCE_verifier_bound",
+    "email_same_external_subject_distinct_issuers",
+    "SSO_required_native_denied",
+    "globally_disabled_identity_denied",
+    "settings_admin_no_private_access",
+    "credential_expiry",
+    "credential_rotation_revokes_old",
+    "service_delegation_narrowing",
+    "group_removal_revokes_current_access",
+    "SCIM_duplicate_idempotent",
+    "SCIM_conflicting_idempotency_key",
+    "SCIM_out_of_order_reconcile",
+    "stale_source_ACL_denied",
+    "ACL_changes_during_install_denied"
+  ],
+  "issuers": [
+    "http://127.0.0.1:58080/realms/native",
+    "http://127.0.0.1:58080/realms/company"
+  ],
+  "preference_cases": [
+    "opposing_users_separated",
+    "verified_owner_not_source_author",
+    "quoted_preference_not_promoted",
+    "one_task_not_durable",
+    "general_cross_authorized_projects",
+    "narrow_project_overrides_general",
+    "explicit_request_overrides_stored",
+    "org_requirement_overrides_user",
+    "cross_project_does_not_grant_source_access",
+    "correction_prior_validity",
+    "withdrawal_invalidation",
+    "same_context_suppression",
+    "post_compaction_restore",
+    "delegated_user_subject",
+    "shared_original_remains_shared"
+  ],
+  "preferences": [
+    {
+      "durable": true,
+      "evidence": "Please remember: I prefer pytest for my projects.",
+      "key": "test_runner",
+      "owner": "alice",
+      "scope": "user",
+      "value": "pytest"
+    },
+    {
+      "durable": true,
+      "evidence": "Please remember: I prefer unittest for my projects.",
+      "key": "test_runner",
+      "owner": "bob",
+      "scope": "user",
+      "value": "unittest"
+    },
+    {
+      "durable": true,
+      "evidence": "For the legacy project, always use unittest.",
+      "key": "test_runner",
+      "owner": "alice",
+      "project": "legacy",
+      "scope": "project",
+      "value": "unittest"
+    },
+    {
+      "durable": false,
+      "evidence": "Bob said: I prefer nose.",
+      "key": "test_runner",
+      "owner": "alice",
+      "scope": "user",
+      "value": "nose"
+    },
+    {
+      "durable": false,
+      "evidence": "Just for this task, use nose.",
+      "key": "test_runner",
+      "owner": "alice",
+      "scope": "task",
+      "value": "nose"
+    }
+  ],
+  "synthetic": true,
+  "tenants": [
+    "orchard",
+    "harbor"
+  ],
+  "users": [
+    "alice",
+    "bob",
+    "service",
+    "admin"
+  ],
+  "version": "cloud-identity-preferences-1"
+}

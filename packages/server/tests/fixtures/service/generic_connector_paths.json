@@ -1,0 +1,19 @@
+{
+  "classification": "synthetic-public-regression",
+  "cases": [
+    {
+      "name_parts": [
+        "App",
+        "Suite"
+      ],
+      "content": "# Synthetic guide\nThe importer retains a stable CSV header.\n"
+    },
+    {
+      "name_parts": [
+        "Example",
+        "Project"
+      ],
+      "content": "# Another guide\nNo directory name grants access.\n"
+    }
+  ]
+}

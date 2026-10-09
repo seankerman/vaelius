@@ -1,0 +1,133 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "request-before-typed-subject",
+      "query": "Describe Project Sable 7 artifact history and its confirmed move."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "different-typed-subject",
+      "query": "Describe Project Sable 8 artifact history and its confirmed move."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "unlisted-request-before-typed-subject",
+      "query": "Investigate Project Sable 7 recorded artifact path."
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "first-real-topic",
+      "query": "Sable dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "first-unknown-topic",
+      "query": "Juniper dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "first-capitalized-topic-noun",
+      "query": "Sable Dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Sable dataset is saved at /synthetic/sable.csv.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "first-unknown-capitalized-topic",
+      "query": "Juniper Dataset location"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "comparison-binds-actor-to-own-fact",
+      "query": "Distinguish the confirmed old and replacement locations for Project Sable 7 from Bob's unverified alternative, and name the move date."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv and independently verified it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "comparison-negative-fact-is-required",
+      "query": "Distinguish the confirmed old and replacement locations for Project Sable 7 from Bob's unverified alternative, and name the move date."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "comparison-unknown-actor",
+      "query": "Distinguish the confirmed locations for Project Sable 7 from Cameron's unverified alternative."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "direct-positive-actor-remains-denied",
+      "query": "Give the verified path reported by Bob for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv but did not verify it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": true,
+      "id": "explicit-unverified-path-is-supported",
+      "query": "Give the unverified path reported by Bob for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv and independently verified it.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "explicit-unverified-path-needs-negative-fact",
+      "query": "Give the unverified path reported by Bob for Project Sable 7."
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 artifact was /synthetic/old.csv from 2026-09-01 until 2026-09-15. A confirmed move on September 15 put it at /synthetic/current.csv. Bob reported a different path /synthetic/bob.csv without commenting on verification.",
+        "title": "Synthetic artifact history"
+      },
+      "expected": false,
+      "id": "comparison-uncertainty-does-not-invent-negative",
+      "query": "Compare the confirmed locations for Project Sable 7 with Bob's unverified alternative."
+    }
+  ],
+  "classification": "authored paired regressions from consumed V3 failures before repair; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-temporal-actor-v1"
+}

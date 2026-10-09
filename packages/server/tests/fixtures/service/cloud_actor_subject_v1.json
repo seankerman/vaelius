@@ -1,0 +1,43 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Bob chose JSON because Alice supplied a reader for nested records.",
+        "title": "Synthetic choice"
+      },
+      "expected": false,
+      "id": "actor-mentioned-in-reason-is-not-chooser",
+      "query": "Why did Alice choose JSON?"
+    },
+    {
+      "claim": {
+        "lesson": "Bob chose JSON because Alice supplied a reader for nested records.",
+        "title": "Synthetic choice"
+      },
+      "expected": true,
+      "id": "chooser-reason-may-name-another-actor",
+      "query": "Why did Bob choose JSON?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves headers, Bob chose JSON because it preserves nested records.",
+        "title": "Synthetic choice"
+      },
+      "expected": false,
+      "id": "comma-separated-choices-do-not-merge",
+      "query": "Why did Alice choose JSON?"
+    },
+    {
+      "claim": {
+        "lesson": "Alice chose CSV because it preserves headers, Bob chose JSON because it preserves nested records.",
+        "title": "Synthetic choice"
+      },
+      "expected": true,
+      "id": "comma-separated-correct-choice",
+      "query": "Why did Bob choose JSON?"
+    }
+  ],
+  "classification": "authored grammatical actor pairs frozen before attribution tightening; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-actor-subject-v1"
+}

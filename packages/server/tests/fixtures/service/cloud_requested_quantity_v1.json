@@ -1,0 +1,97 @@
+{
+  "cases": [
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has no approved budget or confirmed spending amount.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": false,
+      "id": "authorize-missing-value",
+      "query": "How much did leadership authorize for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "The approved budget for Project Sable 7 is $5000.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": true,
+      "id": "authorize-known-value",
+      "query": "How much did leadership authorize for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has no approved budget or confirmed spending amount.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": false,
+      "id": "approve-missing-value",
+      "query": "How much did leadership approve for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "The approved budget for Project Sable 7 is $5000.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": true,
+      "id": "approve-known-value",
+      "query": "How much did leadership approve for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has no approved budget or confirmed spending amount.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": false,
+      "id": "pay-missing-value",
+      "query": "How much did the company pay for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "The company paid $75 for Project Sable 7.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": true,
+      "id": "pay-known-value",
+      "query": "How much did the company pay for Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Bob spent 30 minutes on Project Sable 7.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": true,
+      "id": "time-is-not-money",
+      "query": "How much time did Bob spend on Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Bob worked on Project Sable 7; no duration is known.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": false,
+      "id": "time-needs-duration",
+      "query": "How much time did Bob spend on Project Sable 7?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 uses 5 GB of storage.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": true,
+      "id": "storage-is-not-money",
+      "query": "How much storage does Project Sable 7 use?"
+    },
+    {
+      "claim": {
+        "lesson": "Project Sable 7 has storage but no size measurement.",
+        "title": "Synthetic bounded quantity"
+      },
+      "expected": false,
+      "id": "storage-needs-size",
+      "query": "How much storage does Project Sable 7 use?"
+    }
+  ],
+  "classification": "authored requested monetary and nonmonetary quantity pairs before repair; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-requested-quantity-v1"
+}

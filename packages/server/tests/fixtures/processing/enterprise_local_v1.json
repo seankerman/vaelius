@@ -1,0 +1,27 @@
+{
+  "version": "enterprise-local-1",
+  "classification": "synthetic development fixture; not held-out or ordinary use",
+  "organizations": ["orchard", "harbor"],
+  "principals": [
+    {"id": "alice", "organization": "orchard", "role": "member"},
+    {"id": "bob", "organization": "orchard", "role": "member"},
+    {"id": "carol", "organization": "orchard", "role": "member"},
+    {"id": "admin", "organization": "orchard", "role": "settings_admin"},
+    {"id": "mallory", "organization": "harbor", "role": "member"}
+  ],
+  "projects": [{"organization": "orchard", "id": "maple", "members": ["alice", "bob"]}],
+  "sources": [
+    {"id": "same-source", "organization": "orchard", "owner": "alice", "project": "maple", "visibility": "private", "session": "same-session", "turn": "1", "kind": "UserPromptSubmit", "body": "The synthetic dataset is saved at /tmp/orchard/maple.csv; CANARY_ALICE_PRIVATE_7."},
+    {"id": "team-source", "organization": "orchard", "owner": "alice", "project": "maple", "visibility": "team", "session": "team-session", "turn": "1", "kind": "Stop", "body": "We chose a CSV export because the downstream importer expects a stable header; CANARY_TEAM_RAW_5."},
+    {"id": "same-source", "organization": "harbor", "owner": "mallory", "project": "maple", "visibility": "private", "session": "same-session", "turn": "1", "kind": "UserPromptSubmit", "body": "The harbor dataset is elsewhere; CANARY_MALLORY_PRIVATE_9."}
+  ],
+  "expected": {
+    "alice_private_readers": ["alice"],
+    "team_knowledge_readers": ["alice", "bob"],
+    "team_raw_readers": ["alice"],
+    "denied_readers": ["carol", "admin", "mallory"],
+    "duplicate_receipt": "same receipt for same credential, source ID, and body; conflict for changed body",
+    "revocation": "deny selection, direct detail, source, page and expansion after commit",
+    "outage": "no legacy local knowledge fallback"
+  }
+}

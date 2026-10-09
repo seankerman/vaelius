@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "cases": [
+    "initialize_without_auth_denied",
+    "origin_rebinding_denied",
+    "unknown_tool_safe_error",
+    "project_is_explicit_or_header",
+    "project_membership_checked_by_service",
+    "revoked_token_after_initialize_denied",
+    "search_uses_common_delivery_recheck",
+    "read_only_tools_not_writes",
+    "remote_fetch_cannot_write_server_files",
+    "strict_nested_schema",
+    "owned_install_upgrade_preserves_other_config",
+    "credentials_not_written_to_toml",
+    "client_contains_no_tools_catalog"
+  ]
+}

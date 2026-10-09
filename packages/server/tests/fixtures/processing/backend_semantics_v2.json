@@ -1,0 +1,10 @@
+{
+  "classification": "synthetic development regression, frozen before final hardening; not held-out",
+  "repeated_text": "The dataset is at /tmp/maple.csv because the CSV header is stable.",
+  "commentary": "The dataset is at /tmp/review.csv because the review uses CSV.",
+  "document": "# Maple\nThe original importer uses CSV.\n\n## Dataset location\nThe reviewed dataset is at /tmp/maple.csv.\n",
+  "expected_sections": [
+    {"start": 0, "end": 41, "heading": "Maple"},
+    {"start": 41, "end": 104, "heading": "Dataset location"}
+  ]
+}

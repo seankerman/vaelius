@@ -1,0 +1,124 @@
+{
+  "classification": "frozen observed synthetic consolidation failure; development regression",
+  "candidates": [
+    {
+      "applied_revision_id": "rev_47041ae7233cb2c2218337884c049885c634a2cb42a3fdee",
+      "candidate_key": "c57257cf913e74a659b6636e8a74c94e1d24bda7eca95dc25d58600894274fad",
+      "claim": "The Maple dataset was saved as CSV at the specified path. CSV was the previously chosen format because the importer requires a stable header.",
+      "knowledge_type": "fact",
+      "memory_record": {
+        "actors": [
+          "agent",
+          "user"
+        ],
+        "artifact_name": "maple.csv",
+        "attribution": "execution_result",
+        "event_id": "93b18f067a8f87329062ee1d364f54420484bf48396a1559368bf1eff50eac78",
+        "evidence_span_ids": [
+          "4dcdc1ac7c7b67ae2aa0",
+          "5179954dc18fdad1d6df"
+        ],
+        "facets": [
+          "activity",
+          "fact",
+          "artifact"
+        ],
+        "location": "/Users/demo/My Data/maple.csv",
+        "occurred_date": "",
+        "reason_actor": "user",
+        "reason_quote": "because the importer requires a stable header",
+        "source_created": 1790334000.0,
+        "state": "observed",
+        "subject": "Maple dataset",
+        "text": "The Maple dataset was saved as CSV at the specified path. CSV was the previously chosen format because the importer requires a stable header.",
+        "time_basis": "source_event_time",
+        "title": "Maple dataset saved as CSV at /Users/demo/My Data/maple.csv"
+      },
+      "subjects": [
+        "Maple dataset"
+      ],
+      "title": "Maple dataset saved as CSV at /Users/demo/My Data/maple.csv"
+    },
+    {
+      "candidate_key": "4102655b17a6863c51eda01b07b208fbcb7ea1befa4c1f92877c2eae83d8bdcd",
+      "claim": "User reported moving the Maple dataset; its currently reported location is /Users/demo/My Data/current-maple.csv. The move was not independently verified. The CSV choice remains supported because the importer requires a stable header.",
+      "knowledge_type": "fact",
+      "memory_record": {
+        "actors": [
+          "user"
+        ],
+        "artifact_name": "current-maple.csv",
+        "attribution": "user_reported",
+        "event_id": "8b39f06ef9f59725b56bb3c2285d9eebc01867ac83912af9d04693a39ae7687e",
+        "evidence_span_ids": [
+          "98f31f513a8db1a68e92",
+          "5179954dc18fdad1d6df"
+        ],
+        "facets": [
+          "activity",
+          "fact",
+          "artifact"
+        ],
+        "location": "/Users/demo/My Data/current-maple.csv",
+        "occurred_date": "",
+        "reason_actor": "user",
+        "reason_quote": "because the importer requires a stable header",
+        "source_created": 1790341200.0,
+        "state": "reported",
+        "subject": "Maple dataset location",
+        "text": "User reported moving the Maple dataset; its currently reported location is /Users/demo/My Data/current-maple.csv. The move was not independently verified. The CSV choice remains supported because the importer requires a stable header.",
+        "time_basis": "source_event_time",
+        "title": "Maple dataset moved to /Users/demo/My Data/current-maple.csv"
+      },
+      "subjects": [
+        "Maple dataset location"
+      ],
+      "title": "Maple dataset moved to /Users/demo/My Data/current-maple.csv"
+    }
+  ],
+  "earlier_claim": {
+    "action": null,
+    "aliases": null,
+    "applicability": null,
+    "applicability_constraints": null,
+    "domain": "private_memory",
+    "evidence_status": "user_reported",
+    "knowledge_type": "decision",
+    "lesson": "User reported choosing CSV for the Maple dataset because the importer requires a stable header. This is a reported format decision; no execution or saved artifact was verified.",
+    "memory_context": {
+      "actors": [
+        "user"
+      ],
+      "artifact_name": "",
+      "attribution": "user_reported",
+      "event_id": "52a438e80591fc3a219a6e78c558fb0e8efe8eac2fa8875a04c3c4845b91b398",
+      "facets": [
+        "decision",
+        "fact"
+      ],
+      "location": "",
+      "occurred_date": "",
+      "policy": "durable-memory-8",
+      "reason_actor": "user",
+      "reason_quote": "because the importer requires a stable header",
+      "source_created": 1790330400.0,
+      "source_session": "6856b3ae41362d36faccebdf24def2453dd9816b90bdd5a9f5c6ba446a6f30e6",
+      "source_turn": "91ce8308582d75f7b9622a534546d75fafe3b50434c090d494d21b92ab35d054",
+      "state": "reported",
+      "subject": "Maple dataset CSV format",
+      "time_basis": "source_event_time"
+    },
+    "outcome": null,
+    "outcome_text": null,
+    "problem": null,
+    "subjects": [
+      "Maple dataset CSV format"
+    ],
+    "tags": null,
+    "title": "CSV chosen for Maple dataset because importer requires a stable header"
+  },
+  "expected": {
+    "support_cannot_erase_new_location": true,
+    "ignore_cannot_discard_validated_location_due_to_multiple_facets": true
+  }
+}

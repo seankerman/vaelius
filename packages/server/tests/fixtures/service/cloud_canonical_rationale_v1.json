@@ -1,0 +1,907 @@
+{
+  "cases": [
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "851cafd4269deb2100c2",
+            "source_id": "fixture-actual-choosing-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user reported choosing CSV for the Maple dataset because the importer requires a stable header. No execution or saved artifact was verified.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-actual-choosing-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "actual-choosing",
+      "override_policy": null,
+      "query": "Maple: why did we choose CSV?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user reported choosing CSV for the Maple dataset because the importer requires a stable header. No execution or saved artifact was verified.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "af58c70323e008ec85fd",
+            "source_id": "fixture-display-opting-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user opted for CSV for Maple; the importer relies on its stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-display-opting-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "display-opting",
+      "override_policy": null,
+      "query": "Why did I choose CSV for the Maple dataset?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user opted for CSV for Maple; the importer relies on its stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "4f51a680b104a787110d",
+            "source_id": "fixture-display-used-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user used CSV for Maple because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-display-used-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "display-used",
+      "override_policy": null,
+      "query": "Why did I choose CSV for the Maple dataset?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user used CSV for Maple because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "4bfa1d339d660ea28aa4",
+            "source_id": "fixture-short-source-reason-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user opted for CSV for Maple.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-short-source-reason-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "the importer requires a stable header",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "short-source-reason",
+      "override_policy": null,
+      "query": "Why did I choose CSV for the Maple dataset?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "the importer requires a stable header"
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user opted for CSV for Maple.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "547f083dda5df531ab78",
+            "source_id": "fixture-reason-evidence-in-metadata-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The selected format is compatible with the importer.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-reason-evidence-in-metadata-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "reason-evidence-in-metadata",
+      "override_policy": null,
+      "query": "Why did I choose CSV for the Maple dataset?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The selected format is compatible with the importer.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "1594d62ed0367eef09ce",
+            "source_id": "fixture-other-option-in-narrative-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user reported choosing CSV for Maple. JSON was rejected because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-other-option-in-narrative-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "other-option-in-narrative",
+      "override_policy": null,
+      "query": "Why did I choose JSON for the Maple dataset?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user reported choosing CSV for Maple. JSON was rejected because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header. JSON was rejected.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "93c446b58263169bb0b6",
+            "source_id": "fixture-other-actor-in-narrative-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user chose CSV because it preserves headers. Bob chose JSON because it preserves nested records.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-other-actor-in-narrative-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "other-actor-in-narrative",
+      "override_policy": null,
+      "query": "Why did Bob choose JSON?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user chose CSV because it preserves headers. Bob chose JSON because it preserves nested records.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header. Bob chose JSON because it preserves nested records.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "f75868d69da50c354b0e",
+            "source_id": "fixture-agent-is-not-user-Stop"
+          }
+        ],
+        "evidence_status": "agent_reported",
+        "knowledge_type": "decision",
+        "lesson": "The agent chose CSV for Maple because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "agent"
+          ],
+          "artifact_name": "",
+          "attribution": "agent_reported",
+          "event_id": "fixture-agent-is-not-user-Stop",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "agent",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "agent-is-not-user",
+      "override_policy": null,
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "agent"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "agent",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The agent chose CSV for Maple because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "Stop",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "0c83a355505010dc0b07",
+            "source_id": "fixture-user-is-not-agent-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user and agent reviewed Maple. The user chose CSV because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-user-is-not-agent-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "user-is-not-agent",
+      "override_policy": null,
+      "query": "Why did you choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user and agent reviewed Maple. The user chose CSV because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "7834c3c099e4859674d8",
+            "source_id": "fixture-negative-option-not-affirmative-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user did not choose CSV for Maple because the importer requires JSON.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-negative-option-not-affirmative-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We did not choose CSV for Maple because the importer requires JSON.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "negative-option-not-affirmative",
+      "override_policy": null,
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We did not choose CSV for Maple because the importer requires JSON."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user did not choose CSV for Maple because the importer requires JSON.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We did not choose CSV for Maple because the importer requires JSON.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "f959d1044ad72bdd8515",
+            "source_id": "fixture-unrelated-option-negation-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user opted for CSV for Maple. JSON was rejected.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-unrelated-option-negation-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header. We did not choose JSON.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": true,
+      "id": "unrelated-option-negation",
+      "override_policy": null,
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header. We did not choose JSON."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user opted for CSV for Maple. JSON was rejected.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header. We did not choose JSON.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "c5228da86aab29fdd3ea",
+            "source_id": "fixture-missing-quote-no-prose-fallback-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "fact",
+        "lesson": "The user chose CSV for Maple because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-missing-quote-no-prose-fallback-UserPromptSubmit",
+          "facets": [
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-8",
+          "reason_actor": "",
+          "reason_quote": "",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "missing-quote-no-prose-fallback",
+      "override_policy": null,
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": null,
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user chose CSV for Maple because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": {
+        "domain": "private_memory",
+        "evidence": [
+          {
+            "segment_id": "0098782e146c453575b7",
+            "source_id": "fixture-unknown-policy-not-trusted-UserPromptSubmit"
+          }
+        ],
+        "evidence_status": "user_reported",
+        "knowledge_type": "decision",
+        "lesson": "The user chose CSV for Maple because the importer requires a stable header.",
+        "memory_context": {
+          "actors": [
+            "user"
+          ],
+          "artifact_name": "",
+          "attribution": "user_reported",
+          "event_id": "fixture-unknown-policy-not-trusted-UserPromptSubmit",
+          "facets": [
+            "decision",
+            "fact"
+          ],
+          "location": "",
+          "occurred_date": "",
+          "policy": "durable-memory-unknown",
+          "reason_actor": "user",
+          "reason_quote": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+          "source_created": 1790416800.0,
+          "source_session": "rationale",
+          "source_turn": "1",
+          "state": "reported",
+          "subject": "Maple dataset CSV format",
+          "time_basis": "source_event_time"
+        },
+        "subjects": [
+          "Maple dataset CSV format"
+        ],
+        "title": "Maple dataset format decision"
+      },
+      "expected": false,
+      "id": "unknown-policy-not-trusted",
+      "override_policy": "durable-memory-unknown",
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "We chose CSV for the Maple dataset because the importer requires a stable header."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user chose CSV for Maple because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": []
+    },
+    {
+      "compiled_observation": null,
+      "expected": false,
+      "id": "unknown-source-quote-not-installed",
+      "override_policy": null,
+      "query": "Why did I choose CSV for Maple?",
+      "record": {
+        "actors": [
+          "user"
+        ],
+        "artifact": null,
+        "facets": [
+          "decision",
+          "fact"
+        ],
+        "occurred_date": "",
+        "rationale": {
+          "actor": "user",
+          "quote": "CSV because a nonexistent benchmark proved it is faster."
+        },
+        "state": "reported",
+        "subject": "Maple dataset CSV format",
+        "text": "The user chose CSV for Maple because the importer requires a stable header.",
+        "title": "Maple dataset format decision"
+      },
+      "source_kind": "UserPromptSubmit",
+      "source_text": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "validation_rejections": [
+        {
+          "error": "memory_reason_evidence",
+          "record_index": 0
+        }
+      ]
+    }
+  ],
+  "classification": "actual synthetic live regression and canonical compiled-record pairs frozen before structured evidence guard; not held-out",
+  "provider_calls": 0,
+  "version": "cloud-canonical-rationale-v1"
+}

@@ -1,0 +1,14 @@
+{
+  "version": "cloud-slack-backend-deletion-v1",
+  "classification": "authored synthetic regression; zero provider or vendor calls",
+  "stamp": "1000.000001",
+  "edit": {"event_ts": "1100.000001", "text": "Correction: save the synthetic dataset as JSON."},
+  "delete": {"event_ts": "1200.000001"},
+  "cases": [
+    "edited then signed deleted message purges all its captured canonical revision originals and private PostgreSQL payloads",
+    "same connector different message and another connector same vendor message remain untouched",
+    "duplicate signed delete and stale initial history cannot recreate the deleted message",
+    "per-message inventory/delete/tombstone uses the same advisory serialization as capture; no HTTP/model calls inside",
+    "more than 100 retained message revisions or partial object-delete failure holds current connection without accepting event"
+  ]
+}

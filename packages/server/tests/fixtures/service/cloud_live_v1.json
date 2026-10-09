@@ -1,0 +1,67 @@
+{
+  "classification": "frozen authored live development adapted from backend_live_v2; never held-out",
+  "turns": [
+    {
+      "id": "decision",
+      "user": "We chose CSV for the Maple dataset because the importer requires a stable header.",
+      "final": "Acknowledged."
+    },
+    {
+      "id": "save",
+      "user": "Save the Maple dataset using that chosen format.",
+      "tool": {
+        "tool_name": "save_file",
+        "tool_input": {
+          "path": "/Users/demo/My Data/maple.csv"
+        },
+        "tool_response": {
+          "status": "saved"
+        },
+        "exit_code": 0
+      },
+      "final": "Saved."
+    },
+    {
+      "id": "unrelated",
+      "user": "Thanks.",
+      "final": "You are welcome."
+    },
+    {
+      "id": "correction",
+      "user": "Correction: I moved the Maple dataset. It is currently at /Users/demo/My Data/current-maple.csv. The stable-header reason still applies.",
+      "final": "Acknowledged the correction."
+    }
+  ],
+  "question": "Where is the Maple dataset currently, and why did we choose CSV?",
+  "expected": {
+    "location": "/Users/demo/My Data/current-maple.csv",
+    "reason": "stable header",
+    "unrelated_records": 0
+  },
+  "call_plan": {
+    "curation": 4,
+    "resolution_max": 4,
+    "receiver": 1,
+    "retry_max": 3,
+    "total_max": 12
+  },
+  "version": "cloud-live-v1",
+  "source_fixture_sha256": "d4e857984e1454565d6dfd262c98099f8ded04f4dc5066fa42e16371abd06bd0",
+  "requirements": [
+    "faithful_structured_capture",
+    "backend_continuous_observer",
+    "worker_store_restart",
+    "same_context_session_resume",
+    "unrelated_turn_no_learning",
+    "current_correction",
+    "actual_receiver_mcp_call",
+    "revocation_denial",
+    "original_shared_ledgers"
+  ],
+  "allocation": {
+    "total_new_attempts": 80,
+    "total_new_retries": 8,
+    "per_run_attempts": 12,
+    "per_run_retries": 3
+  }
+}

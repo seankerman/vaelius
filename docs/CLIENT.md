@@ -1,0 +1,50 @@
+# Client installation and enrollment
+
+Install `packages/client` from the matching Vaelius release. It has no backend or
+model dependencies. The client stores private credentials, capture cursors and a
+durable transport outbox; acknowledged payloads are removed and the outbox is never
+searched. Original documents go through the backend document API.
+
+The operator must configure the identity broker, enrollment and source connections
+first. Login creates a private profile and enrolls no project automatically:
+
+```sh
+python -m agentclient.cloud_enroll \
+  --home /absolute/private/client-profile --url https://memory.example.org \
+  --tenant TENANT --broker BROKER --enrollment ENROLLMENT \
+  --callback-uri http://127.0.0.1:CALLBACK_PORT/callback
+vaelius-client --home /absolute/private/client-profile enroll-project \
+  --root /absolute/project --name PROJECT
+vaelius-client --home /absolute/private/client-profile backend-check
+vaelius-client --home /absolute/private/client-profile install --codex-home /absolute/codex-home
+```
+
+Use the exact callback registered with the operator. Installation manages only
+its owned hook handlers and MCP registration. Existing unrelated agent settings
+are retained. Trust hooks through the host's normal mechanism.
+
+The direct Streamable HTTP MCP endpoint is `/mcp` on the configured backend. A
+local credential helper supplies current authentication headers through the host's
+credential pipe; do not log or paste its output. The backend owns the tool catalogue
+and authorization. The `agentnetwork_memory` registration name remains a compatibility
+identifier for existing configurations; it does not select another server.
+
+```sh
+vaelius-client --home /absolute/private/client-profile capture
+vaelius-client --home /absolute/private/client-profile capture-status
+vaelius-client --home /absolute/private/client-profile outbox-drain --max-events 32 --max-seconds 5
+vaelius-client --home /absolute/private/client-profile credential-renew
+vaelius-client --home /absolute/private/client-profile pause
+vaelius-client --home /absolute/private/client-profile resume
+vaelius-client --home /absolute/private/client-profile uninstall
+```
+
+Desktop capture is forward-only at enrollment. Capture is an explicit finite poll;
+installation does not start a recurring collector or import past conversations.
+Pausing or uninstalling does not delete server records; use backend lifecycle tools.
+
+`vaelius-client` defaults to `~/.local/share/vaelius/client`. The old `agentclient`
+alias retains its old default for compatibility. Supplying `--home` always selects
+that explicit profile. An upgrade never copies credentials or redirects an existing
+profile to a new service. Back up profile/host configuration before an explicit
+cutover. [Capture contract](../packages/server/docs/CONSOLIDATION.md).

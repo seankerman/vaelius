@@ -1,0 +1,8 @@
+{
+  "before_behavior_change": true,
+  "cases": 12,
+  "classification": "authored synthetic development regressions; not extraction scores or sealed confirmation",
+  "regressions_sha256": "091c525d06bd4a1058fff1c4afe9d8f5d11b2248ef4eb6ed5ba436fd62cfa291",
+  "source_count": 19,
+  "version": "local-staging-regressions-v1"
+}

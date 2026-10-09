@@ -1,0 +1,11 @@
+{
+  "version":"cloud-segment-repair-v1",
+  "classification":"authored synthetic regression; no held-out claim",
+  "cases":[
+    "accepted missing original denies automatic ingress retries and observer use",
+    "explicit current owner source_read+ingest repair_missing=true restores exact checksum-matching canonical projection",
+    "repair without explicit flag, another reader, inactive source or removed connection cannot restore bytes",
+    "operator CLI selects bounded explicit source IDs from private input, prints content-free receipt and makes zero provider calls",
+    "corrupt existing immutable object is not silently overwritten"
+  ]
+}

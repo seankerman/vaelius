@@ -1,0 +1,271 @@
+{
+  "version": "staging-normal-ingest-v1",
+  "provenance": "Deliberately synthetic, source-grounded operations fixture; not real-team or retrieval quality evidence.",
+  "tenants": [
+    "atlas-east",
+    "emberlab",
+    "org_72ce"
+  ],
+  "principal": "usr_72f",
+  "reader": "engineer-ops",
+  "project": "operations-proof",
+  "connection": "staging-documents",
+  "documents": [
+    {
+      "id": "incident-handoff",
+      "title": "Incident handoff",
+      "filename": "incident-handoff.md",
+      "text": "# Incident handoff\n\nThe platform duty officer owns incident handoff.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "Who owns incident handoff?",
+      "expected_answer": "The platform duty officer owns incident handoff.",
+      "version": "1",
+      "sha256": "08bb026a921fe0eb3aec4c2f1ba7d0e77d353be91f558e8cc7dc5b9cd311fc04",
+      "replacement": {
+        "version": "2",
+        "text": "# Incident handoff\n\nThe reliability duty officer owns incident handoff.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+        "expected_answer": "The reliability duty officer owns incident handoff.",
+        "sha256": "5f224042f923182e02a7dfaf9cbb0c9d1d001144ef03b5f2aae9c9585df7d102"
+      }
+    },
+    {
+      "id": "retention-policy",
+      "title": "Retention policy",
+      "filename": "retention-policy.txt",
+      "text": "Retention policy\n\nDiagnostic exports are retained for 14 days.\nScope: local staging rehearsal only.\n",
+      "query": "How long do we retain diagnostic exports?",
+      "expected_answer": "Diagnostic exports are retained for 14 days.",
+      "version": "1",
+      "sha256": "49693a4846db4da38152c727e8a74372689510cac57a3e73ea80e15623969f28",
+      "replacement": {
+        "version": "2",
+        "text": "Retention policy\n\nDiagnostic exports are retained for 30 days.\nScope: local staging rehearsal only.\n",
+        "expected_answer": "Diagnostic exports are retained for 30 days.",
+        "sha256": "e176a9fbf2deabac1679ea2ce6096ad61341326379657c837595708f181e399c"
+      }
+    },
+    {
+      "id": "release-window",
+      "title": "Release window",
+      "filename": "release-window.html",
+      "text": "<html><body><h1>Release window</h1><p>The planned release window is 10:00 UTC on Tuesdays.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "When is the planned release window?",
+      "expected_answer": "The planned release window is 10:00 UTC on Tuesdays.",
+      "version": "1",
+      "sha256": "37d6761f6e8c01e92cfae8186ea3cc927f26b07b373049395fa360a139082815",
+      "replacement": {
+        "version": "2",
+        "text": "<html><body><h1>Release window</h1><p>The planned release window is 14:00 UTC on Thursdays.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+        "expected_answer": "The planned release window is 14:00 UTC on Thursdays.",
+        "sha256": "09fb3412ddbf91e46bb519edd885862256a577b1cb6d70c668fd5e0a49eb3568"
+      }
+    },
+    {
+      "id": "dataset-location",
+      "title": "Dataset location",
+      "filename": "dataset-location.md",
+      "text": "# Dataset location\n\nThe reviewed Harbor dataset is stored at datasets/harbor-v1.csv.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "Where is the reviewed Harbor dataset stored?",
+      "expected_answer": "The reviewed Harbor dataset is stored at datasets/harbor-v1.csv.",
+      "version": "1",
+      "sha256": "b5213017aacbfea9fa47acf134109ad7a83d2411e71aa5306a50fafef0086709",
+      "replacement": {
+        "version": "2",
+        "text": "# Dataset location\n\nThe reviewed Harbor dataset is stored at reviewed/harbor-final.csv.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+        "expected_answer": "The reviewed Harbor dataset is stored at reviewed/harbor-final.csv.",
+        "sha256": "6a62a26b0ac1c2342a95d3b694b6e77f64fdd82c782c7218c6fddb90af082f2f"
+      }
+    },
+    {
+      "id": "escalation",
+      "title": "Escalation procedure",
+      "filename": "escalation.txt",
+      "text": "Escalation procedure\n\nEscalate stalled reconciliation to the storage on-call after two failed attempts.\nScope: local staging rehearsal only.\n",
+      "query": "How do we escalate a stalled reconciliation?",
+      "expected_answer": "Escalate stalled reconciliation to the storage on-call after two failed attempts.",
+      "version": "1",
+      "sha256": "b5d2ccc9727f6492fb65218d73f9927d29dd2359e17e3efcf6bdc8a937e19574",
+      "replacement": {
+        "version": "2",
+        "text": "Escalation procedure\n\nEscalate stalled reconciliation to the ingestion on-call after three failed attempts.\nScope: local staging rehearsal only.\n",
+        "expected_answer": "Escalate stalled reconciliation to the ingestion on-call after three failed attempts.",
+        "sha256": "8b36a5b486c90e3413dae56ebd4401218256e2786c2c7d8832cb6562e6d6313e"
+      }
+    },
+    {
+      "id": "restore-checklist",
+      "title": "Restore checklist",
+      "filename": "restore-checklist.html",
+      "text": "<html><body><h1>Restore checklist</h1><p>Restore stays held until original checksums and current policy deltas are reconciled.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "What must finish before restored data is served?",
+      "expected_answer": "Restore stays held until original checksums and current policy deltas are reconciled.",
+      "version": "1",
+      "sha256": "991c14bb0652404b374cbb9b4280687f2678fcd01343d1abdccea13fa48673f0"
+    },
+    {
+      "id": "cache-policy",
+      "title": "Cache policy",
+      "filename": "cache-policy.md",
+      "text": "# Cache policy\n\nA confirmed saved observer return can be installed without another dispatch when current policy permits it.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "How are cached observer returns recovered?",
+      "expected_answer": "A confirmed saved observer return can be installed without another dispatch when current policy permits it.",
+      "version": "1",
+      "sha256": "793642a5217d8a95d82db71bd11b4200256b7785549019b32fac2b1c235ba462"
+    },
+    {
+      "id": "unicode-labels",
+      "title": "Unicode export labels",
+      "filename": "unicode-labels.txt",
+      "text": "Unicode export labels\n\nInternational export labels preserve résumé, 東京 and café as Unicode text.\nScope: local staging rehearsal only.\n",
+      "query": "Which labels are allowed in the international export?",
+      "expected_answer": "International export labels preserve résumé, 東京 and café as Unicode text.",
+      "version": "1",
+      "sha256": "ee483cd396d9ef69f4ed5bdae7d4f56259a63c079293268022283a9a6a4173d2"
+    },
+    {
+      "id": "csv-format",
+      "title": "CSV formatting",
+      "filename": "csv-format.html",
+      "text": "<html><body><h1>CSV formatting</h1><p>Multiline CSV notes use double quotes and embedded quotes are doubled.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "How are multiline CSV notes quoted?",
+      "expected_answer": "Multiline CSV notes use double quotes and embedded quotes are doubled.",
+      "version": "1",
+      "sha256": "2de7146efe839d5623364163fe06492fedec39ab5d398a73b9d0794f618eed9a"
+    },
+    {
+      "id": "cursor-restart",
+      "title": "Cursor restart",
+      "filename": "cursor-restart.md",
+      "text": "# Cursor restart\n\nThe capture connection retains its durable cursor and does not invent a compaction epoch.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "What is retained when the capture connection restarts?",
+      "expected_answer": "The capture connection retains its durable cursor and does not invent a compaction epoch.",
+      "version": "1",
+      "sha256": "48b405a008ba9a31cf5697c0a3a38e86d16c7fc6c78a6662bad25dd374cbc29e"
+    },
+    {
+      "id": "source-ownership",
+      "title": "Source ownership",
+      "filename": "source-ownership.txt",
+      "text": "Source ownership\n\nThe source connection owner controls its enrolled project and current reader list.\nScope: local staging rehearsal only.\n",
+      "query": "Who controls the original source connection?",
+      "expected_answer": "The source connection owner controls its enrolled project and current reader list.",
+      "version": "1",
+      "sha256": "d4176db25e7064c1b3d2b697efbfe1e4ca1fb276610c4301074506cb77d2c760"
+    },
+    {
+      "id": "parser-limits",
+      "title": "Parser limits",
+      "filename": "parser-limits.html",
+      "text": "<html><body><h1>Parser limits</h1><p>A parser failure preserves the authorized original and records an explicit unsupported parser status.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "What happens when a native original cannot be parsed?",
+      "expected_answer": "A parser failure preserves the authorized original and records an explicit unsupported parser status.",
+      "version": "1",
+      "sha256": "fb1816126ff3c4f3fe50e042ced7e338cb808776065f0cec97b4b05825b08fa1"
+    },
+    {
+      "id": "private-defaults",
+      "title": "Private defaults",
+      "filename": "private-defaults.md",
+      "text": "# Private defaults\n\nPersonal formatting preferences are visible only to the verified preference owner.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "Who can read personal formatting preferences?",
+      "expected_answer": "Personal formatting preferences are visible only to the verified preference owner.",
+      "version": "1",
+      "sha256": "c57b7e7fa0593e7f5b65a4cd552f412b766df2e1c71c1d5554abc26cad1b5fde"
+    },
+    {
+      "id": "retry-policy",
+      "title": "Retry policy",
+      "filename": "retry-policy.txt",
+      "text": "Retry policy\n\nAn uncertain return requires explicit recovery and bounded retry accounting.\nScope: local staging rehearsal only.\n",
+      "query": "How are uncertain model returns retried?",
+      "expected_answer": "An uncertain return requires explicit recovery and bounded retry accounting.",
+      "version": "1",
+      "sha256": "9d7cdefb6734a358f870ee99cf68053083f5115f7646d2cfce703169450c77b1"
+    },
+    {
+      "id": "backpressure",
+      "title": "Ingestion backpressure",
+      "filename": "backpressure.html",
+      "text": "<html><body><h1>Ingestion backpressure</h1><p>A full capture outbox reports backpressure and does not acknowledge a payload it cannot retain.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "How are oversized capture queues handled?",
+      "expected_answer": "A full capture outbox reports backpressure and does not acknowledge a payload it cannot retain.",
+      "version": "1",
+      "sha256": "26c017625e7173c82ac43ab9c366386a408c03d98352b27b3b259d8f695bc5a4"
+    },
+    {
+      "id": "audit-trail",
+      "title": "Audit provenance",
+      "filename": "audit-trail.md",
+      "text": "# Audit provenance\n\nA native passage cites the immutable original revision and exact source offsets.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "What evidence identifies a native passage?",
+      "expected_answer": "A native passage cites the immutable original revision and exact source offsets.",
+      "version": "1",
+      "sha256": "9d494d6e8e67ef1d8262d2a90ebddecbcd06008179c5ccf876faf8bd9fdbf5c0"
+    },
+    {
+      "id": "onboarding",
+      "title": "Onboarding checklist",
+      "filename": "onboarding.txt",
+      "text": "Onboarding checklist\n\nEnrollment explicitly selects a project root, a credential and a source connection.\nScope: local staging rehearsal only.\n",
+      "query": "What must be selected before enrolling a project?",
+      "expected_answer": "Enrollment explicitly selects a project root, a credential and a source connection.",
+      "version": "1",
+      "sha256": "012bd8c2123fadfd83e733894f14829e93c81e10850dace55199dccf6bc7fede"
+    },
+    {
+      "id": "timeline-boundaries",
+      "title": "Timeline boundaries",
+      "filename": "timeline-boundaries.html",
+      "text": "<html><body><h1>Timeline boundaries</h1><p>A session summary is derived context and does not count as independent corroboration.</p><h2>Scope</h2><p>This procedure applies to the local staging rehearsal only.</p></body></html>",
+      "query": "What does a session summary count as?",
+      "expected_answer": "A session summary is derived context and does not count as independent corroboration.",
+      "version": "1",
+      "sha256": "7f55eba3d0e9b95fed4f661b730fc9323cbc956f27b7bbe841f8ca0c80406aa8"
+    },
+    {
+      "id": "archive-restoration",
+      "title": "Archive restoration",
+      "filename": "archive-restoration.md",
+      "text": "# Archive restoration\n\nIndividual restored originals are checked against their retained length and SHA-256.\n\n## Scope\nThis procedure applies to the local staging rehearsal only.\n",
+      "query": "Where are individual restored originals checked?",
+      "expected_answer": "Individual restored originals are checked against their retained length and SHA-256.",
+      "version": "1",
+      "sha256": "86be456e341ec9d452ee3b9e30bad8c47fe328f887337f7696c08f02223ac388"
+    },
+    {
+      "id": "latency-notes",
+      "title": "Latency measurement",
+      "filename": "latency-notes.txt",
+      "text": "Latency measurement\n\nFull retrieval latency includes query embedding, authorized selection and bounded delivery.\nScope: local staging rehearsal only.\n\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\nA measured stage can include nested work; overlapping stages must not be added together.\n",
+      "query": "What is included in full retrieval latency?",
+      "expected_answer": "Full retrieval latency includes query embedding, authorized selection and bounded delivery.",
+      "version": "1",
+      "sha256": "626170201dabf6e2b89253db088034323a857b34f7db30b797fde0f235457763"
+    }
+  ],
+  "lifecycle": {
+    "withdraw": "archive-restoration",
+    "delete": "timeline-boundaries",
+    "revoke_reader": true
+  },
+  "concurrency": {
+    "workers": [
+      2,
+      4
+    ],
+    "requests": 40,
+    "hard_seconds": 60,
+    "model_off": true
+  },
+  "restore": {
+    "added_after_backup": {
+      "id": "new-original",
+      "filename": "new-original.md",
+      "title": "Post-backup original",
+      "text": "# Post-backup original\nThis source arrived after the snapshot and must survive reconciliation.\n"
+    }
+  },
+  "rollback": {
+    "old_r1": "Run read-only compatibility against the same current authority; never restore stale ACLs or replay consumed confirmation.",
+    "production_readiness": false
+  }
+}

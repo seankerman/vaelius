@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "description": "Authored development cases frozen before broad-memory implementation; not held out. Relative paths are synthetic.",
+  "now": "2026-09-24T19:00:00+00:00",
+  "timezone": "America/Denver",
+  "cases": [
+    {
+      "case_id": "artifact_history",
+      "turns": [
+        [
+          {
+            "id": "artifact-u1",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t1",
+            "created": 1790006400,
+            "kind": "UserPromptSubmit",
+            "body": "Export the Juniper dataset."
+          },
+          {
+            "id": "artifact-t1",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t1",
+            "created": 1790006401,
+            "kind": "PostToolUse",
+            "tool_name": "exec_command",
+            "exit_code": 0,
+            "body": "Command: export --output datasets/juniper-v1.csv\nSaved Juniper dataset to datasets/juniper-v1.csv; rows=420."
+          },
+          {
+            "id": "artifact-s1",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t1",
+            "created": 1790006402,
+            "kind": "Stop",
+            "body": "Export completed."
+          }
+        ],
+        [
+          {
+            "id": "artifact-u2",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t2",
+            "created": 1790092800,
+            "kind": "UserPromptSubmit",
+            "body": "Move it into the reviewed folder; keep the filename."
+          },
+          {
+            "id": "artifact-t2",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t2",
+            "created": 1790092801,
+            "kind": "PostToolUse",
+            "tool_name": "exec_command",
+            "exit_code": 0,
+            "body": "Command: mv datasets/juniper-v1.csv reviewed/juniper-v1.csv\nMove completed."
+          },
+          {
+            "id": "artifact-s2",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t2",
+            "created": 1790092802,
+            "kind": "Stop",
+            "body": "It is moved."
+          }
+        ],
+        [
+          {
+            "id": "artifact-u3",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t3",
+            "created": 1790179200,
+            "kind": "UserPromptSubmit",
+            "body": "Move the Juniper dataset to published/juniper.csv."
+          },
+          {
+            "id": "artifact-t3",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t3",
+            "created": 1790179201,
+            "kind": "PostToolUse",
+            "tool_name": "exec_command",
+            "exit_code": 1,
+            "body": "Command: mv reviewed/juniper-v1.csv published/juniper.csv\nPermission denied; no files moved."
+          },
+          {
+            "id": "artifact-s3",
+            "project": "synthetic",
+            "session": "artifact",
+            "turn": "t3",
+            "created": 1790179202,
+            "kind": "Stop",
+            "body": "The attempted move failed."
+          }
+        ]
+      ],
+      "queries": [
+        {
+          "query": "Where did I save the Juniper dataset?",
+          "contains": [
+            "reviewed/juniper-v1.csv"
+          ],
+          "excludes": [
+            "published/juniper.csv"
+          ],
+          "facet": "artifact"
+        },
+        {
+          "query": "What did I work on last Monday?",
+          "contains": [
+            "Juniper"
+          ],
+          "excludes": [
+            "published/juniper.csv"
+          ],
+          "facet": "activity"
+        },
+        {
+          "query": "Where did I save the Willow dataset?",
+          "empty": true
+        }
+      ]
+    },
+    {
+      "case_id": "attributed_decision",
+      "turns": [
+        [
+          {
+            "id": "decision-u1",
+            "project": "synthetic",
+            "session": "decision",
+            "turn": "t1",
+            "created": 1790010000,
+            "kind": "UserPromptSubmit",
+            "body": "Mira chose SQLite for the Iris prototype. Mira's stated reason was: avoid operating a database server during local testing."
+          },
+          {
+            "id": "decision-s1",
+            "project": "synthetic",
+            "session": "decision",
+            "turn": "t1",
+            "created": 1790010002,
+            "kind": "Stop",
+            "body": "Recorded Mira's decision."
+          }
+        ],
+        [
+          {
+            "id": "decision-u2",
+            "project": "synthetic",
+            "session": "decision",
+            "turn": "t2",
+            "created": 1790096400,
+            "kind": "UserPromptSubmit",
+            "body": "She clarified that this is only for the local prototype; a hosted service would need a new decision."
+          },
+          {
+            "id": "decision-s2",
+            "project": "synthetic",
+            "session": "decision",
+            "turn": "t2",
+            "created": 1790096402,
+            "kind": "Stop",
+            "body": "Recorded the scope clarification."
+          }
+        ]
+      ],
+      "queries": [
+        {
+          "query": "Why did Mira choose SQLite?",
+          "contains": [
+            "Mira",
+            "avoid operating a database server"
+          ],
+          "facet": "decision"
+        },
+        {
+          "query": "Why did Noor choose SQLite?",
+          "empty": true
+        },
+        {
+          "query": "What did I work on last Monday?",
+          "contains": [
+            "SQLite"
+          ],
+          "facet": "activity"
+        }
+      ]
+    },
+    {
+      "case_id": "verified_procedure",
+      "turns": [
+        [
+          {
+            "id": "procedure-u1",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t1",
+            "created": 1790013600,
+            "kind": "UserPromptSubmit",
+            "body": "Investigate why the Cobalt import lease expires. Its timeout is 30 seconds."
+          },
+          {
+            "id": "procedure-t1",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t1",
+            "created": 1790013601,
+            "kind": "PostToolUse",
+            "tool_name": "exec_command",
+            "exit_code": 1,
+            "body": "cobalt_import_test FAIL: lease expired after 30 seconds."
+          },
+          {
+            "id": "procedure-s1",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t1",
+            "created": 1790013602,
+            "kind": "Stop",
+            "body": "No fix verified."
+          }
+        ],
+        [
+          {
+            "id": "procedure-u2",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t2",
+            "created": 1790100000,
+            "kind": "UserPromptSubmit",
+            "body": "Set it to 60 seconds and repeat the same test."
+          },
+          {
+            "id": "procedure-t2",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t2",
+            "created": 1790100001,
+            "kind": "PostToolUse",
+            "tool_name": "exec_command",
+            "exit_code": 0,
+            "body": "cobalt_import_test PASS: 20 consecutive runs; no lease expiry."
+          },
+          {
+            "id": "procedure-s2",
+            "project": "synthetic",
+            "session": "procedure",
+            "turn": "t2",
+            "created": 1790100002,
+            "kind": "Stop",
+            "body": "The repeated test passes."
+          }
+        ]
+      ],
+      "queries": [
+        {
+          "query": "How did we fix the Cobalt import lease?",
+          "contains": [
+            "60",
+            "Cobalt"
+          ],
+          "excludes": [
+            "only cause"
+          ],
+          "facet": "procedure"
+        },
+        {
+          "query": "Where did I save the Cobalt dataset?",
+          "empty": true
+        }
+      ]
+    },
+    {
+      "case_id": "reported_history",
+      "turns": [
+        [
+          {
+            "id": "history-u1",
+            "project": "synthetic",
+            "session": "history",
+            "turn": "t1",
+            "created": 1790272800,
+            "kind": "UserPromptSubmit",
+            "body": "On 2026-09-21 I compared Cedar retention cohorts. The report is reports/cedar-retention.md. The drop was 8 percent; I have not checked the calculation."
+          },
+          {
+            "id": "history-s1",
+            "project": "synthetic",
+            "session": "history",
+            "turn": "t1",
+            "created": 1790272802,
+            "kind": "Stop",
+            "body": "I believe the drop was caused by the pricing change, but I have no evidence of that."
+          }
+        ],
+        [
+          {
+            "id": "history-u2",
+            "project": "synthetic",
+            "session": "history",
+            "turn": "t2",
+            "created": 1790273400,
+            "kind": "UserPromptSubmit",
+            "body": "Thanks!"
+          },
+          {
+            "id": "history-s2",
+            "project": "synthetic",
+            "session": "history",
+            "turn": "t2",
+            "created": 1790273402,
+            "kind": "Stop",
+            "body": "You're welcome."
+          }
+        ]
+      ],
+      "queries": [
+        {
+          "query": "What did I work on last Monday?",
+          "contains": [
+            "Cedar"
+          ],
+          "excludes": [
+            "caused by the pricing"
+          ],
+          "facet": "activity"
+        },
+        {
+          "query": "Where did I save the Cedar report?",
+          "contains": [
+            "reports/cedar-retention.md"
+          ],
+          "facet": "artifact"
+        },
+        {
+          "query": "Why did Cedar retention drop?",
+          "empty": true
+        }
+      ]
+    }
+  ]
+}

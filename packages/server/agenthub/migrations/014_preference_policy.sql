@@ -1,0 +1,1 @@
+CREATE TABLE cloud_required_preferences(preference_key TEXT NOT NULL,project TEXT NOT NULL DEFAULT '',value TEXT NOT NULL,updated DOUBLE PRECISION NOT NULL,actor TEXT NOT NULL,PRIMARY KEY(preference_key,project));

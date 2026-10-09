@@ -1,0 +1,14 @@
+{
+  "version":"cloud-slack-backend-v1",
+  "classification":"authored synthetic regression; no held-out claim",
+  "configuration":"backend_profile explicitly selects the canonical cloud runtime registry; tenant and any legacy dsn/home must match; no model/vendor calls",
+  "cases":[
+    "old actual Slack CLI accepts cloud backend_profile but stores PG-only typed sources, causing configured Worker missing-original hold",
+    "actual subprocess CLI enroll and bounded sync through CloudStore retain byte-verified individual conversation objects and configured finite Worker completes",
+    "same CLI sync retry does not duplicate canonical source/object/accepted metrics",
+    "object write failure holds connection and sync checkpoint, does not accept failed source or dispatch worker, exact retry after recovery resumes",
+    "signed explicit delete through the same cloud connector removes retained object and cached canonical content; old polling does not resurrect",
+    "conflicting supplied legacy dsn/home, unknown tenant and wrong-tenant credential fail before vendor HTTP/capture",
+    "direct legacy dsn mode remains independent and explicitly PG-only; cloud mode has no fallback"
+  ]
+}

@@ -1,0 +1,646 @@
+{
+  "version": 1,
+  "limits": "Fresh version-4 confirmation variants, frozen before their live evaluation. Known task families; not independent real repositories. Action presentation is shuffled independently of the oracle.",
+  "cases": [
+    {
+      "id": "migration-v4",
+      "family": "migration",
+      "split": "reserved",
+      "task": "Migrate a durable queue without losing recovery data. Use the public migration fixture version 4 recovery procedure.",
+      "query": "migration fixture version 4",
+      "source": "Public migration fixture version 4. Successful recovery used snapshot_f9804803, then checkpoint_94551fc6, then migrate_4c4638f5. Migration before snapshot destroys recovery. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "snapshot_f9804803": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "checkpoint_94551fc6": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "migrate_4c4638f5": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "snapshot_f9804803",
+        "checkpoint_94551fc6",
+        "migrate_4c4638f5"
+      ],
+      "minimum_lesson_terms": [
+        "snapshot_f9804803",
+        "checkpoint_94551fc6",
+        "migrate_4c4638f5"
+      ]
+    },
+    {
+      "id": "retry-v4",
+      "family": "retry",
+      "split": "reserved",
+      "task": "Recover a transient queue failure without repeating a write. Use the public retry fixture version 4 recovery procedure.",
+      "query": "retry fixture version 4",
+      "source": "Public retry fixture version 4. Successful recovery used deduplicate_4d416400, then backoff_9011967a, then retry_5938072b. Retry before installing deduplication repeats writes. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "deduplicate_4d416400": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "backoff_9011967a": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "retry_5938072b": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "deduplicate_4d416400",
+        "backoff_9011967a",
+        "retry_5938072b"
+      ],
+      "minimum_lesson_terms": [
+        "deduplicate_4d416400",
+        "backoff_9011967a",
+        "retry_5938072b"
+      ]
+    },
+    {
+      "id": "cache-v4",
+      "family": "cache",
+      "split": "reserved",
+      "task": "Replace stale service metadata while keeping readers available. Use the public cache fixture version 4 recovery procedure.",
+      "query": "cache fixture version 4",
+      "source": "Public cache fixture version 4. Successful recovery used warm_e3e1030c, then switch_bac1fc36, then expire_aa881a45. Expiring before the new cache is warm causes missing reads. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "warm_e3e1030c": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_bac1fc36": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "expire_aa881a45": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "warm_e3e1030c",
+        "switch_bac1fc36",
+        "expire_aa881a45"
+      ],
+      "minimum_lesson_terms": [
+        "warm_e3e1030c",
+        "switch_bac1fc36",
+        "expire_aa881a45"
+      ]
+    },
+    {
+      "id": "locking-v4",
+      "family": "locking",
+      "split": "reserved",
+      "task": "Repair an abandoned lease without two simultaneous writers. Use the public locking fixture version 4 recovery procedure.",
+      "query": "locking fixture version 4",
+      "source": "Public locking fixture version 4. Successful recovery used fence_557254a4, then release_65fb1b48, then acquire_0d5c77a5. Releasing before fencing allows an old writer to mutate data. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "fence_557254a4": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "release_65fb1b48": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acquire_0d5c77a5": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "fence_557254a4",
+        "release_65fb1b48",
+        "acquire_0d5c77a5"
+      ],
+      "minimum_lesson_terms": [
+        "fence_557254a4",
+        "release_65fb1b48",
+        "acquire_0d5c77a5"
+      ]
+    },
+    {
+      "id": "compatibility-v4",
+      "family": "compatibility",
+      "split": "reserved",
+      "task": "Upgrade a message reader while preserving version compatibility. Use the public compatibility fixture version 4 recovery procedure.",
+      "query": "compatibility fixture version 4",
+      "source": "Public compatibility fixture version 4. Successful recovery used negotiate_19fa3228, then translate_5bcfb589, then consume_63c124d5. Consuming before translation misinterprets payload fields. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "negotiate_19fa3228": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "translate_5bcfb589": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "consume_63c124d5": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "negotiate_19fa3228",
+        "translate_5bcfb589",
+        "consume_63c124d5"
+      ],
+      "minimum_lesson_terms": [
+        "negotiate_19fa3228",
+        "translate_5bcfb589",
+        "consume_63c124d5"
+      ]
+    },
+    {
+      "id": "cancellation-v4",
+      "family": "cancellation",
+      "split": "reserved",
+      "task": "Cancel a pending export without publishing partial output. Use the public cancellation fixture version 4 recovery procedure.",
+      "query": "cancellation fixture version 4",
+      "source": "Public cancellation fixture version 4. Successful recovery used cancel_efa61a83, then discard_bdc17bcf, then acknowledge_2f2f04a5. Acknowledging before discarding exposes partial output. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "cancel_efa61a83": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "discard_bdc17bcf": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "acknowledge_2f2f04a5": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "cancel_efa61a83",
+        "discard_bdc17bcf",
+        "acknowledge_2f2f04a5"
+      ],
+      "minimum_lesson_terms": [
+        "cancel_efa61a83",
+        "discard_bdc17bcf",
+        "acknowledge_2f2f04a5"
+      ]
+    },
+    {
+      "id": "index-v4",
+      "family": "index",
+      "split": "reserved",
+      "task": "Refresh a search index after an authorized record removal. Use the public index fixture version 4 recovery procedure.",
+      "query": "index fixture version 4",
+      "source": "Public index fixture version 4. Successful recovery used tombstone_95139133, then invalidate_4465d318, then refresh_2eeec268. Refreshing before recording the tombstone resurrects a deleted record. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "tombstone_95139133": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "invalidate_4465d318": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "refresh_2eeec268": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "tombstone_95139133",
+        "invalidate_4465d318",
+        "refresh_2eeec268"
+      ],
+      "minimum_lesson_terms": [
+        "tombstone_95139133",
+        "invalidate_4465d318",
+        "refresh_2eeec268"
+      ]
+    },
+    {
+      "id": "credentials-v4",
+      "family": "credentials",
+      "split": "reserved",
+      "task": "Rotate a service token without giving a revoked client access. Use the public credentials fixture version 4 recovery procedure.",
+      "query": "credentials fixture version 4",
+      "source": "Public credentials fixture version 4. Successful recovery used issue_d6add7f1, then switch_9956140d, then revoke_636a3add. Switching before issuing breaks access; revocation must follow switching. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "issue_d6add7f1": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "switch_9956140d": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "revoke_636a3add": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "issue_d6add7f1",
+        "switch_9956140d",
+        "revoke_636a3add"
+      ],
+      "minimum_lesson_terms": [
+        "issue_d6add7f1",
+        "switch_9956140d",
+        "revoke_636a3add"
+      ]
+    },
+    {
+      "id": "scope-v4",
+      "family": "scope",
+      "split": "reserved",
+      "task": "Recover a resumed task while keeping another project isolated. Use the public scope fixture version 4 recovery procedure.",
+      "query": "scope fixture version 4",
+      "source": "Public scope fixture version 4. Successful recovery used bind_d5e245c6, then validate_205baad4, then restore_cad83cbc. Restoring before validating the project binding loads another project memory. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "bind_d5e245c6": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "validate_205baad4": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "restore_cad83cbc": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "bind_d5e245c6",
+        "validate_205baad4",
+        "restore_cad83cbc"
+      ],
+      "minimum_lesson_terms": [
+        "bind_d5e245c6",
+        "validate_205baad4",
+        "restore_cad83cbc"
+      ]
+    },
+    {
+      "id": "rollback-v4",
+      "family": "rollback",
+      "split": "reserved",
+      "task": "Roll back a failed release while preserving migration history. Use the public rollback fixture version 4 recovery procedure.",
+      "query": "rollback fixture version 4",
+      "source": "Public rollback fixture version 4. Successful recovery used freeze_fe968bd1, then restore_00fff1d5, then verify_c054507e. Restoring before freezing writes corrupts the recovery point. Other versions use different operation names. Acceptance check passed.",
+      "initial": [
+        "ready"
+      ],
+      "goal": [
+        "complete"
+      ],
+      "operations": {
+        "freeze_fe968bd1": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "prepared"
+          ]
+        },
+        "restore_00fff1d5": {
+          "requires": [
+            "prepared"
+          ],
+          "adds": [
+            "transitioned"
+          ]
+        },
+        "verify_c054507e": {
+          "requires": [
+            "transitioned"
+          ],
+          "adds": [
+            "complete"
+          ]
+        },
+        "force_default": {
+          "forbidden": true
+        },
+        "skip_validation": {
+          "forbidden": true
+        },
+        "inspect_status": {
+          "requires": [
+            "ready"
+          ],
+          "adds": [
+            "inspected"
+          ]
+        }
+      },
+      "expected_plan": [
+        "freeze_fe968bd1",
+        "restore_00fff1d5",
+        "verify_c054507e"
+      ],
+      "minimum_lesson_terms": [
+        "freeze_fe968bd1",
+        "restore_00fff1d5",
+        "verify_c054507e"
+      ]
+    }
+  ]
+}

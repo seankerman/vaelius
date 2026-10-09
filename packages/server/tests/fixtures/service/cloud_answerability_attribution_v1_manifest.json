@@ -1,0 +1,8 @@
+{
+  "version": "cloud-answerability-attribution-v1-manifest",
+  "sha256": "282fbd1600bb008c4c7d8d34030eb0151223bfcc239e7952faf1c410fd3f0850",
+  "frozen_at": 1790452519.9095821,
+  "classification": "authored paired attribution regressions before additional clause guard repair; not held-out",
+  "cases": 8,
+  "provider_calls": 0
+}

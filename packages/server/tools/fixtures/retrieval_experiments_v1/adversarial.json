@@ -1,0 +1,99 @@
+{
+  "version": "retrieval-experiments-v1",
+  "split": "development",
+  "cases": [
+    {
+      "id": "tied-neighbors",
+      "case": "strong_lexical_tied_vector",
+      "source_ids": [
+        "rex-dev-procedures-1-a"
+      ],
+      "forbidden_or_noisy_neighbors": 1000,
+      "requirement": "Strong authorized lexical evidence survives tied noisy vector neighbors."
+    },
+    {
+      "id": "amount-not-id",
+      "case": "six_digit_amount",
+      "question_id": "rex-dev-values_numbers-1",
+      "requirement": "123456 is a quantity in USD, not a mandatory source filter."
+    },
+    {
+      "id": "multiple-numbers",
+      "case": "multiple_quantities",
+      "question_id": "rex-dev-values_numbers-4",
+      "requirement": "Both capacity facets remain available without treating either value as a required source identity."
+    },
+    {
+      "id": "source-id",
+      "case": "genuine_identifier",
+      "question_id": "rex-dev-exact_discovery-3",
+      "requirement": "A genuine namespaced ticket identity preserves authorized exact discovery."
+    },
+    {
+      "id": "wrong-actor",
+      "case": "speaker_mismatch",
+      "question_id": "rex-dev-decisions_rationale-negative-1",
+      "requirement": "Alice reporting a decision cannot supply Bob’s missing rationale."
+    },
+    {
+      "id": "private-owner",
+      "case": "private_preference",
+      "question_id": "rex-dev-user_preferences-negative-1",
+      "requirement": "Owner-private preferences must not reach another principal."
+    },
+    {
+      "id": "old-version",
+      "case": "current_vs_as_of",
+      "question_id": "rex-dev-time_changes-3",
+      "requirement": "As-of retrieval uses the valid historical source, with current authorization."
+    },
+    {
+      "id": "raw-tool-evidence-only",
+      "case": "raw_tool_payload",
+      "source_ids": [
+        "rex-dev-artifact_location-1-a"
+      ],
+      "raw_capture": {
+        "tool_name": "save_dataset",
+        "input": {
+          "destination": "/synthetic/juniper/validated/rainfall_2026.parquet"
+        },
+        "output": "Saved successfully"
+      },
+      "requirement": "Raw tool payload is evidence only; validated location knowledge can be retrieved without returning raw source cards."
+    },
+    {
+      "id": "permission-during-search",
+      "case": "revocation_at_delivery",
+      "source_ids": [
+        "rex-dev-procedures-1-a"
+      ],
+      "requirement": "Revoking the source during retrieval denies final delivery and preserves denial journal."
+    },
+    {
+      "id": "withdrawal",
+      "case": "withdrawal_and_reindex",
+      "source_ids": [
+        "rex-dev-artifact_location-2-a"
+      ],
+      "requirement": "Withdrawal removes all automatic delivery including historical evidence after reindex."
+    },
+    {
+      "id": "duplicate-compaction",
+      "case": "duplicate_then_compact",
+      "source_ids": [
+        "rex-dev-decisions_rationale-1-a"
+      ],
+      "requirement": "Duplicate evidence or compaction does not create multiple independent claims or duplicate cards."
+    },
+    {
+      "id": "forbidden-high-score",
+      "case": "forbidden_neighbors",
+      "source_ids": [
+        "rex-dev-exact_discovery-1-a"
+      ],
+      "forbidden_neighbors": 1000,
+      "requirement": "A thousand forbidden neighbors cannot hide or reveal an authorized result via global top-k filtering."
+    }
+  ]
+}

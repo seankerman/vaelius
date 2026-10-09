@@ -1,0 +1,40 @@
+{
+  "cases": [
+    "stable_attempt_reserved_before_dispatch",
+    "genuine_retry_distinct_attempt",
+    "duplicate_completion_does_not_double_charge",
+    "conflicting_completion_rejected",
+    "uncertain_result_reconciled_same_attempt",
+    "reported_cache_write_and_cache_read_accounted",
+    "versioned_nonnegative_price_estimate_not_bill",
+    "metrics_stable_identity_conflict",
+    "content_free_metric_allowlist",
+    "two_process_parallel_admission_race",
+    "disabled_tenant_admission",
+    "expired_reservation_fences_dispatch",
+    "restore_hold_blocks_service",
+    "10k_then100k_canonical_records_volume_not_quality",
+    "two_tenant_scope_isolation",
+    "actual_candidates_and_search_path_latency",
+    "200query_60second_finite_bounds"
+  ],
+  "expected_estimated_cost": 0.000333,
+  "kind": "authored provider-free invariant fixtures, not held-out",
+  "maximum_attempts": 3,
+  "parallel": 1,
+  "price": {
+    "cache_write_input": 2.5,
+    "cached_input": 0.2,
+    "input": 2.0,
+    "output": 10.0,
+    "version": "synthetic-price-v1"
+  },
+  "usage": {
+    "cache_write_input_tokens": 10,
+    "cached_input_tokens": 40,
+    "input_tokens": 100,
+    "output_tokens": 20,
+    "reasoning_output_tokens": 5
+  },
+  "version": "cloud_metering_v1"
+}

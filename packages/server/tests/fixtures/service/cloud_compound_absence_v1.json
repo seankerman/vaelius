@@ -1,0 +1,23 @@
+{
+  "classification": "authored tuned supplemental absent-choice control, not held-out",
+  "cases": [
+    {
+      "id": "absence-no",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false,
+      "lesson": "Alice chose no format for Project Atlas 7 because no export was needed. In a later session she saved the resulting dataset at /synthetic/atlas/results.parquet."
+    },
+    {
+      "id": "absence-none",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false,
+      "lesson": "Alice chose none for Project Atlas 7 because no export was needed. In a later session she saved the resulting dataset at /synthetic/atlas/results.parquet."
+    },
+    {
+      "id": "absence-neither",
+      "query": "Where did Alice save Project Atlas 7 and why did she choose that format?",
+      "expected": false,
+      "lesson": "Alice chose neither CSV nor parquet for Project Atlas 7 because no export was needed. In a later session she saved the resulting dataset at /synthetic/atlas/results.parquet."
+    }
+  ]
+}

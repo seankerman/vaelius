@@ -1,0 +1,5 @@
+{
+  "fixture": "cloud_refresh_v1.json",
+  "sha256": "b5aae8bafaa1e4383d2a774128d40eec66ea15327a435c04dcfda35a84c06eec",
+  "frozen_before_behavior_change": true
+}

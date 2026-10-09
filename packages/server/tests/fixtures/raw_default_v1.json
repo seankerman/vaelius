@@ -1,0 +1,12 @@
+{
+  "project": "raw-fixture",
+  "conversation": "orchard-history",
+  "messages": [
+    {"id": "proposal", "role": "user", "time": "2026-09-01T10:00:00Z", "text": "Proposal: keep the Orchard dataset in /data/drafts/orchard.csv until review."},
+    {"id": "decision", "role": "assistant", "time": "2026-09-02T10:00:00Z", "text": "The reviewed Orchard dataset was moved to /data/released/orchard.csv. The drafts location is historical."},
+    {"id": "rationale", "role": "user", "time": "2026-09-02T10:01:00Z", "text": "We chose the released directory because the reporting job reads that directory. This explains the move."}
+  ],
+  "query": "Where is the Orchard dataset?",
+  "unrelated_query": "unrecorded zeppelin launch itinerary",
+  "privacy_text": "Contact alice@example.test with password=private-fixture-secret under /Users/alice/project."
+}

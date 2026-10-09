@@ -1,0 +1,26 @@
+{
+  "always_deny": [
+    "backend_worker.py",
+    "cloud_identity.py",
+    "cloud_retrieval.py",
+    "cloud_runtime.py",
+    "cloud_execution.py",
+    "CLIENT_PIPELINE_PIN.json"
+  ],
+  "classification": "authored explicit unexecuted adapter exception frozen before behavior; not held-out",
+  "nonexecuted_addition": [
+    "slack_connector.py",
+    "fixtures/cloud_slack_backend_v1.json",
+    "fixtures/cloud_slack_backend_v1_manifest.json"
+  ],
+  "provider_calls": 0,
+  "requires": {
+    "connection_namespace": "cloud-live",
+    "current_sources_versions_policy": true,
+    "origin": "host_hook",
+    "original_agent_sources": 9,
+    "source_type": "agent"
+  },
+  "slack_source": "deny before compatibility exception or provider call",
+  "version": "cloud-receiver-retry-boundary-v1"
+}

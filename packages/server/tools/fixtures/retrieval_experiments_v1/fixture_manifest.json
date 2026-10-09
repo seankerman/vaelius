@@ -1,0 +1,61 @@
+{
+  "adversarial_sha256": "facd7cda15eac152113c87d42a068637f03f66303fa5c3247496f81e6759f56d",
+  "author": "separate fixture-author subagent /root/retrieval_fixtures",
+  "classification": "deliberately synthetic source-grounded retrieval fixtures; no extraction or ordinary-use evidence",
+  "confirmation_label_visibility": "private separate-author; not disclosed to retrieval owner",
+  "confirmation_sha256": "586658c680e8ddd75639207f13a6b85e868cce3f797abca4a1c0f593b0a2ba49",
+  "corpus_sha256": "622d1b909660cfd89d3eb379a8e5d7345fc89b7acf5a9f72db6c24e7337b6f46",
+  "development_sha256": "3725fc7ebf87cb6a703266d8564052956b9f2bfd9c43e507e53aeca22bd3e2b0",
+  "frozen_utc": "2026-09-27T01:38:24.419282+00:00",
+  "independent_real_team_held_out": false,
+  "source_provenance": "New fictional business/scientific workflows authored for this experiment; no V1-V6 source or query reuse",
+  "summary": {
+    "scenario_groups": 24,
+    "source_kinds": {
+      "curated_memory": 20,
+      "native_document": 220
+    },
+    "sources": 240,
+    "splits": {
+      "confirmation": {
+        "families": {
+          "abstention": 6,
+          "artifact_location": 6,
+          "decisions_rationale": 6,
+          "exact_discovery": 6,
+          "long_documents_originals": 6,
+          "multiple_sources": 6,
+          "procedures": 6,
+          "semantic_paraphrase": 6,
+          "speaker_ownership": 6,
+          "time_changes": 6,
+          "user_preferences": 6,
+          "values_numbers": 6
+        },
+        "negative": 17,
+        "positive": 55,
+        "questions": 72
+      },
+      "development": {
+        "families": {
+          "abstention": 6,
+          "artifact_location": 6,
+          "decisions_rationale": 6,
+          "exact_discovery": 6,
+          "long_documents_originals": 6,
+          "multiple_sources": 6,
+          "procedures": 6,
+          "semantic_paraphrase": 6,
+          "speaker_ownership": 6,
+          "time_changes": 6,
+          "user_preferences": 6,
+          "values_numbers": 6
+        },
+        "negative": 17,
+        "positive": 55,
+        "questions": 72
+      }
+    }
+  },
+  "version": "retrieval-experiments-v1"
+}

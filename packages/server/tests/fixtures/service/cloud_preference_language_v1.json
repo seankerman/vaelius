@@ -1,0 +1,26 @@
+{
+  "version": "preference-language-1",
+  "synthetic": true,
+  "rejections": [
+    {
+      "quote": "I prefer not pytest.",
+      "value": "pytest",
+      "scope": "user"
+    },
+    {
+      "quote": "I prefer anything except pytest.",
+      "value": "pytest",
+      "scope": "user"
+    },
+    {
+      "quote": "I prefer pytest for this task.",
+      "value": "pytest",
+      "scope": "user"
+    },
+    {
+      "quote": "I prefer pytest for the legacy project.",
+      "value": "pytest",
+      "scope": "user"
+    }
+  ]
+}

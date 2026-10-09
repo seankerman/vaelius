@@ -1,0 +1,10 @@
+{
+  "fixture_sha256": "c001deb279d32926f032d386dd9151235a261876394af8c38781d660b89b6d73",
+  "classification": "frozen authored live development adapted from backend_live_v2; never held-out",
+  "status": "frozen-before-cloud-live-orchestration",
+  "source_fixture_sha256": "d4e857984e1454565d6dfd262c98099f8ded04f4dc5066fa42e16371abd06bd0",
+  "attempts": 12,
+  "retries": 3,
+  "allocation_attempts": 80,
+  "allocation_retries": 8
+}

@@ -1,10 +1,10 @@
-FROM docker.io/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS builder
+FROM public.ecr.aws/docker/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS builder
 WORKDIR /src
 COPY packages/client/ /src/client/
 COPY packages/server/ /src/server/
 RUN python -m pip wheel --no-cache-dir --no-deps --wheel-dir /wheels /src/client /src/server
 
-FROM docker.io/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+FROM public.ecr.aws/docker/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 COPY --from=builder /wheels /wheels
 COPY requirements-runtime.lock /requirements-runtime.lock
 RUN python -m pip install --no-cache-dir -r /requirements-runtime.lock /wheels/*.whl \

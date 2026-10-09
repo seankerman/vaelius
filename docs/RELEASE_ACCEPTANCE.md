@@ -8,7 +8,7 @@ Release: 0.3.0, initial public alpha. Date: 2026-10-09.
 | Private material | Development campaign archive, runtime profiles, original conversations, credentials and installed snapshots excluded | Pass |
 | Packaging | Both distributions built and installed from a separate clean local clone and new Python 3.12 environment; `pip check` | Pass |
 | Client | 49 installed tests, including model-free imports, capture/redaction, transport and explicit profile compatibility | Pass |
-| Backend | Clean-clone run: 1,139 tests, 41 skips, one development-helper failure; final helper correction separately reran all 12 related tests successfully | All executed cases covered; full CI confirmation follows public push |
+| Backend | Final Linux CI: 1,139 backend tests, zero failures/errors, 41 declared skips; installed client: 49 tests | Pass; skips remain evidence gaps |
 | Recovery | 28 additional original-object, logical restore/reconciliation, source-fault and segment tests; one unrelated explicit-DSN skip | Pass, 27 executed |
 | Installed rollback | Actual previous installed package writes against the disposable current schema; withdrawal remains denied after rollback/forward | Pass |
 | End-to-end delivery | Actual client hook → loopback HTTP API → PostgreSQL source worker → backend MCP → exact evidence → withdrawal | Pass |
@@ -59,7 +59,11 @@ python scripts/scan_secrets.py
 ```
 
 CI runs the installed suite, disposable PostgreSQL, actual HTTP/MCP demo, artifact
-checks, secret scan and clean image build from the public source. Numeric batch
+checks and secret scan from the public source. A separate runtime-image workflow
+builds and verifies the installed image so registry failures do not rerun the full
+regression suite. The initial combined CI run passed all source checks, then Docker
+Hub returned HTTP 429 on the base-image pull. The image now uses the verified public
+ECR mirror of the exact same pinned Python image digest. Numeric batch
 bounds are operational controls; they do not establish authorization quotas.
 
 ## Remaining acceptance gaps

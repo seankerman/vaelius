@@ -1,0 +1,19 @@
+name: Runtime image
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build clean runtime image
+        run: docker build -t vaelius:ci .
+      - name: Verify installed package boundary
+        run: |
+          docker run --rm vaelius:ci python -c 'import os,agentclient,agenthub; from agenthub.pipeline_pin import verify; verify(); assert os.getuid()!=0; assert not os.path.exists("/Users"); print("Installed non-root image contract verified")'

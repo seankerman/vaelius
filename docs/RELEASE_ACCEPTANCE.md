@@ -15,6 +15,8 @@ Release: 0.3.0, initial public alpha. Date: 2026-10-09.
 | Container | Clean source build, installed contract verification, non-root image, no developer home/operator credentials in image; actual container API/MCP demo | Pass |
 | Public artifacts | Wheels contain runtime packages and licenses, no tests/fixtures/research/profiles; source distributions checked | Pass |
 | Secret scan | Gitleaks 8.30.1, official archive checksum verified; final tracked tree, narrow checksum/synthetic-test allowances | Zero unresolved findings |
+| Final Linux source CI | Installed client/backend tests, actual HTTP/MCP demo, package checks and secret scan | Pass |
+| Final Linux image CI | Mirrored pinned Python base, installed contract and non-root boundary | Pass |
 
 The initial backend run exposed obsolete fixture assumptions: optional enrichment
 was not explicitly enabled, fixture readers were not provisioned, fixture resources
@@ -81,3 +83,16 @@ cost/cache behavior, or production cloud readiness. Prior authored/private quest
 are not presented as untouched confirmation. No private corpus or model weights are
 published. The project website link is configured; website content/hosting is a
 separate operator action.
+
+## Published confirmation
+
+- [Final source/PostgreSQL checks](https://github.com/seankerman/vaelius/actions/runs/37991050115): passed.
+- [Runtime image checks](https://github.com/seankerman/vaelius/actions/runs/37990211953): passed.
+- Test-service provisioning uses the official Moto GHCR image and an exact
+  checksum-verified pgvector 0.8.6 source build on the pinned public PostgreSQL
+  mirror. This removes Docker Hub anonymous pull limits from CI.
+- Private vulnerability reporting, secret scanning and push protection are enabled.
+
+The initial failed registry receipts remain failures; they were not relabeled
+successful. The final code has no unresolved executed-test failures. Declared
+skips and the cloud/team acceptance gaps above remain.

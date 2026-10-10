@@ -54,14 +54,17 @@ class CallbackServer:
                     parsed=urlsplit(self.path);args=parse_qs(parsed.query,strict_parsing=True)
                     valid=(self.headers.get('Host')==urlsplit(owner.uri).netloc and parsed.path=='/callback'
                         and not parsed.scheme and not parsed.netloc and not parsed.fragment
-                        and len(self.path)<=8192 and set(args)=={'state','code'}
+                        and len(self.path)<=8192 and {'state','code'}<=set(args)<= {'state','code','iss','session_state'}
+                        and ('iss' not in args or (len(args['iss'])==1 and 0<len(args['iss'][0])<=2048))
+                        and ('session_state' not in args or (len(args['session_state'])==1 and 0<len(args['session_state'][0])<=512))
                         and len(args['state'])==len(args['code'])==1 and owner.state is not None
                         and hmac.compare_digest(args['state'][0],owner.state)
                         and 0<len(args['code'][0])<=4096)
                     if valid:
                         if owner.used:status=409
                         else:
-                            owner.used=True;owner.result.put_nowait({'state':args['state'][0],'code':args['code'][0]})
+                            owner.used=True;owner.result.put_nowait({'state':args['state'][0],'code':args['code'][0],
+                                **({'iss':args['iss'][0]} if 'iss' in args else {})})
                             status=200
                 except (ValueError,KeyError,queue.Full):pass
                 body=b'Enrollment received. You may close this tab.' if status==200 else b'Callback refused.'
@@ -204,19 +207,29 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Enroll a new isolated local enterprise client profile')
-    for name in ('home','url','tenant','broker','enrollment','callback-uri'):parser.add_argument('--'+name,required=True)
+    for name in ('home','url','tenant','enrollment','callback-uri'):parser.add_argument('--'+name,required=True)
+    parser.add_argument('--broker',help='configured legacy login broker')
     parser.add_argument('--timeout',type=float,default=180);parser.add_argument('--no-browser',action='store_true')
+    parser.add_argument('--oauth-client-id',help='use standard provider OAuth instead of legacy enrollment')
+    parser.add_argument('--reauthenticate',action='store_true',help='preserve this existing profile and enrollment')
     parser.add_argument('--credential-store',choices=('auto','keyring','file'),default='auto',
         help='auto uses the OS keychain when the optional keyring package has a usable backend')
     args=parser.parse_args(argv)
     try:
         _callback_uri(args.callback_uri)
         with CallbackServer(args.callback_uri) as callback:
-            result=enroll(args.home,url=args.url,tenant=args.tenant,broker=args.broker,enrollment=args.enrollment,
-                callback=callback,timeout=args.timeout,browser=None if args.no_browser else webbrowser.open,
-                notify=lambda value:print(json.dumps(value),flush=True),credential_store=args.credential_store)
+            common=dict(url=args.url,tenant=args.tenant,enrollment=args.enrollment,callback=callback,timeout=args.timeout,
+                browser=None if args.no_browser else webbrowser.open,notify=lambda value:print(json.dumps(value),flush=True),
+                credential_store=args.credential_store)
+            if args.oauth_client_id or not args.broker:
+                from agentclient.oauth import enroll as oauth_enroll
+                result=oauth_enroll(args.home,client_id=args.oauth_client_id or 'vaelius-plugin',reauthenticate=args.reauthenticate,**common)
+            else:
+                if args.reauthenticate:raise EnrollmentError('oauth_client_id_required_for_reauthentication')
+                if not args.broker:raise EnrollmentError('legacy_broker_required')
+                result=enroll(args.home,broker=args.broker,**common)
         print(json.dumps(result),flush=True);return 0
-    except EnrollmentError as error:
+    except (EnrollmentError,ValueError) as error:
         print(json.dumps({'error':str(error)}),file=sys.stderr);return 1
 
 

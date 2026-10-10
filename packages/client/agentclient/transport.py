@@ -44,7 +44,7 @@ class EnterpriseLocal(LoopbackTransport):
             if mode & 0o077:
                 raise ValueError("enterprise_credential_permissions")
             token=credential.read_text().strip()
-        if not token or len(token)>256:raise ValueError("invalid_enterprise_credential")
+        if not token or len(token)>16384:raise ValueError("invalid_enterprise_credential")
         super().__init__(url,token,timeout,transport=transport)
 
     def request(self, path: str, data=None):

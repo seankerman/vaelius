@@ -38,7 +38,7 @@ override must name exactly the intended local service network. Do not silently
 rewrite identity-broker issuer URLs.
 
 For production, mount secrets or use workload identity for S3; configure HTTPS,
-OIDC enrollment, tenant routing and lifecycle policies. The backend MCP endpoint
+[provider OAuth](ENTERPRISE_AUTH.md), tenant routing and lifecycle policies. The backend MCP endpoint
 uses those same identity and permission controls. [Provider configuration and
 hosting seams](../packages/server/docs/MODEL_PROVIDERS.md) document API models,
 local Codex-login execution and explicit source-object adapters.

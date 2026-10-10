@@ -373,7 +373,7 @@ class TenantRegistry:
             return self._stores[tenant]
 
     def store_for_token(self, token):
-        if not isinstance(token, str) or not token or len(token) > 4096:
+        if not isinstance(token, str) or not token or len(token) > 16384:
             raise Denied()
         with connect(self.control_dsn) as db:
             row = db.execute("SELECT r.tenant FROM cloud_credential_routes r JOIN cloud_tenants t ON t.id=r.tenant WHERE r.digest=%s AND r.active=1 AND t.active=1", (_digest(token),)).fetchone()

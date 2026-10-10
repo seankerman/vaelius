@@ -135,7 +135,8 @@ def setup_profile(profile,services_path,*,namespace='cloud_profile'):
     runtime_path=profile/'runtime.json'
     runtime=json.loads(runtime_path.read_text()) if runtime_path.exists() else {}
     runtime.update({'provider_mode':'off','control_dsn':control_app,'max_stores':4,
-        'allowed_hosts':['127.0.0.1','localhost'],'allowed_origins':[],'api_port':55486})
+        'allowed_hosts':['127.0.0.1','localhost'],'allowed_origins':[]})
+    runtime.setdefault('api_port',55486)
     runtime.setdefault('semantic',{'enabled':False})
     runtime.setdefault('objects',{'kind':'s3','endpoint':'http://127.0.0.1:55484','bucket':'agentnetwork-cloud-v1',
         'access_key':'synthetic-local','secret_key':'synthetic-local','local_hosts':['127.0.0.1']})

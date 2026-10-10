@@ -21,6 +21,8 @@ JSON_LIMIT=262144
 FILE_LIMIT=50*1024*1024
 NO_STORE={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
 
+class AuthenticationRequired(Denied):pass
+
 def pack_search_result(request,result):
     """Pack exact evidence after selection; partial useful evidence stays explicit."""
     output={key:value for key,value in result.items()
@@ -61,9 +63,13 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
     @timed('authenticate')
     def authenticate(request):
         header=request.headers.get('authorization','')
-        if not header.startswith('Bearer '):raise Denied()
-        token=header[7:];store=registry.store_for_token(token)
-        return store,store.authenticate(token,request.headers.get('x-request-id') or uuid.uuid4().hex)
+        if not header.startswith('Bearer '):raise AuthenticationRequired()
+        token=header[7:];request_id=request.headers.get('x-request-id') or uuid.uuid4().hex
+        if hasattr(registry,'authenticate_token'):
+            try:return registry.authenticate_token(token,request_id)
+            except (Denied,IdentityError):raise AuthenticationRequired() from None
+        store=registry.store_for_token(token)
+        return store,store.authenticate(token,request_id)
     def meter_search(store,ctx,result):
         with span('meter'):
             if not getattr(store,'dsn',None):return
@@ -172,6 +178,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])
         if method=='POST' and path=='/enterprise/v3/auth/rotate':return store.rotate_credential(ctx)
+        if method=='POST' and path=='/enterprise/v3/auth/adopt':
+            if set(data)!={'enrollment'}:raise ValueError('invalid_enrollment')
+            from agenthub.oauth_provider import adopt_enrollment
+            return adopt_enrollment(store,ctx,data['enrollment'])
         if method=='POST' and path=='/enterprise/v3/directory/events':
             return store.apply_directory_event(ctx,resource=data['resource'],value=data['value'],sequence=data['sequence'],
                 key=data['key'],reconcile=data.get('reconcile',False),deleted=data.get('deleted',False))
@@ -201,6 +211,12 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         if request.url.query:return JSONResponse({'error':'unsupported_query'},status_code=400)
         try:
             if path=='/health':return JSONResponse({'service':'Vaelius','models':'idle',**({'build_ids':build_ids} if build_ids else {})})
+            if path.startswith('/.well-known/oauth-protected-resource') and hasattr(registry,'protected_metadata'):
+                prefix='/.well-known/oauth-protected-resource'
+                suffix=path.removeprefix(prefix)
+                if suffix not in ('','/mcp') and not suffix.startswith('/mcp/'):raise FileNotFoundError()
+                tenant=suffix.removeprefix('/mcp/') if suffix.startswith('/mcp/') else None
+                return JSONResponse(registry.protected_metadata(tenant),headers=NO_STORE)
             if path=='/ready':
                 def ready():
                     if not hasattr(registry,'open_control'):return
@@ -232,9 +248,11 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 raw=await bounded_body(request,JSON_LIMIT);data=json.loads(raw)
                 if not isinstance(data,dict):raise ValueError('json_object_required')
             if path=='/enterprise/v3/auth/begin':
+                if hasattr(registry,'legacy_interactive') and not registry.legacy_interactive:raise Denied()
                 store=registry.resolve(data['tenant']);broker=brokers[data['broker']]
                 return JSONResponse(await run_in_threadpool(store.begin_enrollment,broker))
             if path=='/enterprise/v3/auth/complete':
+                if hasattr(registry,'legacy_interactive') and not registry.legacy_interactive:raise Denied()
                 store=registry.resolve(data['tenant']);broker=brokers[data['broker']]
                 issued=await run_in_threadpool(store.complete_enrollment,broker,state=data['state'],code=data['code'],
                     callback_uri=data['callback_uri'],enrollment=data['enrollment'],
@@ -306,6 +324,11 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             value=await run_in_threadpool(deliver,request,request.method,path,data)
             return JSONResponse(value,headers=NO_STORE)
         except OverflowError:return JSONResponse({'error':'body_size'},status_code=413)
+        except AuthenticationRequired:
+            if hasattr(registry,'protected_metadata'):
+                return JSONResponse({'error':'authentication_required'},status_code=401,
+                    headers=NO_STORE|{'WWW-Authenticate':challenge})
+            return JSONResponse({'error':'not_found'},status_code=404)
         except (Denied,IdentityError,FileNotFoundError):return JSONResponse({'error':'not_found'},status_code=404)
         except Conflict:return JSONResponse({'error':'conflict'},status_code=409)
         except (ValueError,TypeError,KeyError):return JSONResponse({'error':'invalid_request'},status_code=400)
@@ -324,7 +347,11 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 try:(timing_sink or emit)(trace.record(status))
                 except Exception:pass
     from agenthub.mcp_server import build_mcp
-    mcp,lifespan=build_mcp(authenticate,deliver,allowed_hosts=allowed_hosts,allowed_origins=allowed_origins)
+    challenge=None
+    if hasattr(registry,'protected_metadata'):
+        origin=registry.resource.removesuffix('/mcp').rstrip('/')
+        challenge='Bearer resource_metadata="'+origin+'/.well-known/oauth-protected-resource/mcp"'
+    mcp,lifespan=build_mcp(authenticate,deliver,allowed_hosts=allowed_hosts,allowed_origins=allowed_origins,challenge=challenge)
     app=Starlette(routes=[Route('/mcp',mcp,methods=['GET','POST','DELETE']),
         Route('/{path:path}',timed_dispatch,methods=['GET','POST','PUT','DELETE','PATCH'])],lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=list(allowed_hosts))

@@ -347,6 +347,7 @@ class CloudIdentityMixin:
             raise Denied()
         with self.open() as state:
             row = state.db.execute('SELECT * FROM enterprise_credentials WHERE digest=%s',(_digest(token),)).fetchone()
+        if row['oauth_provider'] is not None and not hasattr(self.registry,'authenticate_token'):raise Denied()
         if row['expires_at'] <= time.time():
             raise Denied()
         if row['identity_issuer']:
@@ -373,6 +374,7 @@ class CloudIdentityMixin:
         if (not row or not row['active'] or not row['principal_active'] or row['expires_at']<=time.time()
                 or (row['acting_for'] and not row['represented_active'])):
             raise Denied()
+        if row['oauth_provider'] is not None and not hasattr(self.registry,'authenticate_token'):raise Denied()
         if (row['principal']!=ctx['principal'] or row['tenant']!=ctx['tenant']
                 or (row['acting_for'] or row['principal'])!=ctx['actor']):raise Denied()
         ctx['actions'] &= set(json.loads(row['actions']))
@@ -403,7 +405,7 @@ class CloudIdentityMixin:
         Lifetime extension is only available through a refresh token, so an access
         token alone can never outlive its own expiry or its family's absolute limit.
         """
-        from agenthub.enterprise import _digest
+        from agenthub.enterprise import Denied, _digest
         if type(expires_in) is not int or not 60<=expires_in<=86400:
             raise ValueError('invalid_credential_lifetime')
         token = replacement_token if replacement_token is not None else secrets.token_urlsafe(48)
@@ -412,6 +414,7 @@ class CloudIdentityMixin:
             self.current_identity(state.db,ctx)
             old = state.db.execute('SELECT * FROM enterprise_credentials WHERE digest=%s FOR UPDATE',
                 (ctx['credential_digest'],)).fetchone()
+            if old['oauth_provider'] is not None:raise Denied()
             self.current_identity(state.db,ctx)
             state.db.execute('UPDATE enterprise_credentials SET active=0 WHERE digest=%s',(old['digest'],))
             state.db.execute('''INSERT INTO enterprise_credentials

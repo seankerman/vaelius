@@ -18,7 +18,7 @@ class Service:
     reply) is answered again while the successor is unused; any other use of a
     spent refresh token revokes the family.
     """
-    def __init__(self,*,access='old-access',refresh='old-refresh',expires_in=10):
+    def __init__(self,*,access='old-access',refresh='old-refresh',expires_in=1):
         self.access={access:time.time()+expires_in};self.refresh={refresh:None}
         self.revoked=False;self.rotations=0;self.lose_reply=False;self.calls=[]
     def __call__(self,backend,token,route,data=None):

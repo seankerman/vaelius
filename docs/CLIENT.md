@@ -11,7 +11,7 @@ first. Login creates a private profile and enrolls no project automatically:
 ```sh
 python -m agentclient.cloud_enroll \
   --home /absolute/private/client-profile --url https://memory.example.org \
-  --tenant TENANT --broker BROKER --enrollment ENROLLMENT \
+  --tenant TENANT --oauth-client-id vaelius-plugin --enrollment ENROLLMENT \
   --callback-uri http://127.0.0.1:CALLBACK_PORT/callback
 vaelius-client --home /absolute/private/client-profile enroll-project \
   --root /absolute/project --name PROJECT
@@ -41,14 +41,19 @@ vaelius-client --home /absolute/private/client-profile uninstall
 
 ## Credentials
 
-Login stores a one-hour access token and a refresh token. Hooks, transports and
+Provider OAuth is the default for new enterprise logins. Its configured authorization
+server owns token lifetimes, renewal and revocation. Reauthenticate in the same
+profile with `--reauthenticate`; projects, sessions and outbox are preserved.
+See [enterprise authentication](ENTERPRISE_AUTH.md) for setup and migration.
+
+Explicit legacy broker login stores a one-hour access token and a refresh token. Hooks, transports and
 the MCP header helper only ever read the access token; the refresh token is used
 solely by `credential-renew` (also run automatically before requests when less
 than five minutes remain) and by `logout`. Each renewal rotates both tokens. The
 service revokes the whole session if a used refresh token is ever presented again,
 so do not copy a profile between machines. A refresh token expires after 30 idle
-days and at most 90 days after login (operator configurable); then log in again
-into a new profile.
+days and at most 90 days after login (operator configurable). Migrating to provider
+OAuth supports subsequent login in the existing profile.
 
 Tokens are kept in the OS keychain (for example macOS Keychain or the Linux
 Secret Service) when the optional `keyring` package is installed with a usable

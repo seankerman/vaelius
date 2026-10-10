@@ -145,7 +145,11 @@ def registry_from_settings(settings,home):
             # predicates that bypass the restricted PostgreSQL reader role.
             setattr(store, 'retrieval_'+key, 'compiled' if key=='authorization_shape' else configuration.get(key, default))
         return store
-    return TenantRegistry(settings['control_dsn'],home,max_stores=settings.get('max_stores',16),store_factory=factory)
+    arguments={'max_stores':settings.get('max_stores',16),'store_factory':factory}
+    if settings.get('authorization'):
+        from agenthub.oauth_provider import OAuthRegistry
+        return OAuthRegistry(settings['control_dsn'],home,authorization=settings['authorization'],**arguments)
+    return TenantRegistry(settings['control_dsn'],home,**arguments)
 
 def app_from_profile(profile):
     from agenthub.backend_ops import build_identity

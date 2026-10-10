@@ -35,8 +35,8 @@ def _read(path):
     with path.open() as stream:
         info=os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_mode&0o077:raise ValueError('credential_file_permissions')
-        value=stream.read(8193)
-    if len(value)>8192:raise ValueError('credential_file_bound')
+        value=stream.read(65537)
+    if len(value)>65536:raise ValueError('credential_file_bound')
     return value
 
 
@@ -53,7 +53,7 @@ def _write(path,value):
 
 def _token(value):
     value=value.strip() if isinstance(value,str) else None
-    if not value or len(value)>256 or '\n' in value or '\r' in value:raise ValueError('invalid_enterprise_credential')
+    if not value or len(value)>16384 or '\n' in value or '\r' in value:raise ValueError('invalid_enterprise_credential')
     return value
 
 
@@ -61,9 +61,17 @@ def keyring_backend():
     """The usable `keyring` module, or None when absent or without a real backend."""
     try:
         import keyring
-        from keyring.backends import fail
         backend=keyring.get_keyring()
-        if isinstance(backend,fail.Keyring) or getattr(backend,'priority',0)<=0:return None
+        # Priority measures availability, not confidentiality. Never select a
+        # plaintext/remote third-party backend under the name "OS keychain".
+        secure={('keyring.backends.macOS','Keyring'),
+                ('keyring.backends.SecretService','Keyring'),
+                ('keyring.backends.Windows','WinVaultKeyring'),
+                ('keyring.backends.kwallet','DBusKeyring'),
+                ('keyring.backends.kwallet','DBusKeyringKWallet4'),
+                ('keyring.backends.kwallet','DBusKeyringKWallet5')}
+        if (type(backend).__module__,type(backend).__name__) not in secure:return None
+        if getattr(backend,'priority',0)<=0:return None
         return keyring
     except Exception:
         return None
@@ -139,6 +147,21 @@ def _request(backend,token,path,data=None):
 def _scope(value):return {k:value[k] for k in _SCOPE} if all(k in value for k in _SCOPE) else None
 
 
+def check_scope(expected,metadata):
+    actual=_scope(metadata)
+    if expected is not None and (actual is None
+            or any(actual[k]!=expected[k] for k in _SCOPE if k!='actions')
+            or not set(actual['actions'])<=set(expected['actions'])):
+        raise ValueError('credential_scope_changed')
+
+
+def save_metadata(state,url,token,metadata):
+    remaining=max(0,metadata['expires_at']-time.time())
+    window=min(300,max(5,remaining*.1))
+    _write(state,json.dumps({'binding':_binding(url,token),**metadata,
+        'renew_after':metadata['expires_at']-window}))
+
+
 def _finish(store,state,url,pending,metadata):
     # Order matters for recovery: the refresh slot changes last, so while a journal
     # exists the stored refresh token is either the spent original (resend the
@@ -146,7 +169,7 @@ def _finish(store,state,url,pending,metadata):
     store.write('access',pending['replacement_access_token'])
     store.write('refresh',pending['replacement_refresh_token'])
     if metadata is None:state.unlink(missing_ok=True)
-    else:_write(state,json.dumps({'binding':_binding(url,pending['replacement_access_token']),**metadata}))
+    else:save_metadata(state,url,pending['replacement_access_token'],metadata)
     store.delete('pending')
 
 
@@ -166,13 +189,19 @@ def _complete(backend,store,state,pending):
         if exc.code not in _DENIED:raise
         # Revoked, reused or expired family: these candidates can never become valid.
         store.delete('pending');raise LoginRequired() from None
-    if pending.get('scope') is not None and _scope(metadata)!=pending['scope']:
-        raise ValueError('credential_scope_changed')
+    check_scope(pending.get('scope'),metadata)
     _finish(store,state,url,pending,metadata)
     return metadata
 
 
 def renew(backend,*,force=False):
+    pending=open_store(backend).read('pending')
+    if pending and json.loads(pending).get('phase')=='login_returned':
+        from agentclient.oauth import recover_login
+        return recover_login(backend)
+    if backend.get('oauth'):
+        from agentclient.oauth import renew as oauth_renew
+        return oauth_renew(backend,force=force)
     store=open_store(backend);url=backend['url']
     state=_sidecar(store,'.renewal.json');lock=_sidecar(store,'.lock')
     with os.fdopen(os.open(lock,os.O_RDWR|os.O_CREAT,0o600),'r+') as guard:
@@ -189,7 +218,7 @@ def renew(backend,*,force=False):
         saved=json.loads(_read(state)) if state.exists() else {}
         status='recovered' if recovered else 'current'
         if saved.get('binding')!=binding:saved={}
-        if not force and saved.get('expires_at',0)>time.time()+300:
+        if not force and saved.get('renew_after',saved.get('expires_at',0)-300)>time.time():
             return {'status':status,'expires_at':saved['expires_at']}
         old=None
         if not force and not saved:
@@ -197,8 +226,8 @@ def renew(backend,*,force=False):
             except HTTPError as exc:
                 if exc.code not in _DENIED:raise
             if old is not None:
-                _write(state,json.dumps({'binding':binding,**old}))
-                if old['expires_at']>time.time()+300:return {'status':status,'expires_at':old['expires_at']}
+                save_metadata(state,url,access,old)
+                if old['expires_at']>time.time()+5:return {'status':status,'expires_at':old['expires_at']}
         refresh=store.read('refresh')
         if refresh is None:raise LoginRequired()
         refresh=_token(refresh)
@@ -226,7 +255,10 @@ def logout(backend,*,local_only=False):
         if tokens and not local_only:
             # Any token of the family revokes all of it; a pending journal's
             # replacements belong to the same family.
-            _request(backend,None,'/enterprise/v3/auth/revoke',{'token':tokens[0]})
+            if backend.get('oauth'):
+                from agentclient.oauth import revoke
+                revoke(backend,tokens[0])
+            else:_request(backend,None,'/enterprise/v3/auth/revoke',{'token':tokens[0]})
             revoked=True
         for slot in ('pending','refresh','access'):store.delete(slot)
         state.unlink(missing_ok=True)

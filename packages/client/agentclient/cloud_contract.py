@@ -6,7 +6,7 @@ def validate_response(path,value):
     if not isinstance(value,dict) or len(json.dumps(value,ensure_ascii=True))>524288:
         raise ValueError('invalid_cloud_response')
     route=path.removeprefix('/enterprise/v3/')
-    if route in {'auth/credential','auth/renew'}:
+    if route in {'auth/credential','auth/renew','auth/adopt'}:
         # Renewal also reports the rotated refresh token's idle and absolute limits.
         expiries=('expires_at',)+(('refresh_expires_at','session_expires_at') if route=='auth/renew' else ())
         if set(value)!={'tenant','principal','actor','enrollment','actions',*expiries}:

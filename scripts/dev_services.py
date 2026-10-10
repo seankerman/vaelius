@@ -113,7 +113,7 @@ def start(state, engine, *, postgres_image='docker.io/pgvector/pgvector:0.8.6-pg
     except BaseException:
         # Remove only the exact containers created by this invocation.
         for name in names:
-            run(engine, 'rm', '-f', name)
+            run(engine, 'rm', '-f', '-v', name)
         receipt.unlink(missing_ok=True)
         raise
 
@@ -126,7 +126,7 @@ def stop(state, *, destroy=False):
         if actual['Config']['Labels'].get('vaelius.disposable') != data['namespace']:
             raise ValueError('container_ownership_mismatch')
         if destroy:
-            run(data['engine'], 'rm', '-f', name)
+            run(data['engine'], 'rm', '-f', '-v', name)
         else:
             run(data['engine'], 'stop', name)
     if destroy:

@@ -136,7 +136,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
     def authenticate(self, token, request_id=None):
         try:self.require_ready()
         except ValueError:raise Denied() from None
-        if not isinstance(token,str) or not token or len(token)>256:raise Denied()
+        if not isinstance(token,str) or not token or len(token)>16384:raise Denied()
         with self.open() as state:
             row=state.db.execute("""SELECT c.*,p.active principal_active,
                 a.active actor_active FROM enterprise_credentials c

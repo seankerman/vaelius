@@ -69,6 +69,7 @@ vaelius worker-run --profile /absolute/private/profile --tenant acme --max-jobs 
 ```
 
 See [client enrollment](docs/CLIENT.md), [self-hosting](docs/SELF_HOSTING.md),
+[enterprise OAuth and migration](docs/ENTERPRISE_AUTH.md),
 [security and data boundaries](docs/DATA_BOUNDARIES.md), and
 [model providers](packages/server/docs/MODEL_PROVIDERS.md). The domain vaelius.com
 is the project website; it is not an automatically configured hosted API.

@@ -22,12 +22,62 @@ The supported routes are:
 - `POST /enterprise/v3/auth/complete`: state, authorization code, exact callback
   URI and enrollment identifier. Scopes are server selected; no customer model
   or coding-agent credential is accepted.
-- `POST /enterprise/v3/auth/rotate`: authenticated credential rotation.
+- `POST /enterprise/v3/auth/renew`: refresh-token rotation. Body `refresh_token`,
+  `replacement_access_token`, `replacement_refresh_token`; no Bearer token is used.
+- `POST /enterprise/v3/auth/revoke`: RFC 7009 revocation of a token family.
+- `POST /enterprise/v3/auth/rotate`: authenticated access-token rotation that never
+  extends the token's expiry.
 
-Enrollment defaults to one hour; explicitly chosen lifetimes range from 60 seconds
-to 24 hours. Rotation atomically revokes the previous digest in the tenant database.
-The control route is bound separately, with no cross-database atomicity claim. If
-route binding fails, the new token is unusable until operator reconciliation.
+### Access and refresh tokens
+
+Login (`auth/complete`) issues a short-lived access token (`credential`, for
+compatibility) and a refresh token that starts a new token family. Only the access
+token is accepted on API and MCP routes; only the refresh token is accepted by
+`auth/renew`. Both are random 64-character values stored as SHA-256 digests; raw
+tokens never reach the database, audit rows or logs. Operator-issued service
+credentials (`enroll()`) get a family but no refresh token.
+
+Lifetimes are operator configuration in the private `runtime.json`; omitted keys
+keep their defaults:
+
+~~~json
+{"credentials": {"access_ttl_seconds": 3600, "refresh_idle_seconds": 2592000,
+                 "refresh_absolute_seconds": 7776000}}
+~~~
+
+Access tokens last 1 hour by default (60 seconds to 24 hours). A refresh token
+expires after 30 idle days and never later than 90 days after the original OIDC
+login (up to 366 days; idle must exceed the access lifetime). Rotation cannot
+extend either token past that absolute limit; afterwards the user logs in again.
+
+Each renewal follows OAuth 2.0 Security BCP (RFC 9700, section 4.14.2) refresh-token
+rotation: it spends the presented refresh token, deactivates the family's previous
+access token and issues a new pair. The client generates both replacements and
+journals them before dispatch, so a lost reply is retried with identical values;
+that exact retry is answered again while its successor is unused. Any other
+presentation of a spent refresh token is treated as theft: the whole family (every
+access and refresh token) is revoked in the same transaction and a
+`credential_refresh_reuse` audit row is written. Renewal also rechecks the tenant,
+principal, represented user, delegation and external identity binding, so a
+deprovisioned user cannot refresh; such a denial does not spend the token.
+
+`auth/revoke` follows RFC 7009: the family is identified by the Bearer access token
+or by a body `token` (refresh or access). Expired, spent or already revoked tokens
+of the family still identify it, so the call is idempotent, and unknown tokens are
+acknowledged with the same `{"revoked": true}`. Revocation is audited as
+`credential_revocation` (`applied` or `already_revoked`).
+
+Migration `033_refresh_tokens.sql` is additive. Access tokens issued before it
+have no family: they keep working until their own expiry, are never exchanged for
+a refresh token, and revoke only themselves. The first renewal after an upgrade
+therefore requires one interactive login; bridging an existing access token into
+a refresh family was rejected because it would let any copy of a one-hour token
+mint a 90-day session. Re-run the application role grants after migrating, as for
+other new tables. Sender-constrained tokens (DPoP, mTLS) are not implemented.
+
+The tenant database is authoritative; each control route is bound separately, with
+no cross-database atomicity claim. If route binding fails after a renewal commits,
+the client's identical retry rebinds it.
 Current credential, represented user, global control disable, tenant principal and
 delegation checks run again at delivery/processing checkpoints. A settings
 administrator has no implicit right to private documents.
@@ -55,7 +105,10 @@ python -m agentclient.cloud_enroll --home /private/new-client-profile \
 The operator must configure that exact callback in the broker and its client.
 The listener checks state, exact path/Host, duplicate parameters and replay. The
 client verifies the server authorization URL uses code flow and S256 PKCE.
-Credentials and configuration are owner-only; no token is printed. Login adds no
+Credentials and configuration are owner-only; no token is printed. With
+`--credential-store auto` (the default) tokens go to the OS keychain when the
+optional `keyring` package has a usable backend, otherwise to 0600 files; see the
+[client guide](../../../docs/CLIENT.md#credentials). Login adds no
 projects, installs no global hooks, opens no local corpus and makes no client model
 calls. Project/connection enrollment remains an explicit subsequent operation.
 `--no-browser` prints the authorization URL for a manually opened browser. Timeout,

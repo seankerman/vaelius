@@ -2,7 +2,9 @@
 
 The server owns issuer verification, PKCE verifier storage and credential scope.
 This client binds the exact configured loopback callback, checks state, and stores
-only the resulting short-lived credential. It never installs global hooks.
+only the resulting short-lived access token and, when issued, its rotating refresh
+token (OS keychain when selected, otherwise owner-only files). It never installs
+global hooks.
 """
 import argparse
 import hmac
@@ -136,9 +138,25 @@ def local_request(url):
     return request
 
 
-def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=None,timeout=180,notify=None):
-    """No source/project enrollment is implicit in login; the new profile is empty."""
+def _credential_store(choice):
+    from agentclient.credentials import keyring_backend
+    if choice not in ('auto','keyring','file'):raise EnrollmentError('invalid_credential_store')
+    if choice=='file':return 'file'
+    if keyring_backend() is not None:return 'keyring'
+    if choice=='keyring':raise EnrollmentError('credential_keyring_unavailable')
+    return 'file'
+
+
+def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=None,timeout=180,notify=None,
+           credential_store='file'):
+    """No source/project enrollment is implicit in login; the new profile is empty.
+
+    `credential_store` is 'file' (0600 files), 'keyring' (OS keychain, requires the
+    optional keyring package) or 'auto' (keychain when usable, else files). The
+    choice is recorded in the profile so later processes never switch stores.
+    """
     request=request or local_request(url)
+    store_kind=_credential_store(credential_store)
     for identifier in (tenant,broker,enrollment):
         if not isinstance(identifier,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',identifier):
             raise EnrollmentError('explicit_enrollment_identifiers_required')
@@ -152,23 +170,35 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
     if begin['expires_at']<=time.time():raise EnrollmentError('authorization_expired')
     response=request('/enterprise/v3/auth/complete',dict(result,tenant=tenant,broker=broker,
         callback_uri=callback.uri,enrollment=enrollment))
+    def valid(value):return isinstance(value,str) and 1<=len(value)<=256 and '\n' not in value and '\r' not in value
     token=response.get('credential') if isinstance(response,dict) else None
-    if not isinstance(token,str) or not 1<=len(token)<=256 or '\n' in token or '\r' in token:
+    refresh=response.get('refresh_token') if isinstance(response,dict) else None
+    if not valid(token) or (refresh is not None and (not valid(refresh) or refresh==token)):
         raise EnrollmentError('invalid_credential_response')
     credential=profile/'credential';config_file=profile/'config.json'
+    backend={'mode':'enterprise_local','url':url,'credential_file':str(credential),
+        'capture_version':'enterprise-local-2','capture_owner':'transcript','api_version':'cloud-local-1',
+        'tenant':tenant,'broker':broker,'enrollment_id':enrollment,'credential_store':store_kind}
+    # A refresh-capable login renews itself; an access-only service keeps renewal off.
+    if refresh is not None:backend['credential_renewal']=True
     config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_codex_sessions':False,
         'observer':{'enabled':False},'publication':{'enabled':False},'remote_publication':False,
-        'knowledge_backend':{'mode':'enterprise_local','url':url,'credential_file':str(credential),
-            'capture_version':'enterprise-local-2','capture_owner':'transcript','api_version':'cloud-local-1',
-            'tenant':tenant,'broker':broker,'enrollment_id':enrollment}}
+        'knowledge_backend':backend}
     # Exclusive private writes protect against a second enrollment process and
     # symlink replacement; a partial profile is never a silently activated one.
+    # The lock sidecar is the exclusivity guard for keychain-held tokens as well.
+    from agentclient.credentials import open_store
     try:
-        for path,content in ((credential,token+'\n'),(config_file,json.dumps(config,indent=2)+'\n')):
-            fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
-            with os.fdopen(fd,'w') as stream:stream.write(content);stream.flush();os.fsync(stream.fileno())
-    except OSError:raise EnrollmentError('private_profile_write_failed') from None
-    return {'profile':str(profile),'credential_stored':True,'projects_enrolled':0,'client_model_calls':0,
+        fd=os.open(profile/'credential.lock',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600);os.close(fd)
+        store=open_store(backend)
+        store.create('access',token)
+        if refresh is not None:store.create('refresh',refresh)
+        fd=os.open(config_file,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        with os.fdopen(fd,'w') as stream:stream.write(json.dumps(config,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
+    except (OSError,ValueError):raise EnrollmentError('private_profile_write_failed') from None
+    except Exception:raise EnrollmentError('credential_store_write_failed') from None
+    return {'profile':str(profile),'credential_stored':True,'credential_store':store_kind,
+            'refresh_token_stored':refresh is not None,'projects_enrolled':0,'client_model_calls':0,
             'local_corpus_opened':False,'host_hooks_installed':False}
 
 
@@ -176,13 +206,15 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description='Enroll a new isolated local enterprise client profile')
     for name in ('home','url','tenant','broker','enrollment','callback-uri'):parser.add_argument('--'+name,required=True)
     parser.add_argument('--timeout',type=float,default=180);parser.add_argument('--no-browser',action='store_true')
+    parser.add_argument('--credential-store',choices=('auto','keyring','file'),default='auto',
+        help='auto uses the OS keychain when the optional keyring package has a usable backend')
     args=parser.parse_args(argv)
     try:
         _callback_uri(args.callback_uri)
         with CallbackServer(args.callback_uri) as callback:
             result=enroll(args.home,url=args.url,tenant=args.tenant,broker=args.broker,enrollment=args.enrollment,
                 callback=callback,timeout=args.timeout,browser=None if args.no_browser else webbrowser.open,
-                notify=lambda value:print(json.dumps(value),flush=True))
+                notify=lambda value:print(json.dumps(value),flush=True),credential_store=args.credential_store)
         print(json.dumps(result),flush=True);return 0
     except EnrollmentError as error:
         print(json.dumps({'error':str(error)}),file=sys.stderr);return 1

@@ -39,6 +39,35 @@ vaelius-client --home /absolute/private/client-profile resume
 vaelius-client --home /absolute/private/client-profile uninstall
 ```
 
+## Credentials
+
+Login stores a one-hour access token and a refresh token. Hooks, transports and
+the MCP header helper only ever read the access token; the refresh token is used
+solely by `credential-renew` (also run automatically before requests when less
+than five minutes remain) and by `logout`. Each renewal rotates both tokens. The
+service revokes the whole session if a used refresh token is ever presented again,
+so do not copy a profile between machines. A refresh token expires after 30 idle
+days and at most 90 days after login (operator configurable); then log in again
+into a new profile.
+
+Tokens are kept in the OS keychain (for example macOS Keychain or the Linux
+Secret Service) when the optional `keyring` package is installed with a usable
+backend (`pip install keyring`). Otherwise they are owner-only (0600) files beside
+the profile's `credential` path: `credential` and `credential.refresh`. The choice
+is made at login (`--credential-store auto|keyring|file`) and recorded in the
+profile; a keychain profile fails closed rather than falling back to files.
+Profiles created before refresh tokens existed keep their file and need one new
+login when their access token expires.
+
+```sh
+vaelius-client --home /absolute/private/client-profile logout
+```
+
+`logout` (alias `credential-revoke`) revokes the profile's token family at the
+service, then deletes the local tokens. If revocation cannot be confirmed the
+tokens are kept for a retry; `--local-only` deletes them without contacting the
+service, leaving the session valid until its idle timeout.
+
 Desktop capture is forward-only at enrollment. Capture is an explicit finite poll;
 installation does not start a recurring collector or import past conversations.
 Pausing or uninstalling does not delete server records; use backend lifecycle tools.

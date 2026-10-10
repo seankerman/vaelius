@@ -1,5 +1,5 @@
 """Frozen scoped rotation controls on disposable PostgreSQL."""
-import secrets,unittest
+import secrets,time,unittest
 from test_cloud_postgres import PostgresFixture,SERVICES
 from agenthub.enterprise import Denied
 
@@ -18,6 +18,15 @@ class CredentialRenewal(PostgresFixture,unittest.TestCase):
             state.db.execute('UPDATE enterprise_credentials SET expires_at=0')
         with self.assertRaises(Denied):self.store.rotate_credential(self.ctx,replacement_token=secrets.token_urlsafe(48))
 
+    def test_access_token_rotation_never_extends_lifetime(self):
+        from agenthub.enterprise import _digest
+        with self.store.open() as state,state.db:
+            state.db.execute('UPDATE enterprise_credentials SET expires_at=%s WHERE digest=%s',
+                (time.time()+120,_digest(self.tokens['alice'])))
+        ctx=self.store.authenticate(self.tokens['alice'])
+        token=self.store.rotate_credential(ctx,expires_in=86400)
+        self.assertLessEqual(self.store.authenticate(token)['credential_expires'],time.time()+121)
+
     def test_http_client_rotation_and_parallel_stale_context(self):
         from concurrent.futures import ThreadPoolExecutor
         from starlette.testclient import TestClient
@@ -26,17 +35,19 @@ class CredentialRenewal(PostgresFixture,unittest.TestCase):
         class Registry:
             def store_for_token(self,token):return store
         client=TestClient(create_app(Registry(),allowed_hosts=['testserver']))
-        header={'Authorization':'Bearer '+self.tokens['alice']}
+        issued=store.enroll_with_refresh('acme','alice','alice-device',['read','ingest'])
+        header={'Authorization':'Bearer '+issued['access_token']}
         before=client.get('/enterprise/v3/auth/credential',headers=header)
         self.assertEqual(before.status_code,200)
-        token=secrets.token_urlsafe(48)
-        after=client.post('/enterprise/v3/auth/renew',headers=header,json={'replacement_token':token})
-        self.assertEqual(after.status_code,200)
+        access,refresh=secrets.token_urlsafe(48),secrets.token_urlsafe(48)
+        after=client.post('/enterprise/v3/auth/renew',json={'refresh_token':issued['refresh_token'],
+            'replacement_access_token':access,'replacement_refresh_token':refresh})
+        self.assertEqual(after.status_code,200);self.assertEqual(after.headers['cache-control'],'no-store')
         for k in ('tenant','principal','actor','enrollment','actions'):
             self.assertEqual(before.json()[k],after.json()[k])
-        self.assertNotIn(token,after.text)
+        self.assertNotIn(access,after.text);self.assertNotIn(refresh,after.text)
         self.assertNotEqual(client.get('/enterprise/v3/auth/credential',headers=header).status_code,200)
-        current=store.authenticate(token)
+        current=store.authenticate(access)
         def rotate(_):
             try:store.rotate_credential(current,replacement_token=secrets.token_urlsafe(48));return True
             except Denied:return False

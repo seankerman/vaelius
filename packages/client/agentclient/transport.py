@@ -37,12 +37,13 @@ class LoopbackTransport:
 
 class EnterpriseLocal(LoopbackTransport):
     """Private loopback transport; no legacy publication route or proxy fallback."""
-    def __init__(self, url, credential_file, timeout=1.5, *, transport='loopback'):
-        credential=Path(credential_file).expanduser().resolve()
-        mode=stat.S_IMODE(credential.stat().st_mode)
-        if mode & 0o077:
-            raise ValueError("enterprise_credential_permissions")
-        token=credential.read_text().strip()
+    def __init__(self, url, credential_file, timeout=1.5, *, transport='loopback', token=None):
+        if token is None:
+            credential=Path(credential_file).expanduser().resolve()
+            mode=stat.S_IMODE(credential.stat().st_mode)
+            if mode & 0o077:
+                raise ValueError("enterprise_credential_permissions")
+            token=credential.read_text().strip()
         if not token or len(token)>256:raise ValueError("invalid_enterprise_credential")
         super().__init__(url,token,timeout,transport=transport)
 
@@ -55,8 +56,9 @@ class EnterpriseLocal(LoopbackTransport):
         if path.startswith('/enterprise/v3/'):
             from agentclient.cloud_contract import validate_response
         payload=json.dumps(data).encode() if data is not None else None
-        req=urllib.request.Request(self.url+path,data=payload,headers={
-            "Authorization":"Bearer "+self.token,"Content-Type":"application/json"})
+        headers={"Content-Type":"application/json"}
+        if self.token is not None:headers["Authorization"]="Bearer "+self.token
+        req=urllib.request.Request(self.url+path,data=payload,headers=headers)
         with self.opener.open(req,timeout=self.timeout) as response:
             return validate_response(path,json.load(response))
 
@@ -65,10 +67,14 @@ def enterprise_client(config, *, timeout=1.5):
     backend=require_backend(config)
     if backend.get("mode")!="enterprise_local":
         raise ValueError("enterprise_backend_not_selected")
+    from agentclient.credentials import access_token
     if backend.get('credential_renewal',False):
         from agentclient.credentials import renew
         renew(backend)
-    return EnterpriseLocal(backend["url"],backend["credential_file"],timeout,transport=backend.get("transport","loopback"))
+    # Only the access token leaves the credential store; the refresh token is
+    # read solely by the renewal and logout paths in agentclient.credentials.
+    return EnterpriseLocal(backend["url"],backend["credential_file"],timeout,
+        transport=backend.get("transport","loopback"),token=access_token(backend))
 
 
 def require_backend(config):

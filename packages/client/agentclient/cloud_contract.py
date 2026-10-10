@@ -7,12 +7,16 @@ def validate_response(path,value):
         raise ValueError('invalid_cloud_response')
     route=path.removeprefix('/enterprise/v3/')
     if route in {'auth/credential','auth/renew'}:
-        if set(value)!={'tenant','principal','actor','enrollment','actions','expires_at'}:
+        # Renewal also reports the rotated refresh token's idle and absolute limits.
+        expiries=('expires_at',)+(('refresh_expires_at','session_expires_at') if route=='auth/renew' else ())
+        if set(value)!={'tenant','principal','actor','enrollment','actions',*expiries}:
             raise ValueError('invalid_credential_metadata')
         if (any(not isinstance(value[k],str) or not value[k] for k in ('tenant','principal','actor','enrollment'))
                 or not isinstance(value['actions'],list) or not all(isinstance(v,str) for v in value['actions'])
-                or type(value['expires_at']) not in (int,float)):
+                or any(type(value[k]) not in (int,float) for k in expiries)):
             raise ValueError('invalid_credential_metadata')
+    elif route=='auth/revoke':
+        if value!={'revoked':True}:raise ValueError('invalid_revocation_response')
     elif route=='search':
         if not {'results','answerable'}<=set(value) or set(value)-{'results','answerable','coverage_gaps','retrieval','support'}:
             raise ValueError('invalid_cloud_search')

@@ -362,12 +362,41 @@ class IdentityPostgresTests(unittest.TestCase):
             with routed.open() as state,self.assertRaises(Denied):routed.current_identity(state.db,ctx)
         finally:self.registry.set_active('harbor',True)
 
+    def test_refresh_routes_through_registry_and_rechecks_binding_and_tenant(self):
+        import secrets
+        identity={'issuer':'http://127.0.0.1:12345/realms/refresh','subject':'refresh-'+self.prefix,'provider':'native'}
+        self.store.identity_bindings.bind(identity['issuer'],identity['subject'],'orchard',self.alice)
+        issued=self.store.enroll_with_refresh('orchard',self.alice,'refresh-'+self.prefix,['read'],external_identity=identity)
+        def renew(token):
+            access,refresh=secrets.token_urlsafe(48),secrets.token_urlsafe(48)
+            response=self.client.post('/enterprise/v3/auth/renew',json={'refresh_token':token,
+                'replacement_access_token':access,'replacement_refresh_token':refresh})
+            return response,access,refresh
+        response,access,refresh=renew(issued['refresh_token'])
+        self.assertEqual(response.status_code,200,response.json())
+        # Both replacements are routed to the tenant through the control plane.
+        self.assertEqual(self.registry.store_for_token(access).tenant_id,'orchard')
+        self.assertEqual(self.registry.store_for_token(refresh).tenant_id,'orchard')
+        self.assertEqual(self.client.get('/enterprise/v1/status',headers={'Authorization':'Bearer '+access}).status_code,200)
+        self.store.identity_bindings.bind(identity['issuer'],identity['subject'],'orchard',self.alice,active=False)
+        self.assertEqual(renew(refresh)[0].status_code,404)
+        self.store.identity_bindings.bind(identity['issuer'],identity['subject'],'orchard',self.alice)
+        self.registry.set_active('orchard',False)
+        try:self.assertEqual(renew(refresh)[0].status_code,404)
+        finally:self.registry.set_active('orchard',True)
+        response,access,_=renew(refresh)
+        self.assertEqual(response.status_code,200,response.json())
+        revoked=self.client.post('/enterprise/v3/auth/revoke',json={},headers={'Authorization':'Bearer '+access})
+        self.assertEqual((revoked.status_code,revoked.json()),(200,{'revoked':True}))
+        self.assertEqual(self.client.get('/enterprise/v1/status',headers={'Authorization':'Bearer '+access}).status_code,404)
+
     @unittest.skipUnless(os.environ.get('CLOUD_BROKER_SETTINGS'),'explicit synthetic local Keycloak fixture required')
     def test_actual_keycloak_native_federation_pkce_http_enrollment_and_replay(self):
         from starlette.testclient import TestClient
         from agenthub.cloud_api import create_app
         from agenthub.broker_config import broker_from_settings,login_local_fixture
         from agenthub.cloud_identity import _sha
+        from agenthub.enterprise import Denied
         settings=json.loads(Path(os.environ['CLOUD_BROKER_SETTINGS']).read_text())
         broker=broker_from_settings(settings)
         client=TestClient(create_app(self.registry,allowed_hosts=['testserver'],brokers={'fixture':broker}))
@@ -387,7 +416,9 @@ class IdentityPostgresTests(unittest.TestCase):
             finish=client.post('/enterprise/v3/auth/complete',json=data)
             self.assertEqual(finish.status_code,200,finish.json())
             token=finish.json()['credential']
+            self.assertEqual(finish.headers['cache-control'],'no-store')
             self.assertEqual(self.store.authenticate(token)['actor'],principal)
+            with self.assertRaises(Denied):self.store.authenticate(finish.json()['refresh_token'])
             self.assertEqual(client.get('/enterprise/v1/status',headers={'Authorization':'Bearer '+token}).status_code,200)
             self.assertEqual(client.post('/enterprise/v3/auth/complete',json=data).status_code,404)
 
@@ -423,7 +454,7 @@ class IdentityPostgresTests(unittest.TestCase):
                 profile=self.home/('client-enroll-'+principal)
                 proc=subprocess.Popen([sys.executable,'-m','agentclient.cloud_enroll','--home',str(profile),
                     '--url',url,'--tenant','orchard','--broker','fixture','--enrollment','client-'+principal,
-                    '--callback-uri',settings['redirect_uri'],'--timeout','30','--no-browser'],
+                    '--callback-uri',settings['redirect_uri'],'--timeout','30','--no-browser','--credential-store','file'],
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                 try:
                     line=proc.stdout.readline();self.assertTrue(line)
@@ -439,7 +470,9 @@ class IdentityPostgresTests(unittest.TestCase):
                     config=json.loads((profile/'config.json').read_text())
                     self.assertEqual(config['projects'],{});self.assertFalse((profile/'knowledge.sqlite').exists())
                     token=(profile/'credential').read_text().strip()
-                    self.assertNotIn(token,line+output+error)
+                    refresh=(profile/'credential.refresh').read_text().strip()
+                    self.assertNotIn(token,line+output+error);self.assertNotIn(refresh,line+output+error)
+                    self.assertTrue(config['knowledge_backend']['credential_renewal'])
                     self.assertEqual(self.store.authenticate(token)['actor'],principal)
                     status=EnterpriseLocal(url,profile/'credential').request('/enterprise/v1/status')
                     self.assertIsInstance(status,dict)

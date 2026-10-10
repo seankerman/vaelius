@@ -90,6 +90,8 @@ def registry_from_settings(settings,home):
     if (not isinstance(processing,dict) or set(processing)-{'curation_enabled'}
             or type(processing.get('curation_enabled',False)) is not bool):
         raise ValueError('runtime_processing_configuration')
+    from agenthub.cloud_identity import validate_credential_lifetimes
+    lifetimes=validate_credential_lifetimes(settings.get('credentials',{}))
     reranking=settings.get('reranking',{})
     if (not isinstance(reranking,dict) or set(reranking)-{'enabled','worker_config','ledger','timeout_seconds'}
             or type(reranking.get('enabled',False)) is not bool):
@@ -121,6 +123,7 @@ def registry_from_settings(settings,home):
             if selected.get('host') not in ('127.0.0.1','localhost','::1'):raise ValueError('unexpected_local_tenant_route')
             dsn=make_conninfo(dsn,host=override['host'],port=override['port'])
         store=CloudStore(path,dsn,tenant,registry=registry)
+        store.credential_lifetimes=lifetimes
         store.curation_enabled=processing.get('curation_enabled',False)
         store.retrieval_corpus=configuration.get('corpus','sources')
         if objects is not None:

@@ -41,7 +41,8 @@ TABLES = (
 # Existing enterprise identity constraints are deliberately immediate. Import
 # their parents first; deferred canonical constraints then validate at commit.
 _IDENTITY_FIRST = ('enterprise_organizations','enterprise_principals','enterprise_projects',
-    'enterprise_memberships','enterprise_credentials','enterprise_delegations',
+    'enterprise_memberships','enterprise_credential_families','enterprise_credentials',
+    'enterprise_refresh_tokens','enterprise_delegations',
     'enterprise_sources','enterprise_documents','enterprise_dependencies')
 TABLES = _IDENTITY_FIRST + tuple(table for table in TABLES if table not in _IDENTITY_FIRST)
 DERIVED = {'enterprise_schema','knowledge_temporal_schema','knowledge_index_state',

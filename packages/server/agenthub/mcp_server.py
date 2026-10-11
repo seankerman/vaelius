@@ -15,7 +15,7 @@ from agenthub.cloud_identity import IdentityError
 from agenthub.mcp_tools import CONTEXT_READ_INSTRUCTIONS, MemoryTools, enterprise_tools
 
 
-def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins):
+def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge=None):
     async def list_tools(context, params):
         return types.ListToolsResult(tools=[types.Tool(**item) for item in enterprise_tools()])
 
@@ -61,7 +61,7 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins):
             await run_in_threadpool(store.require_ready)
         except (Denied,IdentityError):
             return await JSONResponse({'error':'authentication_required'},status_code=401,
-                headers={'WWW-Authenticate':'Bearer realm="AgentHub"','Cache-Control':'no-store'})(scope,receive,send)
+                headers={'WWW-Authenticate':challenge or 'Bearer realm="Vaelius"','Cache-Control':'no-store'})(scope,receive,send)
         except Exception:
             return await JSONResponse({'error':'service_unavailable'},status_code=503)(scope,receive,send)
         async def private_send(message):

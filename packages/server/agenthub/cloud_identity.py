@@ -19,6 +19,29 @@ class IdentityError(Exception):
     """Content-free authentication failure suitable for a public error response."""
 
 
+# Operator-configurable credential lifetimes (runtime.json "credentials").
+# Access tokens are short-lived bearer credentials; a refresh token is accepted
+# only at the renewal route, slides by the idle timeout on each rotation, and can
+# never outlive the absolute lifetime measured from the original OIDC login.
+DEFAULT_CREDENTIAL_LIFETIMES = {'access_ttl_seconds': 3600,
+    'refresh_idle_seconds': 30 * 86400, 'refresh_absolute_seconds': 90 * 86400}
+_ISSUED_TOKEN = re.compile(r'[A-Za-z0-9_-]{64}')
+
+
+def validate_credential_lifetimes(value=None):
+    """Return complete lifetimes; omitted keys keep their defaults."""
+    value = {} if value is None else value
+    if not isinstance(value, dict) or set(value) - set(DEFAULT_CREDENTIAL_LIFETIMES):
+        raise ValueError('runtime_credential_configuration')
+    merged = dict(DEFAULT_CREDENTIAL_LIFETIMES, **value)
+    if (any(type(item) is not int for item in merged.values())
+            or not 60 <= merged['access_ttl_seconds'] <= 86400
+            or not merged['access_ttl_seconds'] < merged['refresh_idle_seconds']
+                <= merged['refresh_absolute_seconds'] <= 366 * 86400):
+        raise ValueError('runtime_credential_configuration')
+    return merged
+
+
 def _sha(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -242,9 +265,26 @@ def normalize_scim(resource, value):
 
 class CloudIdentityMixin:
     """PostgreSQL enterprise identity extension; current checks precede delivery."""
+    credential_lifetimes = DEFAULT_CREDENTIAL_LIFETIMES
+
     def enroll(self, tenant, principal, enrollment, actions, *, acting_for=None,
-               expires_in=3600, external_identity=None):
+               expires_in=None, external_identity=None):
+        """Operator/service enrollment: one access credential, no refresh token."""
+        return self._issue(tenant, principal, enrollment, actions, acting_for=acting_for,
+            expires_in=expires_in, external_identity=external_identity, refresh=False)['access_token']
+
+    def enroll_with_refresh(self, tenant, principal, enrollment, actions, *, acting_for=None,
+                            external_identity=None):
+        """Interactive login: access token plus a rotating refresh token (one family)."""
+        return self._issue(tenant, principal, enrollment, actions, acting_for=acting_for,
+            expires_in=None, external_identity=external_identity, refresh=True)
+
+    def _issue(self, tenant, principal, enrollment, actions, *, acting_for, expires_in,
+               external_identity, refresh):
         from agenthub.enterprise import Denied, Conflict, _digest
+        lifetimes = self.credential_lifetimes
+        if expires_in is None:
+            expires_in = lifetimes['access_ttl_seconds']
         if tenant != self.tenant_id or type(expires_in) is not int or not 60<=expires_in<=86400:
             raise ValueError('invalid_credential_lifetime')
         if external_identity:
@@ -256,6 +296,12 @@ class CloudIdentityMixin:
             raise ValueError('invalid_enrollment')
         if not actions or set(actions)-allowed:raise ValueError('invalid_actions')
         token=secrets.token_urlsafe(48)
+        refresh_token=secrets.token_urlsafe(48) if refresh else None
+        identity=external_identity or {}
+        family=secrets.token_hex(16);now=time.time()
+        absolute=now+lifetimes['refresh_absolute_seconds']
+        expires_at=min(now+expires_in,absolute)
+        refresh_expires=min(now+lifetimes['refresh_idle_seconds'],absolute)
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
             active=db.execute('SELECT active FROM enterprise_principals WHERE tenant=%s AND id=%s',(tenant,principal)).fetchone()
@@ -270,15 +316,29 @@ class CloudIdentityMixin:
                     (tenant,principal,acting_for)).fetchone()
                 represented=db.execute('SELECT active FROM enterprise_principals WHERE tenant=%s AND id=%s',(tenant,acting_for)).fetchone()
                 if not grant or not represented or not represented['active'] or not set(actions)<=set(json.loads(grant['actions'])):raise Denied()
+            scope=json.dumps(sorted(set(actions)))
+            db.execute('''INSERT INTO enterprise_credential_families
+                (id,tenant,principal,acting_for,enrollment,actions,identity_issuer,identity_subject,
+                identity_provider,created,absolute_expires_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+                (family,tenant,principal,acting_for,enrollment,scope,identity.get('issuer'),
+                 identity.get('subject'),identity.get('provider'),now,absolute))
             db.execute('''INSERT INTO enterprise_credentials
                 (digest,tenant,principal,acting_for,enrollment,actions,active,created,expires_at,
-                identity_issuer,identity_subject,identity_provider)
-                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s)''',
-                (_digest(token),tenant,principal,acting_for,enrollment,json.dumps(sorted(set(actions))),time.time(),
-                 time.time()+expires_in,(external_identity or {}).get('issuer'),
-                 (external_identity or {}).get('subject'),(external_identity or {}).get('provider')))
-        if getattr(self,'registry',None):self.registry.bind_credential(token,tenant)
-        return token
+                identity_issuer,identity_subject,identity_provider,family)
+                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s)''',
+                (_digest(token),tenant,principal,acting_for,enrollment,scope,now,expires_at,
+                 identity.get('issuer'),identity.get('subject'),identity.get('provider'),family))
+            if refresh:
+                db.execute('''INSERT INTO enterprise_refresh_tokens(digest,family,active,created,idle_expires_at)
+                    VALUES(%s,%s,1,%s,%s)''',(_digest(refresh_token),family,now,refresh_expires))
+        if getattr(self,'registry',None):
+            self.registry.bind_credential(token,tenant)
+            if refresh:self.registry.bind_credential(refresh_token,tenant)
+        result={'access_token':token,'expires_at':expires_at}
+        if refresh:
+            result.update(refresh_token=refresh_token,refresh_expires_at=refresh_expires,
+                session_expires_at=absolute)
+        return result
 
     def authenticate(self, token, request_id=None):
         from agenthub.enterprise import Denied, _digest
@@ -287,6 +347,7 @@ class CloudIdentityMixin:
             raise Denied()
         with self.open() as state:
             row = state.db.execute('SELECT * FROM enterprise_credentials WHERE digest=%s',(_digest(token),)).fetchone()
+        if row['oauth_provider'] is not None and not hasattr(self.registry,'authenticate_token'):raise Denied()
         if row['expires_at'] <= time.time():
             raise Denied()
         if row['identity_issuer']:
@@ -313,6 +374,7 @@ class CloudIdentityMixin:
         if (not row or not row['active'] or not row['principal_active'] or row['expires_at']<=time.time()
                 or (row['acting_for'] and not row['represented_active'])):
             raise Denied()
+        if row['oauth_provider'] is not None and not hasattr(self.registry,'authenticate_token'):raise Denied()
         if (row['principal']!=ctx['principal'] or row['tenant']!=ctx['tenant']
                 or (row['acting_for'] or row['principal'])!=ctx['actor']):raise Denied()
         ctx['actions'] &= set(json.loads(row['actions']))
@@ -338,27 +400,172 @@ class CloudIdentityMixin:
                 ('tenant','principal','actor','enrollment','actions')} | {'expires_at':row['expires_at']}
 
     def rotate_credential(self, ctx, *, expires_in=3600, replacement_token=None):
-        from agenthub.enterprise import _digest
+        """Replace the presented access token without extending its lifetime.
+
+        Lifetime extension is only available through a refresh token, so an access
+        token alone can never outlive its own expiry or its family's absolute limit.
+        """
+        from agenthub.enterprise import Denied, _digest
         if type(expires_in) is not int or not 60<=expires_in<=86400:
             raise ValueError('invalid_credential_lifetime')
         token = replacement_token if replacement_token is not None else secrets.token_urlsafe(48)
-        if not isinstance(token,str) or not re.fullmatch(r'[A-Za-z0-9_-]{64}',token):raise ValueError('invalid_replacement_credential')
+        if not isinstance(token,str) or not _ISSUED_TOKEN.fullmatch(token):raise ValueError('invalid_replacement_credential')
         with self.delivery_lock(),self.open() as state,state.db:
             self.current_identity(state.db,ctx)
             old = state.db.execute('SELECT * FROM enterprise_credentials WHERE digest=%s FOR UPDATE',
                 (ctx['credential_digest'],)).fetchone()
+            if old['oauth_provider'] is not None:raise Denied()
             self.current_identity(state.db,ctx)
             state.db.execute('UPDATE enterprise_credentials SET active=0 WHERE digest=%s',(old['digest'],))
             state.db.execute('''INSERT INTO enterprise_credentials
                 (digest,tenant,principal,acting_for,enrollment,actions,active,created,expires_at,
-                identity_issuer,identity_subject,identity_provider,rotated_from)
-                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s)''',
+                identity_issuer,identity_subject,identity_provider,rotated_from,family)
+                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)''',
                 (_digest(token),old['tenant'],old['principal'],old['acting_for'],old['enrollment'],
-                 old['actions'],time.time(),time.time()+expires_in,old['identity_issuer'],
-                 old['identity_subject'],old['identity_provider'],old['digest']))
+                 old['actions'],time.time(),min(time.time()+expires_in,old['expires_at']),old['identity_issuer'],
+                 old['identity_subject'],old['identity_provider'],old['digest'],old['family']))
             self._audit(state.db,ctx,'credential_rotation','applied',_digest(token))
         if getattr(self,'registry',None):self.registry.bind_credential(token,ctx['tenant'])
         return token
+
+    def _family_identity(self, db, family, request_id=None):
+        """Current principal, delegation and external-binding checks for a family."""
+        from agenthub.enterprise import Denied
+        if getattr(self,'registry',None):self.registry.require_active(self.tenant_id)
+        row=db.execute('''SELECT p.active principal_active,a.active represented_active
+            FROM enterprise_principals p LEFT JOIN enterprise_principals a ON a.tenant=p.tenant AND a.id=%s
+            WHERE p.tenant=%s AND p.id=%s''',(family['acting_for'],family['tenant'],family['principal'])).fetchone()
+        if not row or not row['principal_active'] or (family['acting_for'] and not row['represented_active']):
+            raise Denied()
+        actions=set(json.loads(family['actions']))
+        if family['acting_for']:
+            grant=db.execute('''SELECT actions FROM enterprise_delegations
+                WHERE tenant=%s AND principal=%s AND acting_for=%s AND active=1''',
+                (family['tenant'],family['principal'],family['acting_for'])).fetchone()
+            if not grant:raise Denied()
+            actions&=set(json.loads(grant['actions']))
+        if family['identity_issuer']:
+            try:
+                self.identity_bindings.check(family['identity_issuer'],family['identity_subject'],
+                    family['tenant'],family['principal'],family['identity_provider'])
+            except (AttributeError,IdentityError):raise Denied() from None
+        return {'tenant':family['tenant'],'principal':family['principal'],
+            'actor':family['acting_for'] or family['principal'],'acting_for':family['acting_for'],
+            'enrollment':family['enrollment'],'actions':actions,'request_id':request_id}
+
+    @staticmethod
+    def _revoke_family(db, family, reason):
+        """Deactivate every access and refresh token of a family; True if newly revoked."""
+        changed=bool(db.execute('''UPDATE enterprise_credential_families SET revoked_at=%s,revoked_reason=%s
+            WHERE id=%s AND revoked_at IS NULL''',(time.time(),reason,family['id'])).rowcount)
+        db.execute('UPDATE enterprise_credentials SET active=0 WHERE family=%s AND active=1',(family['id'],))
+        db.execute('UPDATE enterprise_refresh_tokens SET active=0 WHERE family=%s AND active=1',(family['id'],))
+        return changed
+
+    def refresh_credential(self, refresh_token, *, replacement_access_token, replacement_refresh_token,
+                           request_id=None):
+        """Rotate a refresh token (RFC 9700 section 4.14.2) into a new access/refresh pair.
+
+        The client prepares both replacements before dispatch, so a lost reply is
+        retried with identical values. That exact retry is answered again while its
+        successor is unused; any other presentation of a spent refresh token is
+        treated as theft and revokes the whole family. Revocation commits before the
+        denial is returned.
+        """
+        from agenthub.enterprise import Denied, _digest
+        if (not isinstance(refresh_token,str) or not 1<=len(refresh_token)<=256
+                or any(not isinstance(value,str) or not _ISSUED_TOKEN.fullmatch(value)
+                       for value in (replacement_access_token,replacement_refresh_token))
+                or replacement_access_token==replacement_refresh_token):
+            raise ValueError('invalid_credential_renewal')
+        lifetimes=self.credential_lifetimes;presented=_digest(refresh_token)
+        access_digest=_digest(replacement_access_token);refresh_digest=_digest(replacement_refresh_token)
+        outcome='denied';ctx=None
+        with self.delivery_lock(),self.open() as state,state.db:
+            db=state.db;now=time.time()
+            row=db.execute('''SELECT r.active refresh_active,r.idle_expires_at,r.used_at,r.successor_digest,
+                r.successor_access_digest,f.* FROM enterprise_refresh_tokens r
+                JOIN enterprise_credential_families f ON f.id=r.family
+                WHERE r.digest=%s FOR UPDATE OF r,f''',(presented,)).fetchone()
+            if not row or row['tenant']!=self.tenant_id or row['revoked_at'] is not None:
+                pass
+            elif row['used_at'] is not None:
+                successor=db.execute('''SELECT active,used_at,idle_expires_at FROM enterprise_refresh_tokens
+                    WHERE digest=%s''',(row['successor_digest'],)).fetchone()
+                if (hmac.compare_digest(row['successor_digest'] or '',refresh_digest)
+                        and hmac.compare_digest(row['successor_access_digest'] or '',access_digest)
+                        and successor and successor['active'] and successor['used_at'] is None
+                        and now<successor['idle_expires_at']):
+                    outcome='replayed'
+                else:
+                    self._revoke_family(db,row,'refresh_token_reuse')
+                    self._audit(db,{'tenant':row['tenant'],'actor':row['acting_for'] or row['principal'],
+                        'request_id':request_id},'credential_refresh_reuse','revoked',row['id'])
+                    outcome='reuse'
+            elif row['refresh_active'] and now<row['idle_expires_at'] and now<row['absolute_expires_at']:
+                outcome='rotate'
+            if outcome in ('rotate','replayed'):
+                try:ctx=self._family_identity(db,row,request_id)
+                except Denied:outcome='denied'
+            if outcome=='rotate':
+                access_expires=min(now+lifetimes['access_ttl_seconds'],row['absolute_expires_at'])
+                refresh_expires=min(now+lifetimes['refresh_idle_seconds'],row['absolute_expires_at'])
+                db.execute('''UPDATE enterprise_refresh_tokens SET active=0,used_at=%s,successor_digest=%s,
+                    successor_access_digest=%s WHERE digest=%s''',(now,refresh_digest,access_digest,presented))
+                db.execute('UPDATE enterprise_credentials SET active=0 WHERE family=%s AND active=1',(row['id'],))
+                db.execute('''INSERT INTO enterprise_credentials
+                    (digest,tenant,principal,acting_for,enrollment,actions,active,created,expires_at,
+                    identity_issuer,identity_subject,identity_provider,rotated_from,family)
+                    VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)''',
+                    (access_digest,row['tenant'],row['principal'],row['acting_for'],row['enrollment'],
+                     row['actions'],now,access_expires,row['identity_issuer'],row['identity_subject'],
+                     row['identity_provider'],presented,row['id']))
+                db.execute('''INSERT INTO enterprise_refresh_tokens(digest,family,active,created,idle_expires_at)
+                    VALUES(%s,%s,1,%s,%s)''',(refresh_digest,row['id'],now,refresh_expires))
+                self._audit(db,ctx,'credential_refresh','applied',row['id'])
+            elif outcome=='replayed':
+                access_expires=db.execute('SELECT expires_at FROM enterprise_credentials WHERE digest=%s',
+                    (access_digest,)).fetchone()['expires_at']
+                refresh_expires=successor['idle_expires_at']
+                self._audit(db,ctx,'credential_refresh','replayed',row['id'])
+        if outcome not in ('rotate','replayed'):raise Denied()
+        if getattr(self,'registry',None):
+            # Route binding is idempotent, so a replay repairs a binding lost to a crash.
+            self.registry.bind_credential(replacement_access_token,self.tenant_id)
+            self.registry.bind_credential(replacement_refresh_token,self.tenant_id)
+        return {'tenant':ctx['tenant'],'principal':ctx['principal'],'actor':ctx['actor'],
+            'enrollment':ctx['enrollment'],'actions':sorted(ctx['actions']),'expires_at':access_expires,
+            'refresh_expires_at':refresh_expires,'session_expires_at':row['absolute_expires_at']}
+
+    def revoke_credential_family(self, token, *, request_id=None):
+        """RFC 7009 revocation by possession of any access or refresh token of a family.
+
+        Idempotent: expired, spent or already revoked tokens still identify their
+        family, and an unknown token is acknowledged without effect so this route
+        is not a token-validity oracle. Pre-family credentials revoke only themselves.
+        """
+        from agenthub.enterprise import _digest
+        if not isinstance(token,str) or not 1<=len(token)<=256:raise ValueError('invalid_revocation_request')
+        digest=_digest(token)
+        with self.delivery_lock(),self.open() as state,state.db:
+            db=state.db
+            access=db.execute('SELECT * FROM enterprise_credentials WHERE digest=%s',(digest,)).fetchone()
+            family_id=access['family'] if access else None
+            if not access:
+                refresh=db.execute('SELECT family FROM enterprise_refresh_tokens WHERE digest=%s',(digest,)).fetchone()
+                family_id=refresh['family'] if refresh else None
+            family=db.execute('SELECT * FROM enterprise_credential_families WHERE id=%s FOR UPDATE',
+                (family_id,)).fetchone() if family_id else None
+            if family and family['tenant']==self.tenant_id:
+                changed=self._revoke_family(db,family,'revoked_by_holder')
+                self._audit(db,{'tenant':family['tenant'],'actor':family['acting_for'] or family['principal'],
+                    'request_id':request_id},'credential_revocation','applied' if changed else 'already_revoked',family['id'])
+            elif access and family_id is None and access['tenant']==self.tenant_id:
+                changed=bool(db.execute('UPDATE enterprise_credentials SET active=0 WHERE digest=%s AND active=1',
+                    (digest,)).rowcount)
+                self._audit(db,{'tenant':access['tenant'],'actor':access['acting_for'] or access['principal'],
+                    'request_id':request_id},'credential_revocation','applied' if changed else 'already_revoked',digest)
+        return {'revoked':True}
 
     def begin_enrollment(self, broker):
         request = broker.begin()
@@ -380,7 +587,7 @@ class CloudIdentityMixin:
             raise IdentityError('identity_callback_denied')
         identity = broker.exchange(code,json.loads(row['request_json']),callback_uri=callback_uri)
         binding = self.identity_bindings.resolve(identity,self.tenant_id)
-        return self.enroll(self.tenant_id,binding['principal'],enrollment,actions,
+        return self.enroll_with_refresh(self.tenant_id,binding['principal'],enrollment,actions,
             external_identity=identity)
 
     def _visible_source(self, db, ctx, source, *, raw=False):

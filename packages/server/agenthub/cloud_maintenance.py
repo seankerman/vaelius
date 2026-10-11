@@ -442,6 +442,7 @@ def retire(profile,tenant,*,expected_database,objects,apply=False,max_objects=10
         with store.delivery_lock(),store.open() as state,state.db:
             state.db.execute('UPDATE cloud_admission SET enabled=0 WHERE tenant=?',(tenant,))
             state.db.execute('UPDATE enterprise_credentials SET active=0 WHERE tenant=?',(tenant,))
+            state.db.execute('UPDATE enterprise_refresh_tokens SET active=0')
             state.db.execute("UPDATE backend_jobs SET status='held',fence=?,lease_until=0,last_error='tenant_retired'",(uuid.uuid4().hex,))
             state.db.execute("UPDATE backend_observers SET status='invalidated',provider_session=NULL,pending_session=NULL")
         for key in sorted(keys):

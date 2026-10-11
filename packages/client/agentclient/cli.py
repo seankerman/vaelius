@@ -16,6 +16,9 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     drain=sub.add_parser('outbox-drain');drain.add_argument('--max-events',type=int,default=32);drain.add_argument('--max-seconds',type=float,default=5)
     install=sub.add_parser('install');install.add_argument('--codex-home',default=str(Path.home()/'.codex'))
     renewal=sub.add_parser('credential-renew');renewal.add_argument('--force',action='store_true')
+    for command in ('logout','credential-revoke'):
+        revoke=sub.add_parser(command,help='revoke this profile\'s token family and delete local tokens')
+        revoke.add_argument('--local-only',action='store_true',help='delete local tokens without contacting the service')
     enroll=sub.add_parser('enroll-project');enroll.add_argument('--root',required=True);enroll.add_argument('--name',required=True)
     args=parser.parse_args(argv);home=private_dir(args.home)
     if args.command=='uninstall':
@@ -31,6 +34,13 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
         if args.command=='credential-renew':
             from agentclient.credentials import renew
             result=renew(config['knowledge_backend'],force=args.force)
+        elif args.command in {'logout','credential-revoke'}:
+            from agentclient.credentials import logout
+            try:result=logout(config['knowledge_backend'],local_only=args.local_only)
+            except Exception as exc:
+                # Tokens are kept so the revocation can be retried; never print them.
+                raise SystemExit(json.dumps({'error':'credential_revocation_failed',
+                    'reason':type(exc).__name__,'local_credentials_deleted':False})) from None
         elif args.command=='hook':
             from agentclient.hooks import handle
             try:

@@ -21,7 +21,7 @@ compatibility interfaces; renaming them is not needed to converge the runtime.
 | Data | Private PostgreSQL backups saved; source/document/lifecycle fingerprints unchanged through migration | Preserved |
 | Client profile | Existing projects, sessions, cursors, pause and publication settings preserved | Pass |
 | Real delivery | This chat's memory tools authenticate successfully; private HTTP MCP search returns four discovery records with no protocol error | Pass, no usefulness claim |
-| Local service renewal | Backend operator controller retains the existing principal/enrollment/actions; client-side bearer extension disabled | Installed |
+| Local service renewal | Real credential rotation retains the existing principal/enrollment/actions; subsequent backend authentication succeeds; client-side bearer extension disabled | Pass |
 | Renewal guards | Revoked credential and changed scope denied; interrupted rotation recovered; expired active grant renewed in isolated controller tests | Pass |
 | Processing | Existing source-first processing timer uses new packages and exits successfully; enrichment remains disabled | Pass |
 

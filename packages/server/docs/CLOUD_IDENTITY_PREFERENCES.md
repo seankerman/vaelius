@@ -1,5 +1,10 @@
 # Local identity and private preferences
 
+New enterprise installations use [provider OAuth](../../../docs/ENTERPRISE_AUTH.md).
+The enrollment/token sections below describe the explicit legacy broker migration
+path. The principal, delegation, directory and private-preference rules continue
+to apply to provider-issued credentials through the same canonical backend.
+
 The PostgreSQL profile uses authenticated issuer/subject bindings in its control
 database, current principals/membership/delegation in the assigned tenant database,
 and expiring plugin/service credentials. Email, source author text, and a login

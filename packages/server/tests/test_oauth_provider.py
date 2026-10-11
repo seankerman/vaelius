@@ -112,15 +112,22 @@ class ActualOAuth(PostgresFixture,unittest.TestCase):
         from agentclient.credentials import access_token,renew,logout
         from agentclient.transport import enterprise_client
         from agenthub.source_index import SourceIndex
-        from agentclient.enterprise_capture import normalize_capture
         home=Path(self.temp.name)/'client';self.login(home)
         cfg=json.loads((home/'config.json').read_text());backend=cfg['knowledge_backend']
         client=enterprise_client(cfg);self.assertEqual(client.request('/enterprise/v3/auth/credential')['principal'],'alice')
         store,ctx=self.registry.authenticate_token(access_token(backend))
         store.enroll_connection(ctx,'oauth-capture','synthetic','maple',['agent'])
-        event=normalize_capture({'hook_event_name':'Stop','event_id':'oauth-source','session_id':'synthetic','turn_id':'1',
-            'timestamp':'2026-10-01T12:00:00Z','last_assistant_message':'Maple retains the CSV header for downstream reports.'},'maple','oauth-capture')
-        source=store.ingest_general(ctx,event)['source_id'];SourceIndex(store).run(max_sources=10,max_seconds=10)
+        cfg['sessions']={'synthetic':'maple'};backend.update(connection_id='oauth-capture',capture_owner='hooks')
+        (home/'config.json').write_text(json.dumps(cfg))
+        from agentclient.hooks import handle
+        from agentclient.capture_outbox import Outbox
+        handle(home,{'hook_event_name':'Stop','event_id':'oauth-source','session_id':'synthetic','turn_id':'1',
+            'timestamp':'2026-10-01T12:00:00Z','last_assistant_message':'Maple retains the CSV header for downstream reports.'})
+        box=Outbox(home)
+        try:box.drain(enterprise_client(cfg,timeout=5),max_events=10,max_seconds=10)
+        finally:box.close()
+        with store.open() as state:source=state.db.execute('SELECT id FROM enterprise_sources LIMIT 1').fetchone()['id']
+        SourceIndex(store).run(max_sources=10,max_seconds=10)
         bob_home=Path(self.temp.name)/'bob';self.login(bob_home,username='bob',enrollment='bob-device')
         bob_backend=json.loads((bob_home/'config.json').read_text())['knowledge_backend']
         _,bob_ctx=self.registry.authenticate_token(access_token(bob_backend))

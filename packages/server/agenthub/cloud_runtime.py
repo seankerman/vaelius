@@ -7,8 +7,9 @@ import sys
 from pathlib import Path
 from agenthub.postgres import PostgresEnterpriseStore, TenantRegistry
 from agenthub.cloud_ops import require_reconciled
+from agenthub.data_lifecycle import DataLifecycleMixin
 
-class CloudStore(PostgresEnterpriseStore):
+class CloudStore(DataLifecycleMixin, PostgresEnterpriseStore):
     curation_enabled=False
     def reconcile_indexes(self,*,max_pages=10):
         """Queue missing/stale vectors after an accepted change or owned restart.
@@ -192,6 +193,7 @@ def registry_from_settings(settings,home):
         if objects is not None:
             from agenthub.conversation_segments import ConversationSegments
             store.conversation_segments=ConversationSegments(store,objects)
+            store.source_objects=objects
         store.hybrid_enabled=bool(settings.get('semantic',{}).get('enabled',False))
         store.hybrid_enabled = store.hybrid_enabled and configuration.get('vector', True)
         store.semantic_embedder=model

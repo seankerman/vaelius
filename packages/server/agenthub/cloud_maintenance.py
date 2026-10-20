@@ -420,6 +420,10 @@ def retire(profile,tenant,*,expected_database,objects,apply=False,max_objects=10
             keys.update(validate_key(row['object_key']) for row in rows)
         if len(keys)>max_objects:raise ValueError('retirement_object_bound')
         sources=db.execute('SELECT count(*) FROM enterprise_sources').fetchone()[0]
+        # Dropping the database would destroy content preserved by a legal hold.
+        if (db.execute("SELECT to_regclass('enterprise_legal_holds')").fetchone()[0] and
+                db.execute('SELECT 1 FROM enterprise_legal_holds WHERE released IS NULL LIMIT 1').fetchone()):
+            raise ValueError('tenant_retirement_blocked_by_legal_hold')
     receipt={'id':uuid.uuid4().hex,'command':'tenant-retire','tenant':tenant,'database':expected_database,
         'apply':bool(apply),'source_rows':sources,'current_object_keys':len(keys),
         'retained_backups':'preserved; separately governed','object_versions':'not purged; separately governed',
@@ -473,7 +477,10 @@ def execute(profile,tenant,command,*,value=None,token_file=None,output=None,job_
         return retire(profile,tenant,expected_database=expected_database,objects=objects_from_settings(settings),apply=apply)
     store=registry.resolve(tenant)
     value=value or {}
-    if command.startswith('index-'):
+    if command in LIFECYCLE_COMMANDS:
+        result=lifecycle_command(store,command,value,objects_from_settings(settings) if settings.get('objects') else None,
+            apply=apply,token_file=token_file,output=output)
+    elif command.startswith('index-'):
         index=IndexFreshness(store)
         if command=='index-reconcile':
             result=index.reconcile(**value)
@@ -528,11 +535,65 @@ def execute(profile,tenant,command,*,value=None,token_file=None,output=None,job_
     return receipt
 
 
+LIFECYCLE_COMMANDS=('retention-policy','retention-run','subject-erase','legal-hold','object-purge',
+    'deletion-journal','lifecycle-report')
+
+
+def _fields(value,allowed):
+    if set(value)-set(allowed):raise ValueError('invalid_lifecycle_fields')
+    return value
+
+
+def lifecycle_command(store,command,value,objects,*,apply=False,token_file=None,output=None):
+    """Data lifecycle governance; destructive commands preview unless --apply."""
+    if command=='retention-policy':
+        _fields(value,{'policies'})
+        return {'policies':store.set_retention_policies(value['policies']) if 'policies' in value
+            else store.retention_policies(),'provider_calls':0}
+    if command=='retention-run':
+        _fields(value,{'max_sources','max_scan'})
+        return store.run_retention(apply=apply,objects=objects,**value)
+    if command=='subject-erase':
+        _fields(value,{'principal','max_sources'})
+        if 'principal' not in value:raise ValueError('erasure_principal_required')
+        return store.erase_subject(value['principal'],apply=apply,objects=objects,
+            max_sources=value.get('max_sources',100))
+    if command=='object-purge':
+        _fields(value,{'limit'})
+        return store.drain_object_purges(objects,limit=value.get('limit',100))|{'provider_calls':0}
+    if command=='lifecycle-report':
+        _fields(value,{'run_id'})
+        return store.lifecycle_report(value.get('run_id',''))
+    if command=='deletion-journal':
+        _fields(value,{'after_id','limit'})
+        if not output:raise ValueError('new_journal_destination_required')
+        page=store.deletion_journal(**value)
+        _write(output,page)
+        return {'tenant':page['tenant'],'entries':len(page['entries']),'more':page['more'],
+            'next_after_id':page['next_after_id'],'journal':str(Path(output).resolve()),'provider_calls':0}
+    # Holds are a privileged authenticated action, not operator possession.
+    if not token_file:raise ValueError('authenticated_legal_hold_token_required')
+    token_path=Path(token_file).expanduser().resolve()
+    if token_path.stat().st_mode&0o077:raise ValueError('token_permissions')
+    ctx=store.authenticate(token_path.read_text().strip())
+    action=value.get('action')
+    if action=='create':
+        _fields(value,{'action','scope','target','reason'})
+        return store.create_legal_hold(ctx,value.get('scope'),value.get('target'),value.get('reason'))
+    if action=='release':
+        _fields(value,{'action','hold_id','reason'})
+        return store.release_legal_hold(ctx,value.get('hold_id'),value.get('reason'))
+    if action=='list':
+        _fields(value,{'action','include_released'})
+        return {'holds':store.legal_holds(ctx,include_released=value.get('include_released') is True)}
+    raise ValueError('invalid_legal_hold_action')
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['hold','retry','admission','reconcile-usage','usage','queue',
         'source','connection','export','tenant-retire','index-reconcile','index-status',
-        'index-run','index-retry'])
+        'index-run','index-retry',*LIFECYCLE_COMMANDS])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',required=True)
     parser.add_argument('--input');parser.add_argument('--token-file');parser.add_argument('--output')
     parser.add_argument('--job-id');parser.add_argument('--connection-id')

@@ -127,6 +127,117 @@ disable the provider configuration and restore the previous installed binary.
 New provider login is required after a later upgrade. Test this on disposable
 schemas before changing a live deployment.
 
+## AWS IAM Identity Center sign-in
+
+Engineers who already sign in to AWS IAM Identity Center (AWS SSO) can use that
+session as their Vaelius login, with no browser step. This follows the Vault AWS
+auth method and aws-iam-authenticator pattern. It is optional, disabled unless
+`authorization.aws_sts` is configured, and coexists with provider OAuth, legacy
+login and explicit service credentials.
+
+1. The client signs one `sts:GetCallerIdentity` request (SigV4) with the current
+   credentials of a named AWS profile. The signature covers an
+   `x-vaelius-server-id` header naming this service and a random nonce.
+2. It posts the signed method, headers and body, never the AWS secret key, to
+   `POST /enterprise/v3/auth/aws-sts`. A supplied URL is ignored.
+3. The service builds the regional STS URL itself from the operator's region
+   allowlist and forwards only the signed headers, without redirects or proxies.
+   STS verifies the signature and returns the caller's ARN.
+4. Only an `assumed-role` session in an allowlisted account and role is accepted.
+   The role session name, which Identity Center sets to the user's username, is
+   the external subject. An operator binding maps it to a principal.
+5. The service issues a short-lived Vaelius access credential, stored only as a
+   digest. There is no refresh token: the client signs a new request when the
+   credential nears expiry. Logout revokes that credential.
+
+```json
+{"authorization": {
+  "resource": "https://memory.example.org/mcp",
+  "aws_sts": {
+    "tenant": "company",
+    "allowed_account_ids": ["111122223333"],
+    "allowed_role_patterns": ["AWSReservedSSO_Developer_*"],
+    "regions": ["us-east-1"],
+    "token_ttl_seconds": 3600
+  }
+}}
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `tenant` | required | Tenant whose bindings and principals are used |
+| `allowed_account_ids` | required | 12-digit AWS accounts whose sessions are considered (1–100) |
+| `allowed_role_patterns` | `["AWSReservedSSO_*"]` | Case-sensitive glob patterns for the role name |
+| `require_identity_center` | `true` | Also require an `AWSReservedSSO_` role. IAM users, root and federated users are always refused |
+| `regions` | `["us-east-1"]` | Regional STS endpoints the service may call; China regions are not supported |
+| `server_id` | origin of `resource` | Value the client must sign into `x-vaelius-server-id` |
+| `issuer` | `aws-sts:identity-center` | Issuer recorded in bindings and credentials |
+| `token_ttl_seconds` | `3600` | Vaelius credential lifetime, 60–43200 |
+| `max_clock_skew_seconds` | `300` | Accepted difference from the signed `X-Amz-Date`, 30–900 |
+| `actions` | `feedback, ingest, read, source_read` | Actions granted to issued credentials |
+
+`providers` may be omitted when `aws_sts` is present. Unknown keys and invalid
+values stop startup. Run control-plane migrations: they add the
+`cloud_aws_sts_replay` table. The control application role needs `INSERT` and
+`DELETE` on it, and the local profile setup grants both.
+
+Bind each person explicitly, with the AWS provider allowed:
+
+```python
+store.identity_bindings.bind('aws-sts:identity-center', 'alice', 'company', 'alice',
+                             allowed_providers=['aws-sts'])
+```
+
+A session name never grants membership on its own, and an unbound subject is
+denied. Principal, tenant, binding and tenant-policy checks run again whenever the
+credential is used, so deactivation applies immediately.
+If the tenant has a policy (`set_tenant_policy`), its `allowed_providers` must
+include `aws-sts`.
+
+Security properties:
+
+- **Replay.** A digest of each accepted signature is kept until STS would reject
+  it as expired (15 minutes plus the permitted skew), and reuse is refused.
+- **Cross-service replay.** A request signed for another server ID is refused
+  before STS is called. The client signs its own `--url` origin by default, so a
+  service that claims another's ID only receives requests naming itself.
+- **SSRF.** The STS host comes only from the region allowlist, and the request's
+  signed `Host` must equal it. Only expected headers are accepted, and the exact
+  `GetCallerIdentity` body and action are required.
+- **Allowlists.** Account, role pattern, assumed-role ARN shape and the
+  consistency of `Account`/`UserId` with the ARN are all checked.
+- **Fail closed.** If STS is unreachable or returns a malformed response, the
+  service answers 503 and issues nothing. STS signature errors are denials.
+- **Audit.** Issuance and denials for allowlisted accounts are recorded with the
+  ARN, without signatures, tokens or AWS credentials. Requests from other
+  accounts and requests rejected before STS write no rows, so unauthenticated
+  traffic cannot grow the audit table.
+
+Limits: STS returns no group claims, so project access still comes from Vaelius
+membership or directory grants. Only people with AWS access can use this path.
+Each sign-in and renewal needs STS to be reachable. A custom
+`allowed_role_patterns` with `require_identity_center: false` accepts session
+names chosen by whoever assumes that role. Use it only where the role's trust
+policy pins the session name, such as `sts:RoleSessionName` set to
+`${aws:username}`. Identity Center usernames are unique within one Identity
+Center instance only. Do not allowlist accounts from different instances under
+one `issuer`.
+
+Client sign-in needs the optional extra `pip install 'vaelius-client[aws]'`:
+
+```sh
+aws sso login --profile developer
+python -m agentclient.cloud_enroll --home /absolute/private/profile \
+  --url https://memory.example.org --tenant company --enrollment laptop \
+  --auth aws-sts --aws-profile developer --aws-region us-east-1
+```
+
+The profile stores the AWS profile name, region and server ID, plus the Vaelius
+credential. It never stores AWS keys. When AWS credentials are missing or
+expired, hooks keep queuing capture in the outbox. `credential-renew` and
+`status` report `{"status": "signed_out", "reason": "aws_signed_out"}`.
+After `aws sso login`, the next use signs in again automatically.
+
 ## Reproducible local verification
 
 Build/install wheels, start disposable PostgreSQL/S3 with `scripts/dev_services.py`,

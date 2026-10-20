@@ -83,17 +83,30 @@ class OAuthProvider:
 
 
 class OAuthRegistry(TenantRegistry):
-    def __init__(self,*args,authorization,**kwargs):
+    def __init__(self,*args,authorization,aws_sts_endpoint=None,**kwargs):
         super().__init__(*args,**kwargs)
-        if (set(authorization)-{'resource','providers','legacy_interactive'}
+        if (not isinstance(authorization,dict) or set(authorization)-{'resource','providers','legacy_interactive','aws_sts'}
                 or type(authorization.get('legacy_interactive',False)) is not bool):raise ValueError('oauth_configuration')
         self.resource=_endpoint(authorization['resource'])
         if urlsplit(self.resource).query or urlsplit(self.resource).fragment:raise ValueError('oauth_resource')
-        items=authorization['providers']
-        if not isinstance(items,list) or not 1<=len(items)<=32:raise ValueError('oauth_provider_bound')
+        # AWS sign-in may be the only provider; otherwise at least one OAuth issuer.
+        items=authorization.get('providers',[] if 'aws_sts' in authorization else None)
+        if not isinstance(items,list) or len(items)>32 or (not items and 'aws_sts' not in authorization):
+            raise ValueError('oauth_provider_bound')
         self.providers=[OAuthProvider(item) for item in items]
         if len({p.issuer for p in self.providers})!=len(items):raise ValueError('duplicate_oauth_issuer')
         self.legacy_interactive=authorization.get('legacy_interactive',False)
+        self.aws_sts=None
+        if 'aws_sts' in authorization:
+            # The endpoint argument exists for tests only; the runtime profile
+            # never passes it, so production always reaches AWS STS.
+            from agenthub.aws_sts import AwsStsProvider
+            self.aws_sts=AwsStsProvider(authorization['aws_sts'],resource=self.resource,
+                sts_endpoint=aws_sts_endpoint)
+
+    def exchange_aws_sts(self,data,request_id=None):
+        if self.aws_sts is None:raise FileNotFoundError()
+        return self.aws_sts.exchange(self,data,request_id)
 
     def protected_metadata(self,tenant=None):
         providers=[p for p in self.providers if tenant is None or p.tenant==tenant]

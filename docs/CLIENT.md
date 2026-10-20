@@ -46,6 +46,14 @@ server owns token lifetimes, renewal and revocation. Reauthenticate in the same
 profile with `--reauthenticate`; projects, sessions and outbox are preserved.
 See [enterprise authentication](ENTERPRISE_AUTH.md) for setup and migration.
 
+AWS IAM Identity Center sign-in (`--auth aws-sts --aws-profile NAME`, with the
+`vaelius-client[aws]` extra) reuses the current AWS SSO session instead of a
+browser login. It stores only a short-lived Vaelius access credential and renews it
+by signing a new STS request. `vaelius-client credential-status` reports
+`signed_in` or `signed_out` without contacting AWS or the service. While signed
+out of AWS, capture keeps queuing in the outbox; run `aws sso login` to resume. See
+[enterprise authentication](ENTERPRISE_AUTH.md#aws-iam-identity-center-sign-in).
+
 Explicit legacy broker login stores a one-hour access token and a refresh token. Hooks, transports and
 the MCP header helper only ever read the access token; the refresh token is used
 solely by `credential-renew` (also run automatically before requests when less

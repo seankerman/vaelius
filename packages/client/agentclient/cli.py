@@ -16,6 +16,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     drain=sub.add_parser('outbox-drain');drain.add_argument('--max-events',type=int,default=32);drain.add_argument('--max-seconds',type=float,default=5)
     install=sub.add_parser('install');install.add_argument('--codex-home',default=str(Path.home()/'.codex'))
     renewal=sub.add_parser('credential-renew');renewal.add_argument('--force',action='store_true')
+    sub.add_parser('credential-status',help='local sign-in status; contacts neither AWS nor the service')
     for command in ('logout','credential-revoke'):
         revoke=sub.add_parser(command,help='revoke this profile\'s token family and delete local tokens')
         revoke.add_argument('--local-only',action='store_true',help='delete local tokens without contacting the service')
@@ -32,8 +33,17 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
         from agentclient.transport import require_backend,enterprise_client
         require_backend(config)
         if args.command=='credential-renew':
-            from agentclient.credentials import renew
-            result=renew(config['knowledge_backend'],force=args.force)
+            from agentclient.credentials import renew,LoginRequired
+            try:result=renew(config['knowledge_backend'],force=args.force)
+            except LoginRequired as exc:
+                # Fail closed with a clear status; capture keeps queuing meanwhile.
+                raise SystemExit(json.dumps({'status':'signed_out','reason':str(exc)})) from None
+        elif args.command=='credential-status':
+            backend=config['knowledge_backend']
+            if backend.get('aws_sts'):
+                from agentclient.aws_sts import status
+                result=status(backend)
+            else:result={'status':'unknown','auth':'oauth' if backend.get('oauth') else 'legacy'}
         elif args.command in {'logout','credential-revoke'}:
             from agentclient.credentials import logout
             try:result=logout(config['knowledge_backend'],local_only=args.local_only)
@@ -65,7 +75,10 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             try:
                 result=box.status() if args.command=='capture-status' else box.drain(enterprise_client(config,timeout=1),max_events=args.max_events,max_seconds=args.max_seconds)
             finally:box.close()
-        else:result=enterprise_client(config).request('/enterprise/v1/status')
+        else:
+            from agentclient.credentials import LoginRequired
+            try:result=enterprise_client(config).request('/enterprise/v1/status')
+            except LoginRequired as exc:raise SystemExit(json.dumps({'status':'signed_out','reason':str(exc)})) from None
     print(json.dumps(result,indent=2))
 
 

@@ -15,6 +15,13 @@ def validate_response(path,value):
                 or not isinstance(value['actions'],list) or not all(isinstance(v,str) for v in value['actions'])
                 or any(type(value[k]) not in (int,float) for k in expiries)):
             raise ValueError('invalid_credential_metadata')
+    elif route=='auth/aws-sts':
+        if set(value)!={'credential','tenant','principal','actor','enrollment','actions','expires_at'}:
+            raise ValueError('invalid_credential_metadata')
+        if (any(not isinstance(value[k],str) or not value[k] for k in ('credential','tenant','principal','actor','enrollment'))
+                or len(value['credential'])>256 or not isinstance(value['actions'],list)
+                or not all(isinstance(v,str) for v in value['actions']) or type(value['expires_at']) not in (int,float)):
+            raise ValueError('invalid_credential_metadata')
     elif route=='auth/revoke':
         if value!={'revoked':True}:raise ValueError('invalid_revocation_response')
     elif route=='search':

@@ -26,14 +26,27 @@ def runtime(profile):
     return settings,registry_from_settings(settings,Path(profile)/'server-state')
 
 def worker_config(profile,*,provider_free=True):
-    cfg={'paused':False,'knowledge_backend':{'mode':'enterprise_local'},
-        'observer':{'enabled':True,'model':'fixture' if provider_free else 'gpt-6-luna',
-            'min_interval_seconds':0,'timeout_seconds':60},
+    """Provider-free runs get a synthetic fixture; live runs get no provider or model.
+
+    A live worker must name `backend_execution.kind` and its model in the private
+    worker-config.json, and runtime.json `models` must allowlist them.
+    """
+    observer={'enabled':True,'min_interval_seconds':0,'timeout_seconds':60}
+    if provider_free:observer['model']='fixture'
+    cfg={'paused':False,'knowledge_backend':{'mode':'enterprise_local'},'observer':observer,
         'episode_curation':{'enabled':True,'policy':'durable_memory','settle_seconds':0,
-            'generation_id':'cloud-readiness-v1'},'backend_execution':{'kind':'deterministic' if provider_free else 'codex'}}
+            'generation_id':'cloud-readiness-v1'}}
+    if provider_free:cfg['backend_execution']={'kind':'deterministic'}
     selected=Path(profile)/'worker-config.json'
     if selected.exists():cfg.update(json.loads(selected.read_text()))
     return cfg
+
+def require_live_worker_allowed(settings,cfg):
+    """Fail a live curation worker at startup unless its stage is allowlisted."""
+    from agenthub.model_policy import policy_from_settings, require_stage_allowed
+    policy=policy_from_settings(settings)
+    require_stage_allowed(policy,cfg,'curation')
+    return policy
 
 def receipt(profile,command,value):
     from agenthub.backend_ops import build_identity
@@ -146,6 +159,12 @@ def main(argv=None):
         from agenthub.model_resources import release_models
         atexit.register(lambda: release_models(registry, dict(registry._stores), store.semantic_embedder))
         if args.command=='worker-run':
+            policy=None
+            if store.curation_enabled:
+                if not (args.provider_free or args.live):parser.error('enabled enrichment requires explicit --provider-free or --live')
+                cfg=worker_config(profile,provider_free=args.provider_free)
+                # Refuse before any indexing or model work if the stage is not allowlisted.
+                if args.live:policy=require_live_worker_allowed(settings,cfg)
             from agenthub.cloud_maintenance import IndexFreshness
             index=IndexFreshness(store)
             if store.semantic_embedder is not None:index.ensure_generation()
@@ -160,12 +179,11 @@ def main(argv=None):
                     indexed+=int(result['status']=='searchable')
             value['vector_documents']=indexed
             if store.curation_enabled:
-                if not (args.provider_free or args.live):parser.error('enabled enrichment requires explicit --provider-free or --live')
                 from agenthub.backend_worker import Worker
                 from agenthub.cloud_execution import execution_from_config
-                cfg=worker_config(profile,provider_free=args.provider_free)
                 def fixture(*_):return {'records':[],'episode_summary':{'intent':None,'open_work':[]}}, {'input_tokens':0,'output_tokens':0}, 'synthetic-observer'
-                runner=execution_from_config(cfg,provider_free=args.provider_free,fixture=fixture if args.provider_free else None)
+                runner=execution_from_config(cfg,provider_free=args.provider_free,fixture=fixture if args.provider_free else None,
+                    policy=policy,stage='curation')
                 value['enrichment']=Worker(store,cfg,runner=runner,live=args.live,ledger_path=args.ledger).run(max_jobs=args.max_jobs,
                     max_seconds=args.max_seconds,max_calls=args.max_calls,max_retries=args.max_retries)
         elif args.command=='source-index-reconcile':

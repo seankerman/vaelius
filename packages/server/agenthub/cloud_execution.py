@@ -26,16 +26,26 @@ class Execution(Protocol):
                  session_id=None, session_dir=None): ...
 
 
+STATELESS_KINDS=frozenset({'operator_api','bedrock'})
+
+
+def execution_kind(config):
+    """The explicitly configured adapter name, or None. There is no default provider."""
+    return config.get('backend_execution',{}).get('kind')
+
+
 def execution_model(config):
+    """The configured model for the selected adapter, or None; never a built-in model."""
     selected=config.get('backend_execution',{})
-    return selected.get('model') if selected.get('kind')=='operator_api' else config.get('observer',{}).get('model','gpt-6-luna')
+    if selected.get('kind') in STATELESS_KINDS:return selected.get('model')
+    return config.get('observer',{}).get('model')
 
 
 def execution_identity(config):
     """Non-secret checkpoint/return identity; rotating credentials changes no data."""
-    selected=config.get('backend_execution',{})
-    value={'kind':selected.get('kind','codex'),'model':execution_model(config),
-           'reasoning':config.get('observer',{}).get('reasoning',None if selected.get('kind')=='operator_api' else 'low'),
+    kind=execution_kind(config)
+    value={'kind':kind,'model':execution_model(config),
+           'reasoning':config.get('observer',{}).get('reasoning','low' if kind=='codex' else None),
            'contract':'structured-v1'}
     return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
@@ -251,11 +261,19 @@ class ApiExecution:
         if config.get('_purpose'):return result,usage
         return result,usage,response.get('id') # Diagnostic low-level use; never a resumable handle.
 
-def execution_from_config(config,*,provider_free=False,fixture=None):
-    selected=config.get('backend_execution',{});kind=selected.get('kind','codex')
+def execution_from_config(config,*,provider_free=False,fixture=None,policy=None,stage='curation'):
+    """Build the one adapter a stage names. Live adapters require an allowlisting policy.
+
+    `policy` is the runtime.json `models` allowlist (model_policy.ModelPolicy). None
+    allows nothing, so a caller that forgets it fails closed before any dispatch.
+    """
+    selected=config.get('backend_execution',{});kind=selected.get('kind')
     if provider_free:
         if kind!='deterministic' or fixture is None:raise ExecutionError('provider_free_fixture_required')
         return DeterministicExecution(fixture)
+    from agenthub.model_policy import require_stage_allowed, ModelPolicyError
+    try:require_stage_allowed(policy,config,stage)
+    except ModelPolicyError as error:raise ExecutionError(str(error),outcome='cancelled') from None
     if kind=='codex':return CodexExecution()
     if kind=='operator_api':
         from agenthub.secret_files import read_secret
@@ -265,4 +283,7 @@ def execution_from_config(config,*,provider_free=False,fixture=None):
                             timeout=selected.get('timeout',60),max_input_chars=selected.get('max_input_chars',256000),
                             max_output_tokens=selected.get('max_output_tokens',4096),
                             max_output_bytes=selected.get('max_output_bytes',65536))
+    if kind=='bedrock':
+        from agenthub.bedrock_execution import bedrock_from_config
+        return bedrock_from_config(selected)
     raise ExecutionError('unknown_execution_adapter')

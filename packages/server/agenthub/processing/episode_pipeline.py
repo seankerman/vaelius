@@ -686,7 +686,7 @@ def _install(state, config, row, sources, packet, result, resolutions, *, guard=
         status="done" if result["candidates"] else "no_learning"
         state.db.execute("""UPDATE curation_episode_jobs SET status=?,stage='complete',
             disposition=?,model=?,version=?,error=NULL,updated=? WHERE id=?""",
-            (status,result["episode_disposition"],config["observer"].get("model","gpt-6-luna"),
+            (status,result["episode_disposition"],config["observer"].get("model"),
              curator_version(config),now,row["id"]))
         state.db.execute("INSERT INTO health VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                          ("episode_curator_success:"+row["project"],str(now)))

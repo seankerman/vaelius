@@ -1,17 +1,19 @@
 # Serving reranking
 
-`agenthub.serving_reranker.ServingReranker` adds a Luna evidence-selection stage to
+`agenthub.serving_reranker.ServingReranker` adds a model evidence-selection stage to
 authorized fused search candidates. It reuses the tool-disabled structured
 execution adapter; Codex local tests retain their installation ledger. Tenant usage goes through the
 existing `cloud_ops.Meter`; attempts also enter the existing shared evaluation
 ledger. It does not select a paid API, run a client model, or perform startup work.
-The local default is GPT-6 Luna with low reasoning. Hosted models are explicit
-operator configuration; see [model providers](MODEL_PROVIDERS.md).
+There is no default model: the worker configuration names its provider and model,
+and `runtime.json` `models` must allowlist them or API startup fails; see
+[model providers](MODEL_PROVIDERS.md). Codex/API stages default to low reasoning.
+Bedrock sends no reasoning setting.
 
 Enable only in the backend's private `runtime.json` with an internal `reranking`
-object: `enabled: true`, an absolute `worker_config` path to a mode-0600 existing
-Codex-login worker configuration, an absolute `ledger` path to the shared
-evaluation ledger for Codex local execution (optional for API execution), and optional `timeout_seconds` (20 by default, 10–60).
+object: `enabled: true`, an absolute `worker_config` path to a mode-0600 worker
+configuration naming `backend_execution.kind` and its model, an absolute `ledger` path to the shared
+evaluation ledger for Codex local execution (optional for API and Bedrock execution), and optional `timeout_seconds` (20 by default, 10–60).
 Omission preserves the existing profile. There is no customer-facing model
 selector. Configuration and startup perform no inference. At most two reranker
 calls run per API process. Busy, unavailable or invalid model execution falls back

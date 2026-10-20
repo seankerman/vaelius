@@ -14,7 +14,7 @@ import uuid
 
 from agenthub.processing.episode_pipeline import create_jobs, run_once, sources_for_job
 from agenthub.processing.evaluation_budget import reserve, finish
-from agenthub.cloud_execution import execution_from_config, execution_identity, execution_model, CodexExecution
+from agenthub.cloud_execution import execution_from_config, execution_identity, execution_kind, execution_model, CodexExecution
 
 
 def initialize(db):
@@ -70,13 +70,17 @@ def _is_model_retry(db, job, purpose, *, request_hash=None, reviewed_retry=False
 
 
 class Worker:
-    def __init__(self,store,config,*,runner=None,live=True,ledger_path=None):
+    def __init__(self,store,config,*,runner=None,live=True,ledger_path=None,model_policy=None):
         store.require_ready()
         self.store=store;self.config=dict(config);self.runner=runner;self.live=live;self.ledger_path=ledger_path
         self.config['observer']=dict(self.config.get('observer',{}))
         self.config['observer']['model']=execution_model(self.config)
+        if not self.config['observer']['model']:
+            from agenthub.model_policy import ModelPolicyError
+            raise ModelPolicyError('model_stage_model_required: stage curation must name its model')
         self.execution_key=execution_identity(self.config)
-        if self.live and self.runner is None:self.runner=execution_from_config(self.config)
+        if self.live and self.runner is None:
+            self.runner=execution_from_config(self.config,policy=model_policy,stage='curation')
         allowed=config.get('backend_worker',{}).get('allowed_connections')
         if allowed is not None and (not isinstance(allowed,list) or not 1<=len(allowed)<=100 or any(not isinstance(v,str) or not v or len(v)>128 for v in allowed)):raise ValueError('invalid_worker_connection_scope')
         self.allowed_connections=allowed
@@ -84,7 +88,9 @@ class Worker:
         if type(partial) is not bool:raise ValueError('invalid_partial_capture_option')
         if config.get('knowledge_backend',{}).get('mode')!='enterprise_local': raise ValueError('enterprise_worker_config_required')
         if config.get('episode_curation',{}).get('policy')!='durable_memory': raise ValueError('continuous_worker_requires_canonical_durable_policy')
-        if live and not ledger_path and config.get('backend_execution',{}).get('kind','codex')=='codex':
+        # An unnamed provider only reaches here with an injected fixture runner;
+        # it keeps the stricter Codex accounting requirement and selects nothing.
+        if live and not ledger_path and execution_kind(config) in (None,'codex'):
             raise ValueError('shared_campaign_ledger_required')
         if live and ledger_path:
             accounting=Path(config.get('accounting_home',Path.home()/'.local/share/agentnetwork')).resolve()
@@ -269,7 +275,7 @@ class Worker:
                     state.db.execute("UPDATE curation_episode_jobs SET status='held',error=?,updated=? WHERE id=? AND status='pending'",(str(exc),time.time(),job['episode_job']))
                 continue
             session_id=observer['provider_session'];session_dir=self.store.home/'observers'/job['observer_id']/str(observer['observer_epoch'])
-            resumable=getattr(self.runner,'resumable',self.config.get('backend_execution',{}).get('kind','codex')=='codex')
+            resumable=getattr(self.runner,'resumable',execution_kind(self.config) in (None,'codex'))
             if not resumable:session_id=None
             reconstruct=not session_id
             threshold=int(self.config.get('backend_worker',{}).get('compact_after_chars',256_000))

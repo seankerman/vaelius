@@ -50,8 +50,10 @@ documents and private-preference tools remain available.
 To explicitly inspect retained derived documents, set `retrieval.corpus: all`.
 To resume model enrichment, set `processing.curation_enabled: true` and use the
 existing private worker configuration with explicit `--live` or `--provider-free`.
-Existing jobs, model outputs, checkpoints and accounting are preserved. Luna
-reranking is independently opt-in under `reranking`; see [its configuration](SERVING_RERANKER.md).
+Existing jobs, model outputs, checkpoints and accounting are preserved. The worker
+configuration must name its provider and model, and `runtime.json` `models` must
+allowlist them ([model providers](MODEL_PROVIDERS.md)). Model reranking is
+independently opt-in under `reranking`; see [its configuration](SERVING_RERANKER.md).
 
 Migration 031 is additive and tightens raw-passage RLS for the restricted reader.
 Migration 032 supplies a fixed full-text lookup so PostgreSQL can use its GIN

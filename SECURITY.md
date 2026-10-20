@@ -11,3 +11,7 @@ guaranteed response-time SLA for this early community release.
 The release has local synthetic security and lifecycle coverage. It is not a
 claim of a completed independent security audit or production cloud acceptance.
 See [data boundaries](docs/DATA_BOUNDARIES.md) for redaction and operator-trust limits.
+
+Releases carry CycloneDX SBOMs and Sigstore-signed build-provenance attestations;
+[RELEASING.md](RELEASING.md#verifying-a-release) shows how to verify them and how
+vulnerability exceptions are reviewed.

@@ -1,0 +1,79 @@
+# Weekly, grouped dependency updates. Version updates wait 7 days after a release
+# (cooldown) so a compromised or yanked version is usually caught upstream first;
+# security updates are not delayed.
+version: 2
+updates:
+  # Python. Top-level pins live in both packages/*/pyproject.toml and the root
+  # requirements-*.in files, so each top-level bump is one pull request across
+  # those directories (group-by: dependency-name); scripts/check_locks.py fails CI
+  # if they disagree. Transitive pins exist only in the root hashed locks and are
+  # grouped into one weekly pull request.
+  - package-ecosystem: pip
+    directories:
+      - /
+      - /packages/client
+      - /packages/server
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      python-top-level:
+        group-by: dependency-name
+        patterns:
+          - authlib
+          - boto3
+          - build
+          - httpx
+          - joserfc
+          - jsonschema
+          - mcp
+          - moto
+          - numpy
+          - onnxruntime
+          - psycopg
+          - pypdf
+          - python-docx
+          - requests
+          - setuptools
+          - starlette
+          - tokenizers
+          - uvicorn
+      python-transitive:
+        patterns:
+          - '*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /containers
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      container-images:
+        patterns:
+          - '*'
+    ignore:
+      # A Python minor upgrade and a PostgreSQL major upgrade are deliberate
+      # changes (the test image compiles pgvector against postgresql-server-dev-17).
+      - dependency-name: '*python'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '*postgres'
+        update-types: ['version-update:semver-major']

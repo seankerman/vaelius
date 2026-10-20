@@ -1,0 +1,5 @@
+# pip-compile defaults for the hashed lock files. Dependabot reads this file too.
+[tool.pip-tools]
+generate-hashes = true
+allow-unsafe = true
+strip-extras = true

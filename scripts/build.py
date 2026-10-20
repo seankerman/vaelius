@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
+    parser.add_argument('--no-isolation', action='store_true',
+                        help='build with the installed, hash-locked backend (requirements-build.txt)')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -42,7 +44,8 @@ def main():
         build_id = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
         (sources / 'BUILD_ID.json').write_text(json.dumps({'build_id': build_id, 'files': hashes}, sort_keys=True, indent=2) + '\n')
         shutil.rmtree(folder / 'build', ignore_errors=True)
-        subprocess.run([sys.executable, '-m', 'build', '--wheel', '--sdist', '--outdir', str(output), str(folder)], check=True)
+        isolation = ['--no-isolation'] if args.no_isolation else []
+        subprocess.run([sys.executable, '-m', 'build', '--wheel', '--sdist', *isolation, '--outdir', str(output), str(folder)], check=True)
     artifacts = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(output.iterdir()) if p.suffix in ('.whl', '.gz')}
     (output / 'manifest.json').write_text(json.dumps({'version': versions[0], 'artifacts': artifacts}, sort_keys=True, indent=2) + '\n')
     print(json.dumps({'version': versions[0], 'artifacts': artifacts}, sort_keys=True))

@@ -1,16 +1,29 @@
-FROM public.ecr.aws/docker/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS builder
+# Base: python:3.12.15-slim-trixie from the public ECR mirror of Docker Official
+# Images. The tag is informational (Dependabot reads it); the digest is what pulls.
+FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS builder
 WORKDIR /src
+# Hash-locked build backend; --no-build-isolation stops pip fetching an unverified one.
+COPY requirements-build.txt /tmp/requirements-build.txt
+RUN python -m pip install --no-cache-dir --require-hashes -r /tmp/requirements-build.txt
 COPY packages/client/ /src/client/
 COPY packages/server/ /src/server/
-RUN python -m pip wheel --no-cache-dir --no-deps --wheel-dir /wheels /src/client /src/server
+RUN python -m pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels /src/client /src/server
 
-FROM public.ecr.aws/docker/library/python@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 COPY --from=builder /wheels /wheels
-COPY requirements-runtime.lock /requirements-runtime.lock
-RUN python -m pip install --no-cache-dir -r /requirements-runtime.lock /wheels/*.whl \
+COPY requirements-runtime.txt /requirements-runtime.txt
+# Third-party packages come only from the hash-locked file. The project wheels are
+# then installed offline, so any extra that the lock does not satisfy fails the build.
+RUN python -m pip install --no-cache-dir --require-hashes -r /requirements-runtime.txt \
+    && python -m pip install --no-cache-dir --no-index --find-links /wheels 'vaelius-server[cloud,semantic]' \
     && python -m pip check && rm -rf /wheels
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 AWS_EC2_METADATA_DISABLED=true OMP_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
 WORKDIR /tmp
 USER 10001:10001
 EXPOSE 8080
+# Liveness only: GET /health needs no database or credentials. Uses the image's
+# Python (no shell or curl) and http.client, which ignores proxy variables. Assumes
+# the default --port 8080; override or disable it if you change the port.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["python", "-c", "import http.client,sys;c=http.client.HTTPConnection('127.0.0.1',8080,timeout=4);c.request('GET','/health');sys.exit(c.getresponse().status!=200)"]
 CMD ["python", "-m", "agenthub.cloud_runtime", "--profile", "/profile", "--bind", "0.0.0.0", "--port", "8080"]

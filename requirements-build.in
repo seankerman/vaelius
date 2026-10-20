@@ -1,0 +1,4 @@
+# Wheel build tooling. setuptools must equal [build-system].requires in both
+# package pyproject.toml files so builds can run without network isolation.
+build
+setuptools==84.0.0

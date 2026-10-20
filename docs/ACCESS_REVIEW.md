@@ -107,7 +107,7 @@ A revoke runs through the existing path for that kind of line:
 | `delegation` | Deactivates the delegation (the delegate's credentials stop authorizing) | — |
 | `document_grant` | Removes the reader from the reviewed release | — |
 | `settings_admin` | Clears the tenant administrator flag | — |
-| `binding` | Deactivates the binding and revokes credentials issued through it | `pending_operator`: repeat the decision from the operator command |
+| `binding` | Deactivates the binding and revokes credentials issued through it | `pending_operator`: credentials are revoked at once; repeat the decision from the operator command to deactivate the binding |
 | `connection_reader` | Not changed automatically | `requires_owner`: the owner narrows the reader list, because removing the last reader would widen the connection |
 
 Evidence produced: the `access_reviews`, `access_review_lines` and

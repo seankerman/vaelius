@@ -579,12 +579,14 @@ def revoke_settings_admin(store, principal, *, actor, request_id=None):
 
 def revoke_binding(store, principal, binding_kind, issuer, subject, *, actor, control_admin=None,
                    reason='access_review', request_id=None):
-    """Deactivate one issuer/subject binding; control-plane writes need the operator."""
-    if control_admin is None:
-        return {'status': 'pending_operator',
-                'action_required': 'run the operator access-review command with control-plane admin credentials'}
+    """Deactivate one issuer/subject binding; control-plane writes need the operator.
+
+    Credentials already issued through the binding are revoked in either case.
+    """
     changed = False
-    if binding_kind == 'oidc':
+    if control_admin is None:
+        pass
+    elif binding_kind == 'oidc':
         from agenthub.cloud_identity import IdentityBindings
         with control_admin() as db:
             row = db.execute('''SELECT * FROM cloud_identity_bindings WHERE issuer=%s AND subject=%s AND tenant=%s''',
@@ -602,8 +604,12 @@ def revoke_binding(store, principal, binding_kind, issuer, subject, *, actor, co
     with store.delivery_lock(), store.open() as state, state.db:
         result = _revoke_credentials(store, state.db, 'identity_issuer=%s AND identity_subject=%s', (issuer, subject),
                                      actor=actor, reason=reason, request_id=request_id)
-        _audit(store, state.db, actor, 'identity_binding', 'deactivated' if changed else 'already_inactive',
+        disposition = 'pending_operator' if control_admin is None else 'deactivated' if changed else 'already_inactive'
+        _audit(store, state.db, actor, 'identity_binding', disposition,
                _line_id(store.tenant_id, 'binding', principal, binding_kind, issuer, subject), request_id)
+    if control_admin is None:
+        return dict(result, status='pending_operator',
+                    action_required='run the operator access-review command with control-plane admin credentials')
     return dict(result, status='applied' if changed or any(result.values()) else 'noop')
 
 

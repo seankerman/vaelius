@@ -96,11 +96,16 @@ class SourceSnapshotBatch(PostgresFixture, unittest.TestCase):
         from agenthub.enterprise import Denied
         with self.assertRaises(Denied):self.check(expected)
 
-    def test_source_read_cannot_be_replaced_by_document_read(self):
-        expected=dict([self.source()])
+    def test_read_only_owner_validates_passages_but_not_originals(self):
+        # Snapshots back owner-only redacted evidence (`read`); the retained
+        # original remains a separate source_read + owner/grant check.
+        expected=dict([self.source()]);sid=next(iter(expected))
         token=self.store.enroll('acme','alice','read-only',['read'])
+        ctx=self.store.authenticate(token);self.check(expected,ctx)
         from agenthub.enterprise import Denied
-        with self.assertRaises(Denied):self.check(expected,self.store.authenticate(token))
+        with self.assertRaises(Denied):self.store.source(ctx,sid)
+        with self.assertRaises(PermissionError):
+            self.check(expected,self.store.authenticate(self.tokens['bob']))
 
     def test_documents_use_shared_predicate_and_recheck_revisions(self):
         from agenthub.search_permissions import validate_document_snapshots

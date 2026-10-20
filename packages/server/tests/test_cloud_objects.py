@@ -161,6 +161,9 @@ class DocumentPostgresTests(unittest.TestCase):
         self.ctx={actor:self.store.authenticate(self.store.enroll(tenant,actor,actor,actions)) for actor in (self.alice,self.bob)}
         self.connection='objects-'+suffix
         self.store.enroll_connection(self.ctx[self.alice],self.connection,'documents-'+suffix,self.project,['document'],visibility='team',reader_ids=[self.alice,self.bob])
+        # Originals are owner-only by default; these rows exercise an explicit grant.
+        from agenthub import raw_access
+        raw_access.grant(self.store,self.ctx[self.alice],'connection',self.connection,'principal',self.bob)
         self.objects=FileSourceObjects(self.root/'originals');self.documents=DocumentStore(self.store,self.objects)
 
     def tearDown(self):self.temp.cleanup()

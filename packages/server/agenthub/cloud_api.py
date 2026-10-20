@@ -300,7 +300,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 store=registry.resolve(data['tenant']);broker=brokers[data['broker']]
                 issued=await run_in_threadpool(store.complete_enrollment,broker,state=data['state'],code=data['code'],
                     callback_uri=data['callback_uri'],enrollment=data['enrollment'],
-                    actions=enrollment_actions or ['ingest','read','source_read','correct','withdraw'])
+                    actions=enrollment_actions or ['ingest','read','correct','withdraw'])
                 # `credential` keeps its meaning (the access token) for older clients.
                 return JSONResponse({'credential':issued['access_token'],
                     **{key:issued[key] for key in ('expires_at','refresh_token','refresh_expires_at','session_expires_at')}},
@@ -364,7 +364,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     try:
                         # Defined delivery authorization check point, immediately before first byte.
                         with getattr(store,'delivery_read_lock',store.delivery_lock)():
-                            _,current=authenticate(request);service.describe(current,source,version=version)
+                            _,current=authenticate(request);service.authorize_original(current,source,version=version)
                         while True:
                             chunk=file.read(65536)
                             if not chunk:break

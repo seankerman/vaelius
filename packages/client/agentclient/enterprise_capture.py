@@ -1,26 +1,32 @@
 """Faithful, deterministic enterprise capture; never imports or calls a model."""
 import uuid
 
-from agentclient.cleaning import SECRET_KEYS, REDACTED_SECRET, clean_private
+from agentclient.cleaning import SECRET_KEYS, REDACTED_SECRET
+from agentclient.secret_detection import redact_text
 from agentclient.general_contract import VERSION, validate_event
 
 SELF_TOOLS = {'agentnetwork_memory', 'mcp__agentnetwork__agentnetwork_memory'}
+
+
+def _reason(kind, rules):
+    """Rule identifiers only; a manifest never carries a matched value."""
+    return (kind + ':' + ','.join(rules))[:80]
 
 
 def redact(value, field='$', manifest=None):
     """Filter before hashing/splitting. Manifest contains locations, never secrets."""
     manifest = [] if manifest is None else manifest
     if isinstance(value, str):
-        safe, reasons = clean_private(value)
-        if reasons:
-            manifest.append({'field': field, 'reason': 'credential_pattern'})
+        safe, rules = redact_text(value)
+        if rules:
+            manifest.append({'field': field, 'reason': _reason('credential_pattern', rules)})
         return safe, manifest
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
-            safe_key, reasons = clean_private(str(key))
-            if reasons:
-                manifest.append({'field': field, 'reason': 'credential_key'})
+            safe_key, rules = redact_text(str(key))
+            if rules:
+                manifest.append({'field': field, 'reason': _reason('credential_key', rules)})
             if safe_key in result:
                 raise ValueError('redacted_key_collision')
             if SECRET_KEYS.fullmatch(str(key)) and item not in (None, '', REDACTED_SECRET):

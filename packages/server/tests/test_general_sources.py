@@ -66,8 +66,13 @@ class GeneralSourceTests(unittest.TestCase):
     def test_forged_authority_and_unredacted_data_rejected(self):
         for key in ('tenant','visibility','reader_ids','provider_model'):
             with self.assertRaises(ValueError):validate_event(dict(self.event(),**{key:'forged'}))
+        # Unredacted content is re-redacted by the service, never stored as sent.
         event=self.event();event['blocks'][0]['value']['password']='example-not-redacted'
-        with self.assertRaises(ValueError):self.store.ingest_general(self.ctx,event)
+        result=self.store.ingest_general(self.ctx,event)
+        self.assertEqual(result['disposition'],'redacted')
+        stored=self.store.general_source(self.ctx,result['source_id'])['payload']
+        self.assertNotIn('example-not-redacted',json.dumps(stored))
+        self.assertTrue(any(x['reason'].startswith('server_') for x in stored['redactions']))
 
     def test_stale_permissions_refresh_only_by_enrolled_owner(self):
         with self.store.open() as state,state.db:state.db.execute('UPDATE backend_connections SET permission_observed=0')

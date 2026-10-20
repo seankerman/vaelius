@@ -276,9 +276,12 @@ class Worker:
             except (ValueError,RuntimeError,ObjectMissing,ObjectCorrupt) as exc:
                 # Preparation is inside the finite wave, and a slow/invalid
                 # conversation cannot spin through all remaining job claims.
+                # Diagnostics are persisted; never let exception text carry a credential.
+                from agentclient.secret_detection import redact_text
+                reason=redact_text(str(exc))[0][:1000]
                 with self.store.open() as state,state.db:
-                    state.db.execute("UPDATE backend_jobs SET status='held',last_error=?,lease_until=0,updated=? WHERE id=? AND fence=?",(str(exc),time.time(),job['id'],job['fence']))
-                    state.db.execute("UPDATE curation_episode_jobs SET status='held',error=?,updated=? WHERE id=? AND status='pending'",(str(exc),time.time(),job['episode_job']))
+                    state.db.execute("UPDATE backend_jobs SET status='held',last_error=?,lease_until=0,updated=? WHERE id=? AND fence=?",(reason,time.time(),job['id'],job['fence']))
+                    state.db.execute("UPDATE curation_episode_jobs SET status='held',error=?,updated=? WHERE id=? AND status='pending'",(reason,time.time(),job['episode_job']))
                 continue
             session_id=observer['provider_session'];session_dir=self.store.home/'observers'/job['observer_id']/str(observer['observer_epoch'])
             resumable=getattr(self.runner,'resumable',execution_kind(self.config) in (None,'codex'))

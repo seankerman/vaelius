@@ -16,6 +16,8 @@ from agenthub.postgres import TenantRegistry
 from agenthub.secret_files import MountedSecret
 
 ACTIONS={'ingest','read','source_read','feedback','curate','correct','withdraw','policy','audit','settings'}
+# Retained-original reads are least privilege: operators list source_read explicitly.
+DEFAULT_ACTIONS=ACTIONS-{'source_read'}
 
 
 class OAuthProvider:
@@ -24,7 +26,7 @@ class OAuthProvider:
         if not isinstance(settings,dict) or set(settings)-allowed:raise ValueError('oauth_provider_configuration')
         self.issuer=_endpoint(settings['issuer']).rstrip('/')
         self.tenant=settings['tenant'];self.client_ids=settings['client_ids']
-        self.actions=set(settings.get('actions',ACTIONS))
+        self.actions=set(settings.get('actions',DEFAULT_ACTIONS))
         if (not isinstance(self.tenant,str) or not self.tenant or not self.client_ids
                 or not isinstance(self.client_ids,list) or len(self.client_ids)>32
                 or any(not isinstance(x,str) or not x for x in self.client_ids)

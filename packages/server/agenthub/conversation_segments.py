@@ -151,14 +151,14 @@ class ConversationSegments:
         self.store._need(ctx,'source_read')
         with self.store.delivery_lock(),self.store.open() as state:
             source=state.db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-            if not self.store._visible_source(state.db,ctx,source,raw=True):raise Denied()
+            if not self.store._original_allowed(state.db,ctx,source):raise Denied()
             value=self.verify_source(state.db,source_id)
             if value is None:raise Denied()
             # The lock serializes ordinary lifecycle changes. Recheck after read
             # for long adapter I/O and current global registry/identity changes.
             self.store._need(ctx,'source_read')
             source=state.db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-            if not self.store._visible_source(state.db,ctx,source,raw=True):raise Denied()
+            if not self.store._original_allowed(state.db,ctx,source):raise Denied()
             return {'source_id':source_id,'revision':value['revision'],'payload':value}
 
     def retain_existing(self,ctx,source_ids,*,repair_missing=False):

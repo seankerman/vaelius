@@ -27,7 +27,7 @@ def main():
         raise ValueError('client_and_server_release_versions_must_match')
     pin = {'client_version': versions[0], 'contract_version': 'enterprise-local-2', 'modules': {}}
     for prefix, folder, names in (
-        ('agentclient', client / 'agentclient', ['enterprise_contract', 'general_contract', 'cloud_contract', 'cleaning']),
+        ('agentclient', client / 'agentclient', ['enterprise_contract', 'general_contract', 'cloud_contract', 'cleaning', 'secret_detection']),
         ('agenthub.processing', server / 'agenthub/processing', [p.stem for p in (server / 'agenthub/processing').glob('*.py')]),
     ):
         for name in sorted(names):

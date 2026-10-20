@@ -282,7 +282,12 @@ class DocumentStore:
             self._authorize(state.db,ctx,item['source_id'])
         return {'source_id':item['source_id'],'version':item['version'],'passages_checked':count,'model_calls':0}
 
-    def _authorize(self, db, ctx, source_id, version=None):
+    def _authorize(self, db, ctx, source_id, version=None, *, original=False):
+        """Metadata needs current read access; original bytes are least-privilege.
+
+        Original bytes additionally require source_read and ownership or an
+        explicit owner-issued raw grant (agenthub.raw_access), never visibility.
+        """
         from agenthub.enterprise import Denied
         self.store._need(ctx, 'read')
         selected = db.execute('SELECT * FROM backend_document_versions WHERE source_id=%s AND tenant=%s', (source_id,ctx['tenant'])).fetchone()
@@ -310,6 +315,8 @@ class DocumentStore:
             # Revision retirement alone is permitted; explicit historical policy
             # narrowing and lifecycle denials remain effective independently.
             raise Denied()
+        if original and not self.store._original_allowed(db,ctx,dict(historical)|{'active':1}):
+            raise Denied()
         upload = db.execute('SELECT status FROM backend_object_uploads WHERE object_key=%s', (selected['object_key'],)).fetchone()
         if not upload or upload['status'] != 'accepted':
             raise ObjectMissing('document_not_fully_accepted')
@@ -324,6 +331,12 @@ class DocumentStore:
             'download_method':'POST',
             'download_request':{'source_id':item['source_id'],'version':item['version']},
             'requires_authenticated_download':True}
+
+    def authorize_original(self, ctx, source_id, *, version=None):
+        """Delivery-time recheck for original bytes (immediately before sending)."""
+        with self.store.open() as state:
+            self._authorize(state.db,ctx,source_id,version,original=True)
+        return True
 
     def list(self, ctx, *, title='', limit=20):
         if type(limit) is not int or not 1 <= limit <= 100 or len(title) > 256:
@@ -356,7 +369,7 @@ class DocumentStore:
         before headers/bytes are sent. No bearer URL or server path is returned.
         """
         with self.store.open() as state:
-            item = self._authorize(state.db,ctx,source_id,version)
+            item = self._authorize(state.db,ctx,source_id,version,original=True)
         spool = tempfile.TemporaryFile()
         try:
             with self.objects.open(item['object_key']) as source, bounded_spool(source,
@@ -367,7 +380,7 @@ class DocumentStore:
                     spool.write(block)
             spool.seek(0)
             with self.store.open() as state:
-                self._authorize(state.db,ctx,item['source_id'],item['version'])
+                self._authorize(state.db,ctx,item['source_id'],item['version'],original=True)
             return spool,download_headers(item['filename'],length,sha)
         except Exception:
             spool.close(); raise

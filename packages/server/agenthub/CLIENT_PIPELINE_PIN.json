@@ -6,7 +6,7 @@
     "agentclient.cloud_contract": "f553d420af444d279000ee6cfd0648c4deed47f0ab98d7eb23050893a885af70",
     "agentclient.enterprise_contract": "2adcde4f27ec3edb20deb186bf608fb8b0d4cb7ac74c780589a045ececb5a2b2",
     "agentclient.general_contract": "858a819fc83c1c84828598c07b64b3159c05d34cc27939d6c3628cfda48850f7",
-    "agentclient.secret_detection": "c7734034433f801394cf26c3b564ef703852230dfe43d53f9abd1b2ef1eca24b",
+    "agentclient.secret_detection": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",
     "agenthub.processing.__init__": "961019d775e8e3a8a4280fc7ec84281af060dd3004e6a52cdeb973b37b4a02a5",
     "agenthub.processing.accounting": "ef0e6dfae1b9ac247e6901a3fd271a303d2146b73ecff59f8d3d1fdd1ed6a5d9",
     "agenthub.processing.cards": "c90a41144f8c5a884ba95686561b6ba83f97f2dd3fd57be1ec83dbe835fb097f",

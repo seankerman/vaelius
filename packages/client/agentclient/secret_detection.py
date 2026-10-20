@@ -102,7 +102,7 @@ def _high_entropy_value(match, value):
 def _assignment_value(match, value):
     if value.startswith(REDACTED_SECRET[:-1]):
         return False
-    if match.group(match.lastindex) == value and match.lastindex == 3:
+    if match.lastindex == 3:  # unquoted: skip code/env references, not literals
         return not _REFERENCE_VALUE.fullmatch(value)
     return bool(value.strip())
 

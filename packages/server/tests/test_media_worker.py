@@ -34,7 +34,11 @@ class MediaWorkerTests(unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT model FROM backend_observers').fetchone()[0],'fixture')
         self.config['observer'].pop('model')
         with self.assertRaisesRegex(ValueError,'model_stage_model_required'):
-            Worker(self.store,self.config,live=False)
+            Worker(self.store,self.config,runner=lambda *a,**k:None,live=False)
+        maintenance=Worker(self.store,self.config,live=False)  # Model-free operations remain available.
+        self.assertIsNotNone(maintenance.status())
+        with self.assertRaisesRegex(ValueError,'model_stage_model_required'):
+            maintenance.prepare()
 
     def test_explicit_sample_filter_does_not_claim_an_unselected_job(self):
         self.turn('2')

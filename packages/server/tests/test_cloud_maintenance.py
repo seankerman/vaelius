@@ -17,7 +17,7 @@ from test_cloud_postgres import PostgresFixture,SERVICES
 
 def config():
     return {'paused':False,'knowledge_backend':{'mode':'enterprise_local'},
-        'observer':{'enabled':True,'min_interval_seconds':0,'max_calls_per_day':10000},
+        'observer':{'enabled':True,'model':'fixture','min_interval_seconds':0,'max_calls_per_day':10000},
         'episode_curation':{'enabled':True,'policy':'durable_memory','generation_id':'maintenance-fixture','settle_seconds':0}}
 
 

@@ -75,9 +75,9 @@ class Worker:
         self.store=store;self.config=dict(config);self.runner=runner;self.live=live;self.ledger_path=ledger_path
         self.config['observer']=dict(self.config.get('observer',{}))
         self.config['observer']['model']=execution_model(self.config)
-        if not self.config['observer']['model']:
-            from agenthub.model_policy import ModelPolicyError
-            raise ModelPolicyError('model_stage_model_required: stage curation must name its model')
+        # A worker that can dispatch must name its model. A non-dispatching
+        # maintenance worker (hold/retry/export/delete) stays usable without one.
+        if (live or runner is not None):self._require_model()
         self.execution_key=execution_identity(self.config)
         if self.live and self.runner is None:
             self.runner=execution_from_config(self.config,policy=model_policy,stage='curation')
@@ -111,8 +111,14 @@ class Worker:
         finally:temporary.unlink(missing_ok=True)
         self.calls=0;self.retries=0;self.input_tokens=0;self.stop=False
 
+    def _require_model(self):
+        if not self.config['observer']['model']:
+            from agenthub.model_policy import ModelPolicyError
+            raise ModelPolicyError('model_stage_model_required: stage curation must name its model')
+
     def prepare(self):
         if not getattr(self.store,'curation_enabled',False):return 0
+        self._require_model() # Observer identity records the model; there is no default.
         from agenthub.processing.durable_memory import VERSION
         queued=0
         with self.store.open() as state,state.db:

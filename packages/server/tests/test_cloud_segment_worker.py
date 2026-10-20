@@ -36,7 +36,7 @@ class SegmentWorkerTests(PostgresFixture,unittest.TestCase):
             result=self.store.ingest_general(self.ctx,event)
             self.source_events[result['source_id']]=event
         self.config={'paused':False,'knowledge_backend':{'mode':'enterprise_local'},
-            'observer':{'enabled':True,'min_interval_seconds':0,'max_calls_per_day':10000},
+            'observer':{'enabled':True,'model':'fixture','min_interval_seconds':0,'max_calls_per_day':10000},
             'episode_curation':{'enabled':True,'policy':'durable_memory','generation_id':'segment-worker-fixture','settle_seconds':0},
             'backend_worker':{'allowed_connections':['segment-agent']}}
         self.calls=[]

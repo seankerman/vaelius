@@ -20,6 +20,35 @@ from agenthub.request_timing import capture, span, timed, emit
 JSON_LIMIT=262144
 FILE_LIMIT=50*1024*1024
 NO_STORE={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
+# JSON-only API: every response is private and never framed, sniffed or cached.
+SECURITY_HEADERS=((b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),
+    (b'referrer-policy',b'no-referrer'),(b'x-frame-options',b'DENY'),
+    (b'content-security-policy',b"default-src 'none'; frame-ancestors 'none'"))
+HSTS=(b'strict-transport-security',b'max-age=31536000; includeSubDomains')
+PROBES=('/health','/ready')
+
+
+class SecureTransport:
+    """Add secure response headers; with https_only, refuse non-HTTPS requests.
+
+    Liveness/readiness probes stay reachable over plain HTTP so a load balancer can
+    check the container directly. Every other request must arrive as HTTPS: direct
+    TLS, or X-Forwarded-Proto from a configured trusted proxy (see cloud_runtime).
+    """
+    def __init__(self,app,*,https_only=False):
+        self.app=app;self.https_only=https_only
+    async def __call__(self,scope,receive,send):
+        if scope['type']!='http':return await self.app(scope,receive,send)
+        extra=SECURITY_HEADERS+((HSTS,) if self.https_only else ())
+        async def secure_send(message):
+            if message['type']=='http.response.start':
+                headers=list(message.get('headers',[]))
+                present={name.lower() for name,_ in headers}
+                message=dict(message,headers=headers+[item for item in extra if item[0] not in present])
+            await send(message)
+        if self.https_only and scope.get('scheme')!='https' and scope.get('path') not in PROBES:
+            return await JSONResponse({'error':'https_required'},status_code=403)(scope,receive,secure_send)
+        await self.app(scope,receive,secure_send)
 
 class AuthenticationRequired(Denied):pass
 
@@ -54,7 +83,8 @@ def pack_search_result(request,result):
 
 
 def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origins=(),
-               document_factory=None,brokers=None,enrollment_actions=None,build_ids=None,timing_sink=None):
+               document_factory=None,brokers=None,enrollment_actions=None,build_ids=None,timing_sink=None,
+               https_only=False):
     documents={};brokers=brokers or {}
     def document_store(store):
         if document_factory is None:raise ValueError('original_documents_unavailable')
@@ -64,7 +94,8 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
     def authenticate(request):
         header=request.headers.get('authorization','')
         if not header.startswith('Bearer '):raise AuthenticationRequired()
-        token=header[7:];request_id=request.headers.get('x-request-id') or uuid.uuid4().hex
+        # Server-generated: a client X-Request-ID must never key audit or metering.
+        token=header[7:];request_id=uuid.uuid4().hex
         if hasattr(registry,'authenticate_token'):
             try:return registry.authenticate_token(token,request_id)
             except (Denied,IdentityError):raise AuthenticationRequired() from None
@@ -74,7 +105,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         with span('meter'):
             if not getattr(store,'dsn',None):return
             from agenthub.cloud_ops import Meter
-            meter=Meter(store);ident='retrieval:'+ctx['request_id']
+            # One fresh server-side identity per delivered search. Reusing any
+            # client-influenced value here would let retries collapse (undercount)
+            # or collide across principals (409).
+            meter=Meter(store);ident='retrieval:'+uuid.uuid4().hex
             meter.metric(ident,'retrieval_requests',1)
             meter.metric(ident+':cards','delivered_cards',len(result.get('results',[])))
     def deliver(request,method,path,data):
@@ -123,6 +157,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         with getattr(store,'delivery_read_lock',store.delivery_lock)():
             store,ctx=authenticate(request)
             if method=='GET' and path=='/enterprise/v1/status':return store.status(ctx)
+            if method=='GET' and path=='/enterprise/v3/service-status':
+                # Build identity is operator detail; unauthenticated /health is liveness only.
+                if not {'audit','settings'}&set(ctx['actions']):raise Denied()
+                return {'service':'Vaelius','models':'idle','build_ids':build_ids}
             if method=='GET' and path=='/enterprise/v3/auth/credential':return store.credential_status(ctx)
             if method=='GET' and path=='/enterprise/v1/processing-status':return store.processing_status(ctx)
             if method=='GET' and path.startswith('/enterprise/v1/documents/'):return store.detail(ctx,path.rsplit('/',1)[1])
@@ -212,7 +250,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         path=request.scope['path']
         if request.scope.get('query_string'):return JSONResponse({'error':'unsupported_query'},status_code=400)
         try:
-            if path=='/health':return JSONResponse({'service':'Vaelius','models':'idle',**({'build_ids':build_ids} if build_ids else {})})
+            if path=='/health':return JSONResponse({'service':'Vaelius','models':'idle'})
             if path.startswith('/.well-known/oauth-protected-resource') and hasattr(registry,'protected_metadata'):
                 prefix='/.well-known/oauth-protected-resource'
                 suffix=path.removeprefix(prefix)
@@ -268,7 +306,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 # section 6); a Bearer access token is neither required nor used.
                 if set(data)!={'refresh_token','replacement_access_token','replacement_refresh_token'}:
                     raise ValueError('invalid_credential_renewal')
-                request_id=request.headers.get('x-request-id') or uuid.uuid4().hex
+                request_id=uuid.uuid4().hex
                 def renew():
                     store=registry.store_for_token(data['refresh_token'])
                     return store.refresh_credential(data['refresh_token'],
@@ -282,7 +320,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 header=request.headers.get('authorization','')
                 token=data.get('token',header[7:] if header.startswith('Bearer ') else None)
                 if not isinstance(token,str) or not token:raise ValueError('invalid_revocation_request')
-                request_id=request.headers.get('x-request-id') or uuid.uuid4().hex
+                request_id=uuid.uuid4().hex
                 def revoke():
                     try:store=registry.store_for_token(token)
                     except Denied:return {'revoked':True}
@@ -357,4 +395,5 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
     app=Starlette(routes=[Route('/mcp',mcp,methods=['GET','POST','DELETE']),
         Route('/{path:path}',timed_dispatch,methods=['GET','POST','PUT','DELETE','PATCH'])],lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware,allowed_hosts=list(allowed_hosts))
+    app.add_middleware(SecureTransport,https_only=https_only)
     return app

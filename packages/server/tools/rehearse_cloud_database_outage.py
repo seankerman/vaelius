@@ -34,7 +34,7 @@ def main():
         try:
             with opener.open(req,timeout=10) as response:return response.status,json.load(response)
         except urllib.error.HTTPError as error:return error.code,json.load(error)
-    health=request('/health')
+    health=request('/enterprise/v3/service-status',(profile/'credentials/acme-settings-admin.token').read_text().strip())
     if health[0]!=200 or health[1].get('build_ids')!=build_identity()['build_ids']:
         raise ValueError('matching_installed_api_required')
     stores={t:registry.resolve(t) for t in ('acme','bravo')}

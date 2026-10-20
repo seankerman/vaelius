@@ -35,7 +35,7 @@ def main():
             with opener.open(request,timeout=20) as response:return response.status,response.read(1024*1024+1)
         except urllib.error.HTTPError as error:return error.code,error.read(65537)
     current='http://127.0.0.1:'+str(settings.get('api_port',55486));previous='http://127.0.0.1:'+str(args.port)
-    status,raw=read(current,'/health')
+    status,raw=read(current,'/enterprise/v3/service-status',(profile/'credentials/acme-settings-admin.token').read_text().strip())
     if status!=200 or json.loads(raw).get('build_ids')!=build_identity()['build_ids']:raise ValueError('matching_current_api_required')
     # Refuse to replace an existing service at this port.
     import socket

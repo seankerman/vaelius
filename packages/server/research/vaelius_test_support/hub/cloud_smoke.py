@@ -20,7 +20,9 @@ def verify(profile):
     expected_build=build_identity()['build_ids']
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));process=None
     try:
-        with opener.open(url+'/health',timeout=1) as response:
+        request=urllib.request.Request(url+'/enterprise/v3/service-status',
+            headers={'Authorization':'Bearer '+(profile/'credentials/acme-settings-admin.token').read_text().strip()})
+        with opener.open(request,timeout=1) as response:
             if json.load(response).get('build_ids')!=expected_build:raise ValueError('installed_api_build_mismatch')
     except (OSError,urllib.error.URLError):
         env=dict(os.environ);env.pop('PYTHONPATH',None)

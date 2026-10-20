@@ -21,9 +21,13 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 AWS_EC2_METADATA_DISABLED=true 
 WORKDIR /tmp
 USER 10001:10001
 EXPOSE 8080
+# Plain HTTP for a TLS-terminating proxy or loopback only. A production profile must
+# declare deployment.tls (proxy or direct) or the API refuses to start; see
+# docs/SELF_HOSTING.md "HTTPS and production transport".
 # Liveness only: GET /health needs no database or credentials. Uses the image's
 # Python (no shell or curl) and http.client, which ignores proxy variables. Assumes
-# the default --port 8080; override or disable it if you change the port.
+# the default --port 8080, plain HTTP and 127.0.0.1 in allowed_hosts; override or
+# disable it if you change the port, use deployment.tls "direct", or omit that host.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import http.client,sys;c=http.client.HTTPConnection('127.0.0.1',8080,timeout=4);c.request('GET','/health');sys.exit(c.getresponse().status!=200)"]
 CMD ["python", "-m", "agenthub.cloud_runtime", "--profile", "/profile", "--bind", "0.0.0.0", "--port", "8080"]

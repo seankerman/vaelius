@@ -36,10 +36,13 @@ def _save(path,value):
     temporary.chmod(0o600);temporary.replace(path)
 
 
-def _matching_api_build(url,expected):
+def _matching_api_build(url,expected,profile):
     import urllib.request
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(url+'/health',timeout=5) as response:
+    # Build identity is authenticated operator detail (audit/settings), not /health.
+    token=(Path(profile)/'credentials/acme-settings-admin.token').read_text().strip()
+    request=urllib.request.Request(url+'/enterprise/v3/service-status',headers={'Authorization':'Bearer '+token})
+    with opener.open(request,timeout=5) as response:
         raw=response.read(65537)
     if len(raw)>65536:raise ValueError('installed_api_health_bound')
     health=json.loads(raw)
@@ -255,7 +258,7 @@ def retry_receiver(profile,failed_report,report_path,*,live=False,config_path=No
         if base.get('accounting_home')!=str(accounting) or base.get('observer',{}).get('model')!=MODEL:
             raise ValueError('original_authorized_configuration_required')
     settings=read_settings(profile/'runtime.json');runtime=build_identity()
-    url='http://127.0.0.1:'+str(settings.get('api_port',55486));api_ids=_matching_api_build(url,runtime['build_ids'])
+    url='http://127.0.0.1:'+str(settings.get('api_port',55486));api_ids=_matching_api_build(url,runtime['build_ids'],profile)
     registry=registry_from_settings(settings,profile/'server-state');store=registry.resolve('acme')
     alice=store.authenticate((profile/'credentials/acme-alice.token').read_text().strip())
     bob=store.authenticate((profile/'credentials/acme-bob.token').read_text().strip())
@@ -374,7 +377,7 @@ def verify(profile,report_path,*,live=False,config_path=None,ledger_path=None,ma
         if base.get('observer',{}).get('model')!=MODEL:raise ValueError('authorized_luna_model_required')
     runtime=build_identity()
     url='http://127.0.0.1:'+str(settings.get('api_port',55486))
-    api_build_ids=_matching_api_build(url,runtime['build_ids'])
+    api_build_ids=_matching_api_build(url,runtime['build_ids'],profile)
     run='cloud-live-'+uuid.uuid4().hex[:12];work=profile/'live-runs'/run;work.mkdir(parents=True,mode=0o700)
     registry=registry_from_settings(settings,profile/'server-state');store=registry.resolve('acme')
     alice=store.authenticate((profile/'credentials/acme-alice.token').read_text().strip())

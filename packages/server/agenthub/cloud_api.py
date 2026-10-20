@@ -234,6 +234,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         if method=='POST' and path=='/enterprise/v1/reviewed-notes':return store.accept_reviewed_note(ctx,data['source_id'],data['title'],data['lesson'])
         if method=='POST' and path=='/enterprise/v2/release':
             return store.reviewed_release(ctx,data['document_id'],data['expected_revision'],data['project'],data['readers'],data['key'])
+        if path.startswith('/enterprise/v3/access-review/'):
+            # Tenant access review; takes the exclusive policy lock for decisions.
+            from agenthub.access_review import route
+            return route(store,ctx,method,path,data)
         raise FileNotFoundError()
     async def bounded_body(request,limit):
         body=bytearray()

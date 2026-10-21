@@ -53,13 +53,15 @@ class PostgresWorkerTests(PostgresFixture, canonical_worker_tests.WorkerTests):
         self.assertTrue(all("error" not in result for result in results), results)
         self.assertEqual(len([result for result in results if result["job"]]), 1, results)
 
-    def test_claim_rechecks_jobs_committed_by_a_concurrent_claimer(self):
-        """A claimer whose read predates another worker's committed claim claims nothing.
+    def _interleave_after_parked_observer_read(self, parked_action, interleaved_action):
+        """Run parked_action on its own connection, parked mid-transaction.
 
         Under READ COMMITTED a statement's snapshot is taken before it locks rows.
-        A test-only restrictive row policy parks the second claimer inside its
-        candidate scan (after its snapshot, before its row lock) until the first
-        claim commits, so the interleaving that flaked in CI happens every run.
+        A test-only restrictive row policy on backend_observers blocks only the
+        parked connection, on an advisory lock, the first time it reads an
+        observer row: after that statement's snapshot, before its row lock. The
+        interleaved action then runs and commits, and the gate opens. This makes
+        the interleaving that real workers hit only occasionally happen every run.
         """
         import hashlib
         import threading
@@ -67,15 +69,10 @@ class PostgresWorkerTests(PostgresFixture, canonical_worker_tests.WorkerTests):
         from psycopg.conninfo import make_conninfo
         from agenthub.backend_worker import Worker
         from agenthub.postgres import connect
-        Worker(self.store, self.config, live=False).prepare()
         gate = int.from_bytes(hashlib.sha256(self.schema.encode()).digest()[:8], "big", signed=True)
-        parked_name = "parked-claimer-" + self.schema[-12:]
+        parked_name = "parked-worker-" + self.schema[-12:]
         with connect(self.admin_dsn) as admin:
-            self.assertEqual(admin.execute("SELECT count(*) FROM backend_jobs").fetchone()[0], 1)
-            # A later job on the same observer must stay unclaimable while the first runs.
-            admin.execute("""INSERT INTO backend_jobs(id,episode_job,observer_id,source_hash,created,updated)
-                SELECT id||'-later',episode_job,observer_id,source_hash,created+1,updated FROM backend_jobs""")
-            admin.execute("""CREATE FUNCTION claim_gate() RETURNS boolean LANGUAGE plpgsql AS $$
+            admin.execute("""CREATE FUNCTION observer_gate() RETURNS boolean LANGUAGE plpgsql AS $$
                 BEGIN
                   IF current_setting('application_name')='""" + parked_name + """' THEN
                     PERFORM pg_advisory_xact_lock_shared(""" + str(gate) + """);
@@ -83,43 +80,85 @@ class PostgresWorkerTests(PostgresFixture, canonical_worker_tests.WorkerTests):
                   RETURN true;
                 END $$""")
             admin.execute("ALTER TABLE backend_observers ENABLE ROW LEVEL SECURITY")
-            admin.execute("CREATE POLICY claim_visible ON backend_observers USING (true)")
-            admin.execute("CREATE POLICY claim_parked ON backend_observers AS RESTRICTIVE USING (claim_gate())")
+            admin.execute("CREATE POLICY observer_visible ON backend_observers USING (true)")
+            admin.execute("CREATE POLICY observer_parked ON backend_observers AS RESTRICTIVE USING (observer_gate())")
         parked_store = PostgresEnterpriseStore(self.store.home,
             make_conninfo(self.dsn, application_name=parked_name), "orchard")
         parked_store.curation_enabled = True
         parked = Worker(parked_store, self.config, live=False)
-        # Construct both workers up front: the parked claimer's lock_timeout
-        # should only have to cover the other worker's single claim.
-        claimer = Worker(self.store, self.config, live=False)
+        # Construct both workers up front: the parked connection's lock_timeout
+        # should only have to cover the interleaved action itself.
+        other = Worker(self.store, self.config, live=False)
         outcome = {}
-        def claim_parked():
+        def run_parked():
             try:
-                outcome["claim"] = parked.claim(lease_seconds=30)
+                outcome["result"] = parked_action(parked)
             except Exception as exc:
-                outcome["error"] = repr(exc)
+                outcome["error"] = exc
         with connect(self.admin_dsn, autocommit=True) as holder:
             holder.execute("SELECT pg_advisory_lock(%s)", (gate,))
             try:
-                thread = threading.Thread(target=claim_parked)
+                thread = threading.Thread(target=run_parked)
                 thread.start()
                 deadline = time.monotonic() + 4
                 while not holder.execute("""SELECT 1 FROM pg_stat_activity WHERE application_name=%s
                         AND wait_event_type='Lock' AND wait_event='advisory'""", (parked_name,)).fetchone():
                     self.assertLess(time.monotonic(), deadline, outcome)
                     time.sleep(0.02)
-                first = claimer.claim(lease_seconds=30)
-                self.assertIsNotNone(first)
+                interleaved = interleaved_action(other)
             finally:
                 holder.execute("SELECT pg_advisory_unlock(%s)", (gate,))
             thread.join(timeout=20)
         self.assertFalse(thread.is_alive())
-        self.assertNotIn("error", outcome, outcome)
-        self.assertIsNone(outcome["claim"], outcome)
+        return interleaved, outcome
+
+    def _running_jobs(self):
         with self.store.open() as state:
-            running = [(row["id"], row["fence"]) for row in
+            return [(row["id"], row["fence"]) for row in
                 state.db.execute("SELECT id,fence FROM backend_jobs WHERE status='running'")]
-        self.assertEqual(running, [(first["id"], first["fence"])])
+
+    def test_claim_rechecks_jobs_committed_by_a_concurrent_claimer(self):
+        """A claimer whose read predates another worker's committed claim claims nothing."""
+        from agenthub.backend_worker import Worker
+        from agenthub.postgres import connect
+        Worker(self.store, self.config, live=False).prepare()
+        with connect(self.admin_dsn) as admin:
+            self.assertEqual(admin.execute("SELECT count(*) FROM backend_jobs").fetchone()[0], 1)
+            # A later job on the same observer must stay unclaimable while the first runs.
+            admin.execute("""INSERT INTO backend_jobs(id,episode_job,observer_id,source_hash,created,updated)
+                SELECT id||'-later',episode_job,observer_id,source_hash,created+1,updated FROM backend_jobs""")
+        first, outcome = self._interleave_after_parked_observer_read(
+            lambda parked: parked.claim(lease_seconds=30),
+            lambda other: other.claim(lease_seconds=30))
+        self.assertIsNotNone(first)
+        self.assertNotIn("error", outcome, outcome)
+        self.assertIsNone(outcome["result"], outcome)
+        self.assertEqual(self._running_jobs(), [(first["id"], first["fence"])])
+
+    def test_recover_rechecks_a_job_claimed_after_its_first_read(self):
+        """Recovery whose read predates a committed re-claim must not reset the live job.
+
+        The parked recovery reads the job while its lease is expired, then a
+        worker re-claims that job and commits. Recovery must see the new lease
+        once it holds the observer lock, and leave the claimant's job running.
+        """
+        from agenthub.backend_worker import Worker
+        from agenthub.postgres import connect
+        Worker(self.store, self.config, live=False).prepare()
+        abandoned = Worker(self.store, self.config, live=False).claim(lease_seconds=30)
+        self.assertIsNotNone(abandoned)
+        with connect(self.admin_dsn) as admin:
+            # The first claimant stopped without completing; its lease has expired.
+            admin.execute("UPDATE backend_jobs SET lease_until=1 WHERE id=%s", (abandoned["id"],))
+        reclaimed, outcome = self._interleave_after_parked_observer_read(
+            lambda parked: parked.recover(abandoned["id"]),
+            lambda other: other.claim(lease_seconds=30))
+        self.assertEqual(reclaimed["id"], abandoned["id"])
+        self.assertNotEqual(reclaimed["fence"], abandoned["fence"])
+        self.assertNotIn("result", outcome, outcome)
+        self.assertIsInstance(outcome.get("error"), ValueError, outcome)
+        self.assertEqual(str(outcome["error"]), "worker_still_leased")
+        self.assertEqual(self._running_jobs(), [(reclaimed["id"], reclaimed["fence"])])
 
     def test_partial_capture_fact_delivery_warns_and_source_withdrawal_denies(self):
         from agenthub.cloud_runtime import CloudStore

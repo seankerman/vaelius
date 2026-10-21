@@ -17,12 +17,20 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      packages: read # base images mirrored by base-images.yml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build clean runtime image
-        run: docker build -t vaelius:ci .
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the pinned base image from the GHCR mirror when it exists.
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          contexts=$(python3 scripts/base_images.py contexts "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vaelius-base" Dockerfile)
+          docker build $contexts -t vaelius:ci .
+          docker logout ghcr.io
       - name: Verify installed package boundary
         run: |
           docker run --rm vaelius:ci python -c 'import os,agentclient,agenthub; from agenthub.pipeline_pin import verify; verify(); assert os.getuid()!=0; assert not os.path.exists("/Users"); print("Installed non-root image contract verified")'

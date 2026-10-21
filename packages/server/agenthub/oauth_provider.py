@@ -111,11 +111,20 @@ class OAuthRegistry(TenantRegistry):
         return self.aws_sts.exchange(self,data,request_id)
 
     def protected_metadata(self,tenant=None):
-        providers=[p for p in self.providers if tenant is None or p.tenant==tenant]
-        if not providers:raise FileNotFoundError()
+        """RFC 9728 resource metadata, identical for every caller and tenant path.
+
+        Unauthenticated discovery never maps a tenant name to its issuer, so it
+        cannot be used to learn which tenants exist (`tenant` is accepted for
+        compatibility and ignored). Each issuer's own scopes are listed under
+        `vaelius_authorization_servers`; a client picks its issuer from its
+        enrollment details, or uses the only one advertised.
+        """
+        providers=self.providers
         return {'resource':self.resource,'authorization_servers':[p.issuer for p in providers],
                 'scopes_supported':['vaelius:'+a for a in sorted(set().union(*(p.actions for p in providers)))],
-                'bearer_methods_supported':['header']}
+                'bearer_methods_supported':['header'],
+                'vaelius_authorization_servers':[{'issuer':p.issuer,
+                    'scopes_supported':['vaelius:'+a for a in sorted(p.actions)]} for p in providers]}
 
     def authenticate_token(self,token,request_id=None):
         # Explicit operator/service and unmigrated access credentials keep the

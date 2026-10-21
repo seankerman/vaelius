@@ -97,7 +97,7 @@ class SlackPostgresTests(unittest.TestCase):
         self.alice='alice-'+suffix;self.bob='bob-'+suffix
         for principal in (self.alice,self.bob):
             self.store.create_principal(self.tenant,principal);self.store.set_membership(self.tenant,self.project,principal,True)
-        token=self.store.enroll(self.tenant,self.alice,'slack-'+suffix,['ingest','read','source_read','policy','withdraw','correct'])
+        token=self.store.enroll(self.tenant,self.alice,'slack-'+suffix,['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
         self.ctx=self.store.authenticate(token);self.ident='fixture-'+suffix
         self.server=SlackServer();self.http=SlackHTTP('synthetic-token',endpoint=self.server.endpoint)
         self.connector=SlackConnector(self.store,self.http)

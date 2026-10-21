@@ -45,7 +45,7 @@ class TeamPolicyTests(PostgresFixture, unittest.TestCase):
         self.other.create_project('bravo', 'maple')
         self.other.set_membership('bravo', 'maple', 'alice', True)
         self.other_token = self.other.enroll('bravo', 'alice', 'same-name',
-            ['ingest', 'read', 'source_read', 'correct', 'withdraw'])
+            ['ingest', 'read', 'source_read', 'feedback', 'curate', 'correct', 'withdraw'])
 
     def tearDown(self):
         from psycopg import sql

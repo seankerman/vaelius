@@ -26,6 +26,20 @@ def _digest(value):
     return hashlib.sha256(value if isinstance(value,bytes) else value.encode()).hexdigest()
 
 
+# 'feedback' and 'curate' are enforced on their own. Before that, 'read' was enough
+# to report outcome feedback and 'correct' to submit curation. Grants that existed
+# before the change carry legacy_actions=1 (migration 043) and keep those abilities;
+# new grants state them explicitly. Stored action lists are not rewritten.
+LEGACY_IMPLIED_ACTIONS=(('read','feedback'),('correct','curate'))
+
+
+def effective_actions(actions, legacy=False):
+    """Actions a stored grant allows; legacy grants also allow their implied actions."""
+    granted=set(json.loads(actions) if isinstance(actions,str) else actions)
+    if legacy:granted|={implied for source,implied in LEGACY_IMPLIED_ACTIONS if source in granted}
+    return granted
+
+
 def _scope(tenant, project, visibility, owner):
     return "enterprise:" + _digest(json.dumps([tenant, project if visibility != "organization" else "*",
         visibility, owner if visibility == "private" else "*"], separators=(",", ":")))
@@ -102,13 +116,13 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
                 grant=state.db.execute('''SELECT * FROM enterprise_delegations
                     WHERE tenant=? AND principal=? AND acting_for=? AND active=1''',
                     (tenant,principal,acting_for)).fetchone()
-                if not grant or not set(actions)<=set(json.loads(grant['actions'])):raise Denied()
+                if not grant or not set(actions)<=effective_actions(grant['actions'],grant['legacy_actions']):raise Denied()
             state.db.execute("INSERT INTO enterprise_credentials VALUES(?,?,?,?,?,?,1,?)",
                 (_digest(token),tenant,principal,acting_for,enrollment,json.dumps(sorted(set(actions))),time.time()))
         return token
 
     def set_delegation(self, tenant, principal, acting_for, actions, projects, active):
-        allowed={'ingest','read','source_read','feedback','correct','withdraw','policy'}
+        allowed={'ingest','read','source_read','feedback','curate','correct','withdraw','policy'}
         if (principal==acting_for or not actions or set(actions)-allowed or
                 not projects or any(not isinstance(p,str) or not p for p in projects)):
             raise ValueError('invalid_delegation')
@@ -120,7 +134,7 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
                 (tenant,principal,acting_for,actions,projects,active) VALUES(?,?,?,?,?,?)
                 ON CONFLICT(tenant,principal,acting_for) DO UPDATE SET
                 actions=excluded.actions,projects=excluded.projects,active=excluded.active,
-                policy_version=enterprise_delegations.policy_version+1''',
+                legacy_actions=0,policy_version=enterprise_delegations.policy_version+1''',
                 (tenant,principal,acting_for,json.dumps(sorted(set(actions))),
                  json.dumps(sorted(set(projects))),int(bool(active))))
             state.db.execute('''INSERT INTO enterprise_audit
@@ -150,13 +164,13 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
             if not row or not row["active"] or not row["principal_active"] or (row["acting_for"] and not row["actor_active"]):
                 raise Denied()
             delegated_projects=None
-            actions=set(json.loads(row['actions']))
+            actions=effective_actions(row['actions'],row['legacy_actions'])
             if row['acting_for']:
                 grant=state.db.execute('''SELECT * FROM enterprise_delegations
                     WHERE tenant=? AND principal=? AND acting_for=? AND active=1''',
                     (row['tenant'],row['principal'],row['acting_for'])).fetchone()
                 if not grant:raise Denied()
-                actions &= set(json.loads(grant['actions']))
+                actions &= effective_actions(grant['actions'],grant['legacy_actions'])
                 delegated_projects=set(json.loads(grant['projects']))
             return {"tenant":row["tenant"],"principal":row["principal"],
                 "actor":row["acting_for"] or row["principal"],"acting_for":row["acting_for"],
@@ -275,7 +289,9 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
             separators=(',',':')))
 
     def boundary(self, ctx, value):
-        self._need(ctx,'read');validate_boundary(value)
+        # A compaction boundary is a capture event that moves this receiver's
+        # delivery epoch, so it needs the capture (ingest) action, not just read.
+        self._need(ctx,'ingest');validate_boundary(value)
         from agenthub.processing.context_delivery import initialize, record_postcompact_boundary, current_epoch
         event=dict(value['event'])
         event['session_id']=self._receiver(ctx,event['session_id'])
@@ -287,7 +303,9 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
             return {'applied':applied,'epoch':epoch}
 
     def receipt(self, ctx, value):
-        self._need(ctx,'read');validate_receipt(value)
+        # Recording what was offered writes the receiver's delivery ledger (capture);
+        # every card must also still be readable.
+        self._need(ctx,'ingest');self._need(ctx,'read');validate_receipt(value)
         from agenthub.processing.context_delivery import current_epoch
         receiver=self._receiver(ctx,value['session'])
         with self.open() as state, state.db:
@@ -430,7 +448,7 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
 
     def accept_reviewed_note(self, ctx, source_id, title, lesson):
         """Explicit owner review for a source-backed note; never raw auto-indexing."""
-        self._need(ctx,'correct')
+        self._need(ctx,'curate')
         if (not isinstance(title,str) or not 1<=len(title)<=180 or
             not isinstance(lesson,str) or not 20<=len(lesson)<=1200 or
             SECRET.search(title+' '+lesson)):
@@ -753,6 +771,9 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         return 'held' if held else 'deleted'
 
     def status(self, ctx):
+        # Contract and schema versions are service detail for readers, not for every
+        # credential (credential self-inspection is /enterprise/v3/auth/credential).
+        self._need(ctx,'read')
         with self.open() as state:
             db=state.db
             return {"service":"AgentHub enterprise-local","version":VERSION,

@@ -14,7 +14,7 @@ class BackendRetrievalTests(unittest.TestCase):
         for name in ('alice','bob'):self.store.create_principal('orchard',name)
         self.store.create_project('orchard','maple')
         for name in ('alice','bob'):self.store.set_membership('orchard','maple',name,True)
-        self.tokens={name:self.store.enroll('orchard',name,name,['ingest','read','source_read','correct','policy','withdraw']) for name in ('alice','bob')}
+        self.tokens={name:self.store.enroll('orchard',name,name,['ingest','read','source_read','feedback','curate','correct','policy','withdraw']) for name in ('alice','bob')}
         self.alice=self.store.authenticate(self.tokens['alice']);self.bob=self.store.authenticate(self.tokens['bob'])
 
     def tearDown(self):self.tmp.cleanup()

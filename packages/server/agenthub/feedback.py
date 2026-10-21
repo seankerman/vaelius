@@ -12,7 +12,8 @@ def record_feedback(store,ctx,value):
     for key in ('id','revision','request_key'):
         if not isinstance(value[key],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',value[key]):raise ValueError('feedback_identifier')
     if value['outcome'] not in {'helpful','unhelpful','incorrect','not_used'}:raise ValueError('feedback_outcome')
-    store._need(ctx,'read')
+    # Reporting an outcome is its own grant; the document must also be readable.
+    store._need(ctx,'feedback');store._need(ctx,'read')
     with store.delivery_lock(),store.open() as state,state.db:
         db=state.db
         # Canonical indexed permission checks also revalidate the current identity.

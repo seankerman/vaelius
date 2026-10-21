@@ -52,7 +52,7 @@ class PostgresFixture:
         for principal in ("alice", "bob"):
             self.store.set_membership("acme", "maple", principal, True)
         self.tokens = {name: self.store.enroll("acme", name, name,
-            ["read", "settings"] if name == "admin" else ["ingest", "read", "source_read", "correct", "withdraw", "policy"])
+            ["read", "settings"] if name == "admin" else ["ingest", "read", "source_read", "feedback", "curate", "correct", "withdraw", "policy"])
             for name in ("alice", "bob", "admin")}
         self.ctx = self.store.authenticate(self.tokens["alice"])
 

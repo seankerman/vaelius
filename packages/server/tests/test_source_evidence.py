@@ -17,7 +17,7 @@ class SourceEvidenceTests(unittest.TestCase):
             self.store.create_principal('orchard',name)
             self.store.set_membership('orchard','maple',name,True)
         self.alice=self.store.authenticate(self.store.enroll('orchard','alice','owner',
-            ['ingest','read','source_read','correct','policy','withdraw']))
+            ['ingest','read','source_read','feedback','curate','correct','policy','withdraw']))
         self.bob=self.store.authenticate(self.store.enroll('orchard','bob','reader',['read','source_read']))
         self.readonly=self.store.authenticate(self.store.enroll('orchard','alice','read-only',['read']))
         self.body=('Unrelated historical setup. '*40)+'\nAlice saved Copper in /fixtures/copper.csv because the importer requires CSV.\n'

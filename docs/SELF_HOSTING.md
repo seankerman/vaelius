@@ -90,13 +90,30 @@ profile is development: plain HTTP with a warning when bound beyond loopback.
 
 `/health` is unauthenticated liveness only. Build identity is available at
 `GET /enterprise/v3/service-status` to credentials holding the `audit` or
-`settings` action. The MCP endpoint applies the MCP SDK's DNS-rebinding protection
+`settings` action.
+
+`/ready` answers `{"ready": true|false, "provider_dispatch": "off"}` (`200` or `503`)
+and never names a tenant. One readiness sweep (the control database, then each
+active tenant up to `max_stores`) runs at most every 10 seconds; probes in between,
+or while a sweep is running, get the last result. A probe therefore cannot make the
+service open every tenant store per request, and readiness can lag a change by up to
+10 seconds. Set probe periods to 10 seconds or more.
+
+Unauthenticated routes are `/health`, `/ready`, OAuth discovery and the credential
+exchanges under `/enterprise/v3/auth/` (`begin`, `complete`, `renew`, `revoke`,
+`aws-sts`). None of them reveals whether a tenant exists or a token is valid (see
+[enterprise authorization](ENTERPRISE_AUTH.md#actions-and-route-authorization)); rate-limit
+them at the proxy. Every other route requires a credential and a matching action. The MCP endpoint applies the MCP SDK's DNS-rebinding protection
 to the same `allowed_hosts`/`allowed_origins`, in addition to the API host check.
 
 ## Recovery and upgrades
 
 Keep database/profile/object backups together with their revision provenance.
-Use additive migrations and the matching client/server release. Stop old workers
+Use additive migrations and the matching client/server release. Run tenant and
+control-plane migrations, then reapply application-role grants, before starting a
+new release. For example, `043_action_grants.sql` keeps existing credentials'
+feedback and curation abilities, and `044_control_login_requests.sql` adds a control
+table the control role must be able to insert into and delete from. Stop old workers
 before changing provider identities or processing configuration; reconstruct
 authorized observer context when checkpoints cannot be resumed.
 

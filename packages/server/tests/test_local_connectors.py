@@ -15,7 +15,7 @@ class ConnectorTests(unittest.TestCase):
         for name in ('alice','bob'):self.store.create_principal('orchard',name)
         self.store.create_project('orchard','maple')
         for name in ('alice','bob'):self.store.set_membership('orchard','maple',name,True)
-        self.tokens={name:self.store.enroll('orchard',name,name,['ingest','read','source_read','policy','withdraw','correct']) for name in ('alice','bob')}
+        self.tokens={name:self.store.enroll('orchard',name,name,['ingest','read','source_read','policy','withdraw','feedback','curate','correct']) for name in ('alice','bob')}
         self.ctx=self.store.authenticate(self.tokens['alice']);self.connector=Connector(self.store)
 
     def tearDown(self):self.tmp.cleanup()

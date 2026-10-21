@@ -174,7 +174,7 @@ class FixedProjectionPostgresTests(unittest.TestCase):
                 ctx = {}
                 for actor in ('ada', 'ben', 'alex-42'):
                     token = store.enroll('synthetic-lab', actor, 'all-' + actor,
-                        ['ingest', 'read', 'source_read', 'correct', 'policy'])
+                        ['ingest', 'read', 'source_read', 'feedback', 'curate', 'correct', 'policy'])
                     ctx[actor] = store.authenticate(token)
                 connections = {}
                 for source in sources:
@@ -249,7 +249,7 @@ class FixedProjectionPostgresTests(unittest.TestCase):
                 ctx = {}
                 for actor in ('ada', 'ben'):
                     token = store.enroll('synthetic-lab', actor, 'toy-' + actor,
-                        ['ingest', 'read', 'source_read', 'correct', 'policy'])
+                        ['ingest', 'read', 'source_read', 'feedback', 'curate', 'correct', 'policy'])
                     ctx[actor] = store.authenticate(token)
                 actual = {row['id']: runner._source_record(store, ctx, None, {}, row)
                           for row in sources}

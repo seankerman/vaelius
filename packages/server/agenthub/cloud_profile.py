@@ -55,6 +55,8 @@ def _grant(admin_dsn,role,*,control=False):
             db.execute(sql.SQL('GRANT INSERT ON cloud_credential_routes TO {}').format(sql.Identifier(role)))
             # AWS sign-in records accepted signature digests until they expire.
             db.execute(sql.SQL('GRANT INSERT,DELETE ON cloud_aws_sts_replay TO {}').format(sql.Identifier(role)))
+            # Pending interactive logins: begin inserts, completion/expiry deletes.
+            db.execute(sql.SQL('GRANT INSERT,DELETE ON cloud_login_requests TO {}').format(sql.Identifier(role)))
         else:
             schema=db.execute('SELECT current_schema()').fetchone()[0]
             db.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(role)))
@@ -88,7 +90,7 @@ def _seed_identity(store,tenant,profile):
         if path.exists():
             if path.stat().st_mode&0o077:raise ValueError('profile_token_permissions')
             continue
-        actions=['read','settings','audit'] if principal=='settings-admin' else ['ingest','read','source_read','correct','withdraw','policy','feedback']
+        actions=['read','settings','audit'] if principal=='settings-admin' else ['ingest','read','source_read','feedback','curate','correct','withdraw','policy']
         token=store.enroll(tenant,principal,'local-'+principal,actions,expires_in=86400)
         fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as output:output.write(token+'\n')

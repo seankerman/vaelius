@@ -4,7 +4,10 @@ Default listener/proxy configuration is explicit. Startup is provider-free; erro
 and access logs contain no source body. Authenticate again at delivery checkpoint.
 """
 import json
+import re
 import tempfile
+import threading
+import time
 import uuid
 from contextlib import ExitStack
 
@@ -53,6 +56,99 @@ class SecureTransport:
 
 class AuthenticationRequired(Denied):pass
 
+
+# Action gate for every authenticated operation, checked right after
+# authentication and before the business method runs. Business methods keep their
+# finer rules (ownership, visibility, the administrator flag); this table makes
+# sure no operation is reachable with an unrelated action, and an operation that
+# is missing from it is refused (404), so each new route has to be classified.
+# A rule lists alternatives; a credential needs every action of one of them.
+ANY_CREDENTIAL=((),)
+READ=(('read',),)
+ROUTE_ACTIONS={
+    ('GET','/enterprise/v1/status'):READ,
+    ('GET','/enterprise/v3/service-status'):(('audit',),('settings',)),
+    ('GET','/enterprise/v3/auth/credential'):ANY_CREDENTIAL,
+    ('GET','/enterprise/v1/processing-status'):(('audit',),),
+    ('POST','/enterprise/v1/search'):READ,
+    ('POST','/enterprise/v3/search'):READ,
+    ('POST','/enterprise/v3/document-evidence'):READ,
+    ('POST','/enterprise/v3/document-context'):READ,
+    ('POST','/enterprise/v3/temporal-detail'):READ,
+    ('POST','/enterprise/v3/timeline'):READ,
+    ('POST','/enterprise/v3/project-history'):READ,
+    ('POST','/enterprise/v3/project-episode'):READ,
+    ('POST','/enterprise/v3/source-documents/describe'):READ,
+    ('POST','/enterprise/v3/source-documents/list'):READ,
+    ('POST','/enterprise/v3/source-documents/download'):READ,
+    ('POST','/enterprise/v3/source-documents/upload'):(('ingest',),),
+    ('POST','/enterprise/v3/capture-notice'):ANY_CREDENTIAL,
+    ('POST','/enterprise/v3/preferences'):READ,
+    ('POST','/enterprise/v3/preferences/curate'):(('curate',),),
+    ('POST','/enterprise/v3/preferences/withdraw'):(('withdraw',),),
+    ('POST','/enterprise/v3/auth/rotate'):ANY_CREDENTIAL,
+    ('POST','/enterprise/v3/auth/adopt'):ANY_CREDENTIAL,
+    ('POST','/enterprise/v3/directory/events'):(('settings',),),
+    ('POST','/enterprise/v2/parts'):(('ingest',),),
+    ('POST','/enterprise/v1/sources'):(('ingest',),),
+    ('POST','/enterprise/v1/boundary'):(('ingest',),),
+    ('POST','/enterprise/v3/feedback'):(('feedback','read'),),
+    ('POST','/enterprise/v1/receipts'):(('ingest','read'),),
+    ('POST','/enterprise/v1/reviewed-notes'):(('curate',),),
+    ('POST','/enterprise/v2/release'):(('policy','read'),),
+}
+# Path-parameter routes (the identifier follows the prefix).
+PREFIX_ACTIONS={
+    ('GET','/enterprise/v1/documents/'):READ,
+    ('GET','/enterprise/v1/timeline/'):READ,
+    ('GET','/enterprise/v1/sources/'):(('source_read',),),
+    ('GET','/enterprise/v2/sources/'):(('source_read',),),
+    ('GET','/enterprise/v1/explain/'):(('read',),('settings',)),
+    ('POST','/enterprise/v3/access-review/'):(('audit',),('policy',)),
+    # PATCH is gated too so a settings administrator learns it is unsupported (400).
+    **{(method,'/enterprise/v3/scim/'):(('settings',),) for method in ('GET','POST','PUT','DELETE','PATCH')},
+}
+# Lifecycle needs the action of the requested operation.
+LIFECYCLE_ACTIONS={'correct':'correct','withdraw':'withdraw','delete':'withdraw','policy':'policy'}
+# Why each ANY_CREDENTIAL route is open to every authenticated credential. Each
+# acts only on the presented credential or returns operator-wide notice text.
+SELF_SERVICE={
+    ('GET','/enterprise/v3/auth/credential'):'reports only the presented credential (tenant, principal, '
+        'enrollment, actions, expiry); every credential needs it to schedule its own renewal',
+    ('POST','/enterprise/v3/auth/rotate'):'replaces the presented access token with one that has the same '
+        'actions and no later expiry; it cannot widen access',
+    ('POST','/enterprise/v3/auth/adopt'):'binds the presented provider token to an enrollment of its own '
+        'principal; an enrollment held by another principal is a conflict',
+    ('POST','/enterprise/v3/capture-notice'):'returns the capture notice shown before capture starts; '
+        'connection reader detail is returned only for a connection the caller owns',
+}
+# Routes that carry their own credential in the body (or are a credential
+# exchange) and so run before Bearer authentication.
+CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/enterprise/v3/auth/aws-sts',
+    '/enterprise/v3/auth/renew','/enterprise/v3/auth/revoke')
+INVALID_BODY=object()
+TENANT_PATH=re.compile(r'[A-Za-z0-9_.:-]{1,128}')
+
+
+def route_rule(method,path,data=None):
+    """Required action alternatives for an authenticated route, or None if unknown."""
+    if (method,path)==('POST','/enterprise/v1/lifecycle'):
+        action=LIFECYCLE_ACTIONS.get(data.get('operation')) if isinstance(data,dict) else None
+        if action is None:raise ValueError('invalid_lifecycle_operation')
+        return ((action,),)
+    rule=ROUTE_ACTIONS.get((method,path))
+    if rule is not None:return rule
+    for (allowed,prefix),rule in PREFIX_ACTIONS.items():
+        if method==allowed and path.startswith(prefix) and len(path)>len(prefix):return rule
+    return None
+
+
+def authorize_route(ctx,method,path,data=None):
+    rule=route_rule(method,path,data)
+    if rule is None:raise FileNotFoundError()
+    actions=set(ctx['actions'])
+    if not any(set(group)<=actions for group in rule):raise Denied()
+
 # Requests that create content a different reader could later receive. Removal
 # (withdraw/delete), policy narrowing and reads are never rate limited.
 CONTENT_WRITES=('/enterprise/v1/sources','/enterprise/v2/parts','/enterprise/v1/reviewed-notes')
@@ -92,10 +188,19 @@ def pack_search_result(request,result):
     return output
 
 
+# Default actions of an interactive enrollment. 'feedback' keeps the outcome
+# reporting that 'read' used to imply. 'curate' (reviewed notes, preference
+# curation) is privileged and granted explicitly through `enrollment_actions`.
+DEFAULT_ENROLLMENT_ACTIONS=('ingest','read','feedback','correct','withdraw')
+# Unauthenticated /ready reuses one bounded evaluation for this many seconds.
+READINESS_TTL_SECONDS=10.0
+
+
 def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origins=(),
                document_factory=None,brokers=None,enrollment_actions=None,build_ids=None,timing_sink=None,
-               https_only=False):
+               https_only=False,readiness_ttl=READINESS_TTL_SECONDS):
     documents={};brokers=brokers or {}
+    readiness={'checked':None,'ready':False};readiness_lock=threading.Lock()
     def document_store(store):
         if document_factory is None:raise ValueError('original_documents_unavailable')
         if store.tenant_id not in documents:documents[store.tenant_id]=document_factory(store)
@@ -129,6 +234,9 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         with span('provenance'):return decorate(path,result,data)
     def deliver(request,method,path,data,*,mcp=False):
         store,ctx=authenticate(request)
+        # A malformed body is reported only to an authenticated caller.
+        if data is INVALID_BODY:raise ValueError('json_object_required')
+        authorize_route(ctx,method,path,data)
         with span('ready'):store.require_ready()
         if method=='POST' and limits_apply(path,data):
             check_write_limit(store,ctx,len(json.dumps(data,ensure_ascii=False).encode()))
@@ -264,6 +372,29 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             from agenthub.access_review import route
             return route(store,ctx,method,path,data)
         raise FileNotFoundError()
+    def evaluate_readiness():
+        if not hasattr(registry,'open_control'):return
+        with registry.open_control() as db:
+            tenants=[r[0] for r in db.execute('SELECT id FROM cloud_tenants WHERE active=1 ORDER BY id LIMIT ?', (registry.max_stores+1,))]
+        if len(tenants)>registry.max_stores:raise ValueError('readiness_tenant_bound')
+        for tenant in tenants:registry.resolve(tenant).require_ready()
+    def ready():
+        """Unauthenticated readiness: at most one tenant sweep per interval.
+
+        Concurrent probes do not queue behind a running sweep; they get the last
+        result. The response carries no per-tenant detail.
+        """
+        now=time.monotonic()
+        if readiness['checked'] is not None and now-readiness['checked']<readiness_ttl:return readiness['ready']
+        if not readiness_lock.acquire(blocking=False):return readiness['ready']
+        try:
+            if readiness['checked'] is not None and time.monotonic()-readiness['checked']<readiness_ttl:
+                return readiness['ready']
+            try:evaluate_readiness();ok=True
+            except Exception:ok=False
+            readiness.update(checked=time.monotonic(),ready=ok)
+            return ok
+        finally:readiness_lock.release()
     async def bounded_body(request,limit):
         body=bytearray()
         async for chunk in request.stream():
@@ -284,20 +415,18 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 prefix='/.well-known/oauth-protected-resource'
                 suffix=path.removeprefix(prefix)
                 if suffix not in ('','/mcp') and not suffix.startswith('/mcp/'):raise FileNotFoundError()
-                tenant=suffix.removeprefix('/mcp/') if suffix.startswith('/mcp/') else None
-                return JSONResponse(registry.protected_metadata(tenant),headers=NO_STORE)
+                # Every well-formed tenant path gets the same resource-wide document,
+                # so this unauthenticated route does not reveal which tenants exist.
+                # Clients learn their tenant and issuer from their enrollment details.
+                if suffix.startswith('/mcp/') and not TENANT_PATH.fullmatch(suffix.removeprefix('/mcp/')):
+                    raise FileNotFoundError()
+                return JSONResponse(registry.protected_metadata(),headers=NO_STORE)
             if path=='/ready':
-                def ready():
-                    if not hasattr(registry,'open_control'):return
-                    with registry.open_control() as db:
-                        tenants=[r[0] for r in db.execute('SELECT id FROM cloud_tenants WHERE active=1 ORDER BY id LIMIT ?', (registry.max_stores+1,))]
-                    if len(tenants)>registry.max_stores:raise ValueError('readiness_tenant_bound')
-                    for tenant in tenants:registry.resolve(tenant).require_ready()
-                try:await run_in_threadpool(ready)
-                except Exception:return JSONResponse({'ready':False,'provider_dispatch':'off'},status_code=503)
-                return JSONResponse({'ready':True,'provider_dispatch':'off'})
+                ok=await run_in_threadpool(ready)
+                return JSONResponse({'ready':ok,'provider_dispatch':'off'},status_code=200 if ok else 503)
             if path=='/enterprise/v3/source-documents/upload':
                 store,ctx=await run_in_threadpool(authenticate,request)
+                authorize_route(ctx,request.method,path)
                 metadata=request.headers.get('x-document-metadata','')
                 if len(metadata.encode())>4096:raise ValueError('metadata_bound')
                 data=json.loads(metadata)
@@ -315,18 +444,26 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return JSONResponse(value)
             data=None
             if request.method=='POST':
-                raw=await bounded_body(request,JSON_LIMIT);data=json.loads(raw)
-                if not isinstance(data,dict):raise ValueError('json_object_required')
-            if path=='/enterprise/v3/auth/begin':
+                raw=await bounded_body(request,JSON_LIMIT)
+                try:
+                    data=json.loads(raw)
+                    if not isinstance(data,dict):raise ValueError('json_object_required')
+                except ValueError:
+                    # Only credential routes answer a malformed body before authentication.
+                    if path in CREDENTIAL_ROUTES:raise
+                    data=INVALID_BODY
+            if path in ('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete'):
                 if hasattr(registry,'legacy_interactive') and not registry.legacy_interactive:raise Denied()
-                store=registry.resolve(data['tenant']);broker=brokers[data['broker']]
-                return JSONResponse(await run_in_threadpool(store.begin_enrollment,broker))
-            if path=='/enterprise/v3/auth/complete':
-                if hasattr(registry,'legacy_interactive') and not registry.legacy_interactive:raise Denied()
-                store=registry.resolve(data['tenant']);broker=brokers[data['broker']]
-                issued=await run_in_threadpool(store.complete_enrollment,broker,state=data['state'],code=data['code'],
-                    callback_uri=data['callback_uri'],enrollment=data['enrollment'],
-                    actions=enrollment_actions or ['ingest','read','correct','withdraw'])
+                # Broker and field checks depend only on configuration and the request,
+                # never on the tenant; the tenant itself is consulted only through the
+                # registry's control-plane login requests (no tenant enumeration).
+                broker=brokers[data['broker']]
+                if path=='/enterprise/v3/auth/begin':
+                    return JSONResponse(await run_in_threadpool(registry.begin_login,data['tenant'],data['broker'],broker),
+                        headers=NO_STORE)
+                values={key:data[key] for key in ('state','code','callback_uri','enrollment')}
+                issued=await run_in_threadpool(lambda:registry.complete_login(data['tenant'],data['broker'],broker,
+                    **values,actions=list(enrollment_actions or DEFAULT_ENROLLMENT_ACTIONS)))
                 # `credential` keeps its meaning (the access token) for older clients.
                 return JSONResponse({'credential':issued['access_token'],
                     **{key:issued[key] for key in ('expires_at','refresh_token','refresh_expires_at','session_expires_at')}},
@@ -355,17 +492,21 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 if set(data)-{'token','token_type_hint'}:raise ValueError('invalid_revocation_request')
                 header=request.headers.get('authorization','')
                 token=data.get('token',header[7:] if header.startswith('Bearer ') else None)
-                if not isinstance(token,str) or not token:raise ValueError('invalid_revocation_request')
+                if not isinstance(token,str) or not 1<=len(token)<=16384:raise ValueError('invalid_revocation_request')
                 request_id=uuid.uuid4().hex
                 def revoke():
-                    try:store=registry.store_for_token(token)
-                    except Denied:return {'revoked':True}
-                    return store.revoke_credential_family(token,request_id=request_id)
+                    # One answer for valid, invalid, expired and already revoked tokens
+                    # (RFC 7009 section 2.2), so revocation is not a validity oracle.
+                    try:registry.store_for_token(token).revoke_credential_family(token,request_id=request_id)
+                    except (Denied,IdentityError,ValueError):pass
+                    return {'revoked':True}
                 return JSONResponse(await run_in_threadpool(revoke),headers=NO_STORE)
             if path.startswith('/enterprise/v3/scim/'):
+                store,ctx=await run_in_threadpool(authenticate,request)
+                authorize_route(ctx,request.method,path)
                 parts=path.removeprefix('/enterprise/v3/scim/').split('/')
                 if len(parts)!=2 or parts[0] not in ('Users','Groups'):raise ValueError('unsupported_scim_operation')
-                store,ctx=await run_in_threadpool(authenticate,request)
+                if data is INVALID_BODY:raise ValueError('json_object_required')
                 resource,external_id=parts
                 if request.method=='GET':
                     def read_scim():
@@ -384,6 +525,8 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return JSONResponse(value)
             if path=='/enterprise/v3/source-documents/download':
                 store,ctx=await run_in_threadpool(authenticate,request)
+                if data is INVALID_BODY:raise ValueError('json_object_required')
+                authorize_route(ctx,request.method,path)
                 source=data['source_id'];version=data.get('version');service=document_store(store)
                 file,headers=await run_in_threadpool(service.fetch,ctx,source,version=version)
                 def content():

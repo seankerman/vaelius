@@ -37,13 +37,29 @@ def request(url,data=None):
         return value
 
 
-def discover(url,tenant,client_id):
+def discover(url,tenant,client_id,issuer=None):
+    """Resolve the provider for this enrollment from the service's resource metadata.
+
+    The service publishes one resource-wide document and does not map tenant names
+    to issuers (that would reveal which tenants exist). With several issuers the
+    enrollment names its own (`issuer`, from the administrator); it must be one
+    the service advertises. The tenant itself is confirmed after sign-in.
+    """
     metadata=request(endpoint(url.rstrip('/'))+'/.well-known/oauth-protected-resource/mcp/'+tenant)
     resource=endpoint(metadata['resource'])
     if urlsplit(resource).netloc!=urlsplit(url).netloc or urlsplit(resource).scheme!=urlsplit(url).scheme:
         raise ValueError('oauth_resource_mismatch')
     issuers=metadata['authorization_servers']
-    if not isinstance(issuers,list) or len(issuers)!=1:raise ValueError('explicit_single_tenant_issuer_required')
+    if not isinstance(issuers,list) or not issuers or not all(isinstance(i,str) for i in issuers):
+        raise ValueError('oauth_discovery_mismatch')
+    if issuer is not None:
+        if endpoint(issuer) not in issuers:raise ValueError('oauth_issuer_not_advertised')
+        issuers=[endpoint(issuer)]
+    elif len(issuers)!=1:raise ValueError('explicit_single_tenant_issuer_required')
+    scopes=metadata['scopes_supported']
+    for item in metadata.get('vaelius_authorization_servers',[]):
+        if isinstance(item,dict) and item.get('issuer')==issuers[0] and isinstance(item.get('scopes_supported'),list):
+            scopes=item['scopes_supported']
     issuer=endpoint(issuers[0]);provider=request(issuer.rstrip('/')+'/.well-known/openid-configuration')
     if provider.get('issuer')!=issuer or 'S256' not in provider.get('code_challenge_methods_supported',[]):raise ValueError('oauth_discovery_mismatch')
     for name in ('authorization_endpoint','token_endpoint','revocation_endpoint'):
@@ -53,7 +69,7 @@ def discover(url,tenant,client_id):
     return {k:provider[k] for k in ('authorization_endpoint','token_endpoint','revocation_endpoint')}|{
         'issuer':issuer,'resource':resource,'client_id':client_id,
         'require_issuer_response':provider.get('authorization_response_iss_parameter_supported',False),
-        'scope':'openid '+' '.join(s for s in metadata['scopes_supported'] if s in
+        'scope':'openid '+' '.join(s for s in scopes if s in
             ('vaelius:read','vaelius:source_read','vaelius:ingest','vaelius:feedback'))}
 
 
@@ -157,7 +173,7 @@ def revoke(backend,token):
 
 
 def enroll(home,*,url,tenant,client_id,enrollment,callback,credential_store='auto',
-           reauthenticate=False,browser=None,notify=None,timeout=180):
+           reauthenticate=False,browser=None,notify=None,timeout=180,issuer=None):
     from agentclient.cloud_enroll import prepare_home,_credential_store
     if reauthenticate:
         profile=Path(home).expanduser().resolve();config_path=profile/'config.json'
@@ -176,7 +192,10 @@ def enroll(home,*,url,tenant,client_id,enrollment,callback,credential_store='aut
         config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_codex_sessions':False,
                 'observer':{'enabled':False},'publication':{'enabled':False},'remote_publication':False}
         store_kind=_credential_store(credential_store);anchor=str(profile/'credential')
-    oauth=discover(url,tenant,client_id)
+    if issuer is None and reauthenticate:
+        # Reauthentication keeps the issuer this profile already signed in with.
+        issuer=previous.get('oauth',{}).get('issuer')
+    oauth=discover(url,tenant,client_id,issuer)
     state=secrets.token_urlsafe(32);verifier=secrets.token_urlsafe(48)
     challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     auth=oauth['authorization_endpoint']+'?'+urlencode({'client_id':client_id,'response_type':'code',

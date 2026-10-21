@@ -53,7 +53,7 @@ def purge_retained_derivatives(db, source_id, documents):
             (SELECT origin_memory_id FROM knowledge_documents WHERE document_id=?)''', (document,))
     db.execute('DELETE FROM memory_metadata WHERE memory_id=?', (source_id,))
     # An episode summary derives from every source of its curation job, not
-    # only the cited ones; both links are indexed (migration 036).
+    # only the cited ones; both links are indexed (migration 037).
     db.execute('''UPDATE episode_revisions SET payload_json='{}' WHERE payload_json!='{}' AND
         (revision_id IN (SELECT revision_id FROM episode_revision_evidence WHERE source_id=?)
          OR job_id IN (SELECT id FROM curation_episode_jobs WHERE position(? in source_ids)>0)

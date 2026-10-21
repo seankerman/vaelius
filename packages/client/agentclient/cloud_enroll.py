@@ -207,7 +207,13 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Enroll a new isolated local enterprise client profile')
-    for name in ('home','url','tenant','enrollment','callback-uri'):parser.add_argument('--'+name,required=True)
+    for name in ('home','url','tenant','enrollment'):parser.add_argument('--'+name,required=True)
+    parser.add_argument('--callback-uri',help='exact loopback callback (provider OAuth and legacy broker)')
+    parser.add_argument('--auth',choices=('oauth','aws-sts'),default='oauth',
+        help='aws-sts signs in with the current AWS IAM Identity Center session; no browser')
+    parser.add_argument('--aws-profile',help='AWS profile to sign with (default: standard AWS credential chain)')
+    parser.add_argument('--aws-region',help='regional STS endpoint (default: the profile region)')
+    parser.add_argument('--aws-server-id',help='Vaelius server ID signed into each request (default: --url)')
     parser.add_argument('--broker',help='configured legacy login broker')
     parser.add_argument('--timeout',type=float,default=180);parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--oauth-client-id',help='use standard provider OAuth instead of legacy enrollment')
@@ -215,7 +221,19 @@ def main(argv=None):
     parser.add_argument('--credential-store',choices=('auto','keyring','file'),default='auto',
         help='auto uses the OS keychain when the optional keyring package has a usable backend')
     args=parser.parse_args(argv)
+    if args.auth=='aws-sts':
+        if args.broker or args.oauth_client_id or args.callback_uri or args.reauthenticate:
+            parser.error('--auth aws-sts takes no callback, broker, OAuth or reauthentication options')
+    elif args.aws_profile or args.aws_region or args.aws_server_id:
+        parser.error('--aws-* options require --auth aws-sts')
+    elif not args.callback_uri:parser.error('--callback-uri is required')
     try:
+        if args.auth=='aws-sts':
+            from agentclient.aws_sts import enroll as aws_enroll
+            result=aws_enroll(args.home,url=args.url,tenant=args.tenant,enrollment=args.enrollment,
+                profile=args.aws_profile,region=args.aws_region,server_id=args.aws_server_id,
+                credential_store=args.credential_store)
+            print(json.dumps(result),flush=True);return 0
         _callback_uri(args.callback_uri)
         with CallbackServer(args.callback_uri) as callback:
             common=dict(url=args.url,tenant=args.tenant,enrollment=args.enrollment,callback=callback,timeout=args.timeout,

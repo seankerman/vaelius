@@ -301,6 +301,12 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return JSONResponse({'credential':issued['access_token'],
                     **{key:issued[key] for key in ('expires_at','refresh_token','refresh_expires_at','session_expires_at')}},
                     headers=NO_STORE)
+            if path=='/enterprise/v3/auth/aws-sts':
+                # A signed sts:GetCallerIdentity request is the only credential
+                # accepted here. Absent configuration this route does not exist.
+                if getattr(registry,'aws_sts',None) is None:raise FileNotFoundError()
+                request_id=request.headers.get('x-request-id') or uuid.uuid4().hex
+                return JSONResponse(await run_in_threadpool(registry.exchange_aws_sts,data,request_id),headers=NO_STORE)
             if path=='/enterprise/v3/auth/renew':
                 # The refresh token is the only credential accepted here (RFC 6749
                 # section 6); a Bearer access token is neither required nor used.

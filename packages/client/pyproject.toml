@@ -13,6 +13,10 @@ authors = [{name = "Vaelius contributors"}]
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+# AWS IAM Identity Center sign-in signs requests with the standard AWS chain.
+aws = ["botocore==1.43.111"]
+
 [project.urls]
 Homepage = "https://vaelius.com"
 Repository = "https://github.com/seankerman/vaelius"

@@ -53,6 +53,8 @@ def _grant(admin_dsn,role,*,control=False):
             db.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA public TO {}').format(sql.Identifier(role)))
             # Enrollment/rotation creates digest-only routes, never tenants or policy.
             db.execute(sql.SQL('GRANT INSERT ON cloud_credential_routes TO {}').format(sql.Identifier(role)))
+            # AWS sign-in records accepted signature digests until they expire.
+            db.execute(sql.SQL('GRANT INSERT,DELETE ON cloud_aws_sts_replay TO {}').format(sql.Identifier(role)))
         else:
             schema=db.execute('SELECT current_schema()').fetchone()[0]
             db.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(role)))

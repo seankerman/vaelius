@@ -195,6 +195,10 @@ def _complete(backend,store,state,pending):
 
 
 def renew(backend,*,force=False):
+    if backend.get('aws_sts'):
+        # AWS sign-in has no refresh token: renewal signs a new STS request.
+        from agentclient.aws_sts import renew as aws_renew
+        return aws_renew(backend,force=force)
     pending=open_store(backend).read('pending')
     if pending and json.loads(pending).get('phase')=='login_returned':
         from agentclient.oauth import recover_login

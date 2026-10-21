@@ -98,6 +98,10 @@ authorized observer context when checkpoints cannot be resumed.
 
 `python -m agenthub.cloud_recovery --help` exposes restore/reconciliation operations.
 Recovery must retain denial/deletion journals and recheck permissions; a restored
-snapshot must not resurrect withdrawn content. Never rehearse destructive recovery
+snapshot must not resurrect withdrawn content. Backups age out within your
+retention commitment; export the content-free deletion journal separately and run
+`cloud_recovery replay-deletions` on a restored copy before reconciling it. Schedule
+`cloud_maintenance retention-run --apply` for operator retention policies. See
+[data lifecycle](DATA_LIFECYCLE.md) for retention, legal holds and subject erasure. Never rehearse destructive recovery
 against a user's live database. [Source-first rollback](../packages/server/docs/SOURCE_FIRST.md)
 documents the raw-passage hold required before returning to an older binary.

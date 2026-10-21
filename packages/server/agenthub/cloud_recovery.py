@@ -229,6 +229,32 @@ def reconcile_restore(snapshot,target,live_authority,target_objects,live_objects
         'cutover_performed':False,'managed_backup_evidence':False,'provider_calls':0}
 
 
+def replay_deletions(journal,target,objects,*,apply=False):
+    """Re-apply authority deletions to a held offline restore before reconcile.
+
+    A logical snapshot taken before a deletion, retention expiry or subject
+    erasure still contains that content. The content-free journal exported from
+    the authority (``cloud_maintenance deletion-journal``) is replayed so the
+    restored copy cannot resurrect it; readiness stays held.
+    """
+    source=Path(journal).expanduser().resolve()
+    if source.stat().st_mode&0o077:raise ValueError('deletion_journal_permissions')
+    pages=json.loads(source.read_bytes())
+    pages=pages if isinstance(pages,list) else [pages]
+    entries=[]
+    for page in pages:
+        if not isinstance(page,dict) or page.get('tenant')!=target.tenant_id:
+            raise ValueError('deletion_journal_tenant_mismatch')
+        entries.extend(page.get('entries',[]))
+    # Purges on the offline copy must reach its own retained originals.
+    if getattr(target,'conversation_segments',None) is None:
+        from agenthub.conversation_segments import ConversationSegments
+        target.conversation_segments=ConversationSegments(target,objects)
+    target.source_objects=objects
+    return target.replay_deletion_journal(entries,apply=apply,objects=objects)|{
+        'ready':False,'cutover_performed':False}
+
+
 def offline_target(path,registry):
     """Admit explicit private, unregistered, nonadministrative restore targets."""
     from agenthub.postgres import connect
@@ -267,18 +293,24 @@ def main(argv=None):
     from agenthub.cloud_runtime import read_settings, registry_from_settings
     from agenthub.object_config import objects_from_settings
     parser=argparse.ArgumentParser(description='Private bounded logical offline recovery; no route cutover')
-    parser.add_argument('command',choices=('restore','reconcile'))
+    parser.add_argument('command',choices=('restore','reconcile','replay-deletions'))
     parser.add_argument('--current-profile',required=True)
     parser.add_argument('--target-config',required=True)
-    parser.add_argument('--snapshot',required=True)
+    parser.add_argument('--snapshot',help='logical snapshot directory, required for restore/reconcile')
     parser.add_argument('--output',help='new private current-authority snapshot directory, required for reconcile')
+    parser.add_argument('--journal',help='private deletion-journal export, required for replay-deletions')
+    parser.add_argument('--apply',action='store_true',help='replay-deletions previews unless set')
     args=parser.parse_args(argv)
     if args.command=='reconcile' and not args.output:parser.error('--output new private directory required')
+    if args.command!='replay-deletions' and not args.snapshot:parser.error('--snapshot required')
+    if args.command=='replay-deletions' and not args.journal:parser.error('--journal private export required')
     os.umask(0o077)
     profile=Path(args.current_profile).expanduser().resolve()
     settings=read_settings(profile/'runtime.json');registry=registry_from_settings(settings,profile/'server-state')
     target,objects,administrator=offline_target(args.target_config,registry)
-    if args.command=='restore':
+    if args.command=='replay-deletions':
+        result=replay_deletions(args.journal,target,objects,apply=args.apply)
+    elif args.command=='restore':
         result=restore_snapshot(args.snapshot,target,objects,admin_dsn=administrator)
     else:
         source=registry.resolve(target.tenant_id)

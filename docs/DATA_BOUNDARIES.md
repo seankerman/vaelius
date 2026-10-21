@@ -19,9 +19,12 @@ surrounding conversation and inspect originals before deciding. LLM output is
 validated by the canonical backend; optional enrichment does not replace originals.
 
 Withdrawal blocks access to dependent knowledge while preserving recorded history
-under its lifecycle policy. Deletion purges source/derived content and records its
-denial/deletion journal. Scope changes invalidate stale processing and retrieval.
-User preferences can be private to one user independently of team knowledge.
+under its lifecycle policy. Deletion purges source/derived content, vectors and
+retained originals and records its denial/deletion journal. Operator retention
+policies, legal holds and subject erasure use the same purge; see
+[data lifecycle](DATA_LIFECYCLE.md) for stores, verification and limits. Scope
+changes invalidate stale processing and retrieval. User preferences can be private
+to one user independently of team knowledge.
 
 This prototype trusts the service operator. Application ACLs do not hide database
 contents from an administrator with host/database credentials. A production host

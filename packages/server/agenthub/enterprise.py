@@ -84,7 +84,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
                 (tenant,'local_operator','membership','granted' if active else 'revoked',project+':'+principal,time.time()))
 
     def enroll(self, tenant, principal, enrollment, actions, *, acting_for=None):
-        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","policy","audit","settings"}
+        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","policy","audit","settings","legal_hold"}
         if not isinstance(enrollment,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}",enrollment):
             raise ValueError("invalid_enrollment")
         if not actions or set(actions)-allowed:raise ValueError("invalid_actions")
@@ -562,6 +562,10 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
             db.execute("UPDATE episode_candidate_history SET candidate_json='{}',resolution_json='{}',status='withdrawn' WHERE job_id=?",(job,))
             if table_exists(db,'backend_jobs'):
                 db.execute("UPDATE backend_jobs SET status='held',pending_result=NULL,last_error='source_deleted' WHERE episode_job=?",(job,))
+        # Vectors, reconciliation keys, episode summaries and original-object
+        # references derived from this source; objects are queued for deletion.
+        from agenthub.data_lifecycle import purge_retained_derivatives
+        purge_retained_derivatives(db,source_id,docs)
 
     def lifecycle(self, ctx, value):
         validate_lifecycle(value)
@@ -575,6 +579,10 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
             source=db.execute("SELECT * FROM enterprise_sources WHERE id=?",(value["target_id"],)).fetchone()
             if not source or source["tenant"]!=ctx["tenant"] or source["owner"]!=ctx["actor"]:raise Denied()
             if str(source["source_version"])!=value["expected_revision"]:raise Conflict()
+            from agenthub.data_lifecycle import legal_hold_covers
+            held=operation=="delete" and bool(legal_hold_covers(db,source))
+            effective="withdraw" if held else operation
+            docs=[]
             with db:
                 if operation=="correct":
                     replacement=value["replacement"]
@@ -657,34 +665,70 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
                     db.execute("UPDATE enterprise_sources SET active=0,source_version=source_version+1 WHERE id=?",(source["id"],))
                     db.execute("UPDATE memories SET active=0 WHERE id=?",(source["id"],))
                     db.execute("DELETE FROM memory_fts WHERE id=?",(source["id"],))
-                    db.execute("INSERT INTO enterprise_deletion_journal(tenant,source_id,operation,created) VALUES(?,?,?,?)",
-                        (ctx["tenant"],source["id"],operation,time.time()))
-                docs=db.execute("SELECT document_id FROM enterprise_dependencies WHERE source_id=?",(source["id"],)).fetchall() if operation!='correct' else docs
-                for d in docs:
-                    if operation!='correct':
-                        db.execute("UPDATE enterprise_documents SET active=0,blocked_reason=?,policy_version=policy_version+1 WHERE id=?",(operation,d[0]))
-                        db.execute("DELETE FROM knowledge_fts WHERE document_id=?",(d[0],))
-                        db.execute("DELETE FROM knowledge_embeddings WHERE document_id=?",(d[0],))
-                        if operation=='delete':
-                            revisions=[r[0] for r in db.execute(
-                                'SELECT revision_id FROM knowledge_revisions WHERE document_id=?',(d[0],))]
-                            for revision in revisions:
-                                db.execute('DELETE FROM knowledge_temporal_evidence WHERE assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE revision_id=?)',(revision,))
-                                db.execute('DELETE FROM knowledge_temporal_assertions WHERE revision_id=?',(revision,))
-                                db.execute('DELETE FROM knowledge_support WHERE revision_id=?',(revision,))
-                            db.execute("UPDATE knowledge_revisions SET claim_json='{}',identity_json='{}' WHERE document_id=?",(d[0],))
-                            db.execute("UPDATE knowledge_documents SET lifecycle='deleted',active_revision_id=NULL WHERE document_id=?",(d[0],))
-                            db.execute("UPDATE memories SET body='' WHERE id IN (SELECT origin_memory_id FROM knowledge_documents WHERE document_id=?)",(d[0],))
-                if operation=='delete':
-                    self._purge_deleted_source(db,source['id'])
-                if operation!='delete':self._invalidate_processing_source(db,source['id'],'source_'+operation)
+                    # A legal hold preserves covered content: deletion still
+                    # hides it like a withdrawal, and the purge is deferred.
+                    for journaled in ((effective,'delete_held') if held else (operation,)):
+                        db.execute("INSERT INTO enterprise_deletion_journal(tenant,source_id,operation,created) VALUES(?,?,?,?)",
+                            (ctx["tenant"],source["id"],journaled,time.time()))
+                if operation!='correct':docs=self._block_dependents_tx(db,source['id'],effective)
+                else:self._invalidate_processing_source(db,source['id'],'source_correct')
                 result={"target_id":source["id"],"operation":operation,"source_version":source["source_version"]+1,
                         "dependent_documents_blocked":len(docs)}
+                # The wire shape is unchanged (clients validate it strictly); a
+                # hold is recorded in the journal and audit, not disclosed here.
                 if operation=='correct':result['replacement_source_id']=corrected_id
                 db.execute("INSERT INTO enterprise_lifecycle VALUES(?,?,?,?,?,?,?)",
                     (key,ctx["tenant"],ctx["actor"],source["id"],operation,json.dumps(result),time.time()))
-                self._audit(db,ctx,operation,"applied",source["id"],source["policy_version"]+1)
+                self._audit(db,ctx,operation,"held" if held else "applied",source["id"],source["policy_version"]+1)
             return result
+
+    def _block_dependents_tx(self, db, source_id, operation):
+        """Block dependent documents for withdraw/delete/policy in the caller's transaction."""
+        docs=db.execute("SELECT document_id FROM enterprise_dependencies WHERE source_id=?",(source_id,)).fetchall()
+        for d in docs:
+            db.execute("UPDATE enterprise_documents SET active=0,blocked_reason=?,policy_version=policy_version+1 WHERE id=?",(operation,d[0]))
+            db.execute("DELETE FROM knowledge_fts WHERE document_id=?",(d[0],))
+            db.execute("DELETE FROM knowledge_embeddings WHERE document_id=?",(d[0],))
+            if operation=='delete':
+                revisions=[r[0] for r in db.execute(
+                    'SELECT revision_id FROM knowledge_revisions WHERE document_id=?',(d[0],))]
+                for revision in revisions:
+                    db.execute('DELETE FROM knowledge_temporal_evidence WHERE assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE revision_id=?)',(revision,))
+                    db.execute('DELETE FROM knowledge_temporal_assertions WHERE revision_id=?',(revision,))
+                    db.execute('DELETE FROM knowledge_support WHERE revision_id=?',(revision,))
+                db.execute("UPDATE knowledge_revisions SET claim_json='{}',identity_json='{}' WHERE document_id=?",(d[0],))
+                db.execute("UPDATE knowledge_documents SET lifecycle='deleted',active_revision_id=NULL WHERE document_id=?",(d[0],))
+                db.execute("UPDATE memories SET body='' WHERE id IN (SELECT origin_memory_id FROM knowledge_documents WHERE document_id=?)",(d[0],))
+        if operation=='delete':
+            self._purge_deleted_source(db,source_id)
+        else:self._invalidate_processing_source(db,source_id,'source_'+operation)
+        return docs
+
+    def _expire_source_tx(self, db, source_id, actor, reason):
+        """Operator retention/erasure deletion of one locked source; no owner token.
+
+        Same purge as owner deletion. A covered legal hold hides the source and
+        defers the purge. Returns 'deleted', 'held', or 'already_deleted'.
+        """
+        from agenthub.data_lifecycle import legal_hold_covers
+        source=db.execute('SELECT * FROM enterprise_sources WHERE id=? FOR UPDATE',(source_id,)).fetchone()
+        if not source or source['tenant']!=self.tenant_id:raise Denied()
+        journal={r[0] for r in db.execute('SELECT operation FROM enterprise_deletion_journal WHERE source_id=?',(source_id,))}
+        if 'delete' in journal:return 'already_deleted'
+        held=bool(legal_hold_covers(db,source))
+        if held and 'delete_held' in journal:return 'held'
+        if source['active']:
+            db.execute("UPDATE enterprise_sources SET active=0,source_version=source_version+1 WHERE id=?",(source_id,))
+            db.execute("UPDATE memories SET active=0 WHERE id=?",(source_id,))
+            db.execute("DELETE FROM memory_fts WHERE id=?",(source_id,))
+        for operation in (('withdraw','delete_held') if held else ('delete',)):
+            if operation not in journal:
+                db.execute("INSERT INTO enterprise_deletion_journal(tenant,source_id,operation,created) VALUES(?,?,?,?)",
+                    (source['tenant'],source_id,operation,time.time()))
+        self._block_dependents_tx(db,source_id,'withdraw' if held else 'delete')
+        self._audit(db,{'tenant':source['tenant'],'actor':actor},reason,'held' if held else 'deleted',
+            source_id,source['policy_version'])
+        return 'held' if held else 'deleted'
 
     def status(self, ctx):
         with self.open() as state:
@@ -732,13 +776,17 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
         if (not isinstance(project,str) or not project or type(before) not in (int,float)
                 or before<=0 or before>time.time() or type(limit) is not int or not 1<=limit<=100):
             raise ValueError('invalid_retention_request')
+        from agenthub.data_lifecycle import HELD
         with self.open() as state:
-            rows=state.db.execute('''SELECT id,source_version FROM enterprise_sources
-                WHERE tenant=? AND owner=? AND external_project=? AND active=1 AND created<?
-                ORDER BY created,id LIMIT ?''',(ctx['tenant'],ctx['actor'],project,before,limit)).fetchall()
-            candidates=[(row['id'],row['source_version']) for row in rows]
+            rows=state.db.execute('''SELECT s.id,s.source_version,'''+HELD.format('s')+''' AS held
+                FROM enterprise_sources s
+                WHERE s.tenant=? AND s.owner=? AND s.external_project=? AND s.active=1 AND s.created<?
+                ORDER BY s.created,s.id LIMIT ?''',(ctx['tenant'],ctx['actor'],project,before,limit)).fetchall()
+            # Legal holds block retention expiry; held sources stay searchable.
+            held=sum(1 for row in rows if row['held'])
+            candidates=[(row['id'],row['source_version']) for row in rows if not row['held']]
         if not apply:return {'project':project,'before':before,'candidate_count':len(candidates),
-                             'applied':0,'dry_run':True,'truncated':len(candidates)==limit}
+                             'applied':0,'dry_run':True,'truncated':len(rows)==limit,'held':held}
         completed=0
         for ident,revision in candidates:
             try:
@@ -750,7 +798,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
             except Conflict:
                 continue
         return {'project':project,'before':before,'candidate_count':len(candidates),
-                'applied':completed,'dry_run':False,'truncated':len(candidates)==limit}
+                'applied':completed,'dry_run':False,'truncated':len(rows)==limit,'held':held}
 
     def processing_status(self, ctx):
         self._need(ctx,'audit')

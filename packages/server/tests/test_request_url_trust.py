@@ -76,18 +76,17 @@ class RequestUrlTrustTests(unittest.TestCase):
     def test_host_header_cannot_choose_the_operation(self):
         # GHSA-86qp-5c8j-p5mr: a Host carrying `/` and `#` used to rewrite
         # request.url.path, so the real path /enterprise/v1/status ran /health.
-        for allowed in (DEFAULT_HOSTS, ['*']):
-            app = create_app(oauth_registry(), allowed_hosts=allowed)
-            for host in ('localhost:1/health#', 'localhost:1/.well-known/oauth-protected-resource#',
-                         'evil.example/health#'):
-                with self.subTest(allowed=allowed, host=host):
-                    status, headers, body = call(app, '/enterprise/v1/status', {'host': host})
-                    self.assertNotIn(b'Vaelius', body)
-                    self.assertNotIn(b'authorization_servers', body)
-                    if allowed == DEFAULT_HOSTS:
-                        self.assertEqual(status, 400)
-                    else:
-                        self.assertEqual((status, headers.get('www-authenticate')), (401, CHALLENGE))
+        app = create_app(oauth_registry(), allowed_hosts=DEFAULT_HOSTS)
+        for host in ('localhost:1/health#', 'localhost:1/.well-known/oauth-protected-resource#',
+                     'evil.example/health#'):
+            with self.subTest(host=host):
+                status, headers, body = call(app, '/enterprise/v1/status', {'host': host})
+                self.assertNotIn(b'Vaelius', body)
+                self.assertNotIn(b'authorization_servers', body)
+                self.assertEqual(status, 400)
+        # Host filtering cannot be switched off: a wildcard is a configuration error.
+        with self.assertRaises(ValueError):
+            create_app(oauth_registry(), allowed_hosts=['*'])
 
     def test_decoded_path_metacharacters_do_not_reroute(self):
         # %3F and %23 decode into the ASGI path; they are not query or fragment.
@@ -116,9 +115,10 @@ class RequestUrlTrustTests(unittest.TestCase):
         self.assertEqual(urlsplit(headers['location']).hostname, 'www.memory.example')
 
     def test_oauth_metadata_challenge_and_audience_use_configured_resource(self):
-        # Worst case: an operator disables Host filtering entirely.
+        # Worst case: the forged host is itself an allowed host name. (Host
+        # filtering cannot be disabled; a wildcard is refused at startup.)
         registry = oauth_registry()
-        app = create_app(registry, allowed_hosts=['*'])
+        app = create_app(registry, allowed_hosts=['localhost', 'evil.example'])
         expected = {'resource': RESOURCE, 'authorization_servers': [ISSUER],
                     'scopes_supported': ['vaelius:read'], 'bearer_methods_supported': ['header']}
         for headers in FORGED_HEADERS:
@@ -141,11 +141,20 @@ class RequestUrlTrustTests(unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_runtime_ignores_forwarded_headers(self):
+        import os
+        import tempfile
+        from pathlib import Path
         from agenthub import cloud_runtime
-        with patch.object(cloud_runtime, 'app_from_profile', return_value=object()), \
-                patch('uvicorn.run') as run, patch('os.umask'), \
-                patch.object(sys, 'argv', ['vaelius', '--profile', 'synthetic-profile']):
-            cloud_runtime.main()
+        # A development profile (no `deployment` declared): main() validates the
+        # declared transport from runtime.json before it opens a listener.
+        with tempfile.TemporaryDirectory(prefix='vaelius-profile-') as profile:
+            runtime = Path(profile) / 'runtime.json'
+            os.close(os.open(runtime, os.O_WRONLY | os.O_CREAT, 0o600))
+            runtime.write_text('{}')
+            with patch.object(cloud_runtime, 'app_from_profile', return_value=object()), \
+                    patch('uvicorn.run') as run, patch('os.umask'), \
+                    patch.object(sys, 'argv', ['vaelius', '--profile', profile]):
+                cloud_runtime.main()
         self.assertIs(run.call_args.kwargs['proxy_headers'], False)
         self.assertNotIn('forwarded_allow_ips', run.call_args.kwargs)
 

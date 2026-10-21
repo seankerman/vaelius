@@ -36,12 +36,37 @@ def inspect_projection(db):
     """).fetchone())
 
 
+# One policy row (alias `policy`) shares its redacted passages with the reader:
+# the source was STORED as team-shared at ingest (min of the scope-file request,
+# the project ceiling then, and the connection visibility), the project's CURRENT
+# ceiling still allows team, and the reader is an active member of that project.
+# Mirrored by ProjectSharingMixin._team_shared and by search_document_allowed
+# (migration 042). Lowering a ceiling therefore hides passages immediately.
+TEAM_SHARE = """(policy.definition->>'sharing'='team' AND EXISTS(
+                    SELECT 1 FROM enterprise_memberships membership
+                    JOIN enterprise_projects project ON project.tenant=membership.tenant AND project.id=membership.project
+                    JOIN enterprise_organizations organization ON organization.id=project.tenant
+                    WHERE membership.tenant=? AND membership.project=policy.definition->>'project'
+                        AND membership.principal=? AND membership.active=1 AND project.active=1
+                        AND coalesce(project.max_sharing,organization.default_max_sharing)='team'))"""
+
+
+def team_share_condition(ctx):
+    return TEAM_SHARE, (ctx['tenant'], ctx['actor'])
+
+
 def policy_condition(ctx, *, raw=False):
-    """One policy expression for indexed document and raw-source authorization."""
+    """One policy expression for indexed document and raw-source authorization.
+
+    `raw=True` is the redacted passage tier (passages, cited evidence and
+    conversation context): the source owner, or, for a team-shared source, a reader
+    who also passes every ordinary rule below. Retained originals never use this;
+    they need source_read and ownership or a grant (agenthub.raw_access).
+    """
     delegated = ctx.get('delegated_projects')
     delegated = sorted(delegated) if delegated is not None else None
     now = time.time()
-    sql = """(
+    common = """
                     (policy.definition->>'active')::integer=1
                     AND policy.definition->>'tenant'=?
                     AND (?::text[] IS NULL OR policy.definition->>'project'=ANY(?::text[]))
@@ -53,8 +78,9 @@ def policy_condition(ctx, *, raw=False):
                         AND connection.permission_observed+connection.freshness_seconds>=?
                         AND (connection.reader_ids::jsonb='[]'::jsonb OR connection.owner=? OR EXISTS(
                             SELECT 1 FROM jsonb_array_elements_text(connection.reader_ids::jsonb) reader
-                            WHERE reader.value=?))))
-                    AND (policy.definition->>'visibility'='organization'
+                            WHERE reader.value=?))))"""
+    common_args = (ctx['tenant'], delegated, delegated, now, ctx['tenant'], now, ctx['actor'], ctx['actor'])
+    readers = """(policy.definition->>'visibility'='organization'
                         OR (policy.definition->>'visibility'='private' AND policy.definition->>'owner'=?)
                         OR (policy.definition->>'visibility'='team' AND EXISTS(
                             SELECT 1 FROM enterprise_memberships membership
@@ -62,27 +88,37 @@ def policy_condition(ctx, *, raw=False):
                             WHERE membership.tenant=? AND membership.project=policy.definition->>'project'
                                 AND membership.principal=? AND membership.active=1 AND project.active=1)))
                     AND (coalesce((policy.definition->>'quarantined')::boolean,false)=false
-                        OR policy.definition->>'owner'=?)
-                )"""
-    args = (ctx['tenant'], delegated, delegated, now, ctx['tenant'], now,
-            ctx['actor'], ctx['actor'], ctx['actor'], ctx['tenant'], ctx['actor'], ctx['actor'])
-    if raw:
-        # Raw originals are owner-only, including organization/team sources.
-        # Document visibility alone never grants raw-source access.
-        sql = sql[:sql.index("AND (policy.definition->>'visibility'")] + "AND policy.definition->>'owner'=?)"
-        args = args[:8] + (ctx['actor'],)
-    return sql, args
+                        OR policy.definition->>'owner'=?)"""
+    readers_args = (ctx['actor'], ctx['tenant'], ctx['actor'], ctx['actor'])
+    if not raw:
+        return '(' + common + """
+                    AND """ + readers + """
+                )""", common_args + readers_args
+    team, team_args = team_share_condition(ctx)
+    return ('(' + common + """
+                    AND (policy.definition->>'owner'=? OR (""" + readers + """
+                    AND """ + team + """))
+                )""", common_args + (ctx['actor'],) + readers_args + team_args)
 
 
 def predicate(ctx):
-    # Raw-representation passages are redacted text visible to their owner only.
+    """Indexed document authorization; the raw clause mirrors EnterpriseStore._document_allowed.
+
+    One correlated pass over the document's policies checks both every ordinary
+    source rule and, for a raw passage, ownership or team sharing.
+    """
     condition,args=policy_condition(ctx)
-    return """AND (ed.representation!='raw' OR (ed.raw_owner=? AND ?))
-        AND (SELECT bool_and(required.dependency_count>0 AND """+condition+""" IS TRUE)
+    team,team_args=team_share_condition(ctx)
+    # raw_shared is a stable prefilter (the passage's own source was stored as
+    # team-shared); it keeps other people's private passages as cheap to exclude
+    # as before. The policy pass below still decides.
+    return """AND (ed.representation!='raw' OR (? AND (ed.raw_owner=? OR ed.raw_shared=1)))
+        AND (SELECT bool_and(required.dependency_count>0 AND """+condition+""" IS TRUE
+            AND (ed.representation!='raw' OR ed.raw_owner=? OR """+team+""" IS TRUE))
         FROM search_document_policies required
         LEFT JOIN search_policies policy ON policy.id=required.policy_id
         LEFT JOIN backend_connections connection ON connection.id=policy.definition->>'connection'
-        WHERE required.document_id=d.document_id)""",(ctx['actor'],'read' in ctx['actions'],*args)
+        WHERE required.document_id=d.document_id)""",('read' in ctx['actions'],ctx['actor'],*args,ctx['actor'],*team_args)
 
 
 def validate_source_snapshots(store, db, ctx, expected):
@@ -93,8 +129,8 @@ def validate_source_snapshots(store, db, ctx, expected):
     cross the connection. Missing projection, source, or body denies the snapshot.
     """
     store.current_identity(db,ctx)
-    # Owner-only redacted passage tier: `read` suffices. Retained originals
-    # are a separate source_read + owner/grant check in agenthub.raw_access.
+    # Redacted passage tier (owner, or team-shared): `read` suffices. Retained
+    # originals are a separate source_read + owner/grant check in agenthub.raw_access.
     store._need(ctx,'read')
     condition,args=policy_condition(ctx,raw=True)
     ids=sorted(expected)
@@ -157,7 +193,7 @@ def validate_document_snapshots(store, db, ctx, documents):
         raise PermissionError('document_changed_or_withdrawn')
 
 def read_source_context(store,db,ctx,ids):
-    """Bounded owner-only redacted source context through the indexed raw policy oracle."""
+    """Bounded redacted source context (owner or team-shared) through the indexed raw policy oracle."""
     store.current_identity(db,ctx);store._need(ctx,'read')
     ids=sorted(set(ids))
     if len(ids)>1000:raise ValueError('context_source_batch_bound')

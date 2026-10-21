@@ -13,6 +13,17 @@ def checked_path(path, session, allowed_root=None):
     return p
 
 
+def session_cwd(path):
+    """Working directory recorded in a verified transcript's session_meta, else None."""
+    try:
+        with Path(path).open('rb') as f:
+            first = json.loads(f.readline(65536))
+        cwd = first['payload'].get('cwd')
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return cwd if isinstance(cwd, str) and cwd else None
+
+
 def text_content(content):
     if not isinstance(content,list):return ''
     return '\n'.join(c['text'] for c in content if isinstance(c,dict) and c.get('type') in ('text','input_text','output_text') and isinstance(c.get('text'),str))

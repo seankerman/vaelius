@@ -234,8 +234,10 @@ how to stop:
   `Vaelius capture ON for project maple: prompts, assistant replies and tool
   calls/results are shared (readers: members of project maple). Pause:
   vaelius-client pause.` A paused profile shows `capture OFF (paused)`; a project in
-  `capture_disabled_projects` shows `capture OFF`. Folders that are not enrolled
-  show nothing.
+  `capture_disabled_projects` shows `capture OFF`; a `read-only`
+  [repository scope file](CLIENT.md#repository-scope-files) shows
+  `capture OFF (read-only scope file)`, and a `sharing = "team"` request is named in
+  the ON line. Folders that are not enrolled show nothing.
 - `vaelius-client notice --project PROJECT [--acknowledge]` prints the current notice
   and capture state, and with `--acknowledge` records it.
 

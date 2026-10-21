@@ -81,6 +81,76 @@ service, then deletes the local tokens. If revocation cannot be confirmed the
 tokens are kept for a retry; `--local-only` deletes them without contacting the
 service, leaving the session valid until its idle timeout.
 
+## Repository scope files
+
+A repository can declare how Vaelius treats it with a checked-in TOML file named
+`.vaelius` at its root:
+
+```toml
+project = "example-repo"   # the service project name
+capture = "on"             # on | read-only | off
+sharing = "private"        # private | team
+```
+
+| `capture` | Capture | Automatic recall |
+| --- | --- | --- |
+| `on` (default) | yes | yes |
+| `read-only` | no | yes |
+| `off` | no | no |
+
+The hook finds the file by walking up from the session's working directory and
+stops at the Git root (a directory holding `.git`) or the filesystem root. A linked
+worktree whose checkout lacks the file uses the same place in the main worktree, so
+every worktree of a repository resolves to the same request. Without a scope file
+nothing changes: an explicitly enrolled project captures privately, and any other
+folder is neither captured nor recalled.
+
+A scope file naming a project enrolls its root automatically. Like `enroll-project`
+this is forward-only: nothing earlier is imported. The enrollment is recorded in
+the profile's `scope-enrollments.json`, never in `config.json`, so the file stays
+authoritative: delete it or set `capture = "off"` and capture stops.
+
+Precedence, from strongest:
+
+1. `pause` and `capture_disabled_projects` in the profile.
+2. Explicit enrollment (`enroll-project`, mapped sessions, their worktrees) names
+   the project. A scope file naming the same project, or no project, sets the
+   capture mode and sharing request there; a file naming a different project is
+   ignored. Explicitly mapped desktop sessions use the file found from the cwd
+   recorded in their transcript; read-only or off records a capture gap instead.
+3. A scope file alone.
+4. The explicit capture-all option, for folders with neither.
+
+An unreadable or invalid scope file fails closed: no capture and no recall there.
+
+`sharing = "team"` is a **request**. It is sent with each captured event, and the
+service caps it by the operator's project policy and the connection's visibility,
+so editing the file can never widen access beyond what the operator allows; see
+[team-shared conversation passages](DATA_BOUNDARIES.md#team-shared-conversation-passages).
+`private` is never sent, so older services keep working for private capture.
+
+```sh
+vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
+```
+
+### Legacy scope file names
+
+`scope_files` in the profile's `config.json` lists the names to look for, in
+priority order (default `[".vaelius"]`). Operators migrating from an earlier
+product can add its name, for example `"scope_files": [".vaelius", ".mindshare"]`.
+`.vaelius` must be TOML. Another name may also be plain `key: value` or
+`key = value` lines (simple YAML); only these top-level fields are mapped and
+everything else (tags, team, search filters, nested keys) is ignored:
+
+| Field | Mapping |
+| --- | --- |
+| `project` | project name |
+| `capture` | as above |
+| `mode` | `default` → `on`, `read-only` → `read-only`, `disabled` → `off` (used when `capture` is absent) |
+| `sharing` | as above |
+
+A legacy file without `project` only adjusts an explicitly enrolled project.
+
 ## Capture notice and status
 
 Login and `enroll-project` print the organization's capture notice: what is

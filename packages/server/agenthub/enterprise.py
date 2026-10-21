@@ -36,9 +36,10 @@ from agenthub.backend_retrieval import RetrievalMixin
 
 
 from agenthub.governance import GovernanceMixin
+from agenthub.project_sharing import ProjectSharingMixin
 
 
-class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
+class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,RetrievalMixin):
     def __init__(self, *args, **kwargs):
         raise RuntimeError('PostgreSQL authority required; use CloudStore')
 
@@ -64,7 +65,7 @@ class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
         if not isinstance(tenant,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}",tenant):
             raise ValueError("invalid_tenant")
         with self.open() as state, state.db:
-            state.db.execute("INSERT INTO enterprise_organizations VALUES(?) ON CONFLICT DO NOTHING",(tenant,))
+            state.db.execute("INSERT INTO enterprise_organizations(id) VALUES(?) ON CONFLICT DO NOTHING",(tenant,))
 
     def create_principal(self, tenant, principal, *, settings_admin=False):
         if not isinstance(principal,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}",principal):
@@ -186,9 +187,13 @@ class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
         # Operator quarantine withholds a principal's held sources from others.
         if source.get("principal_quarantine") and source["owner"]!=ctx["actor"]:return False
         if raw:
-            # Owner-only redacted passages, evidence and context. Retained
+            # Redacted passages, evidence and context: the owner, or a project
+            # member when the source was stored as team-shared and the project
+            # ceiling still allows it (agenthub.project_sharing). Retained
             # originals use _original_allowed (source_read + owner or grant).
-            return source["owner"]==ctx["actor"] and "read" in ctx["actions"]
+            if "read" not in ctx["actions"]:return False
+            if source["owner"]==ctx["actor"]:return True
+            return self._team_shared(db,ctx,source) and self._visible_source(db,ctx,source)
         if "read" not in ctx["actions"]:return False
         if source["visibility"]=="private":return source["owner"]==ctx["actor"]
         if source["visibility"]=="team":return self._project_member(db,ctx,source["external_project"])
@@ -320,6 +325,10 @@ class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
         if not dependencies:return None
         if not all(self._visible_source(db,ctx,s) for s in dependencies) and not self._release_allowed(db,ctx,document_id,dependencies):return None
         if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
+        # Mirrors the raw clause of search_permissions.predicate: a passage is
+        # the owner's, or team-shared through every source it depends on.
+        if doc.get("representation")=="raw" and ("read" not in ctx["actions"] or (doc["raw_owner"]!=ctx["actor"]
+                and not all(self._visible_source(db,ctx,s,raw=True) for s in dependencies))):return None
         return doc
 
     def refresh_documents(self, *, db=None, document_id=None):
@@ -776,7 +785,7 @@ class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
             if source:
                 return {'kind':'source','id':target_id,'active':bool(source['active']),
                     'visibility':source['visibility'],'policy_version':source['policy_version'],
-                    'eligible_principals':eligible,'raw_readers':[source['owner']] if source['active'] else []}
+                    'eligible_principals':eligible,'raw_readers':self._passage_readers(db,source)}
             dependencies=db.execute('SELECT count(*) FROM enterprise_dependencies WHERE document_id=?',
                 (target_id,)).fetchone()[0]
             return {'kind':'document','id':target_id,'active':bool(doc['active']),

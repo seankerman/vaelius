@@ -7,39 +7,3 @@
 # the dependency is fixed or the exception is re-reviewed in a pull request.
 # State in the reason whether the vulnerable code is reachable; "not assessed" is
 # an acceptable answer, a guess is not.
-
-# starlette 0.48.0 is pinned by packages/server/pyproject.toml (cloud extra). The
-# fixes are in 0.49.1 and 1.0.1 through 1.3.1; mcp 2.3.0 resolves with 1.3.1, but a
-# 0.x -> 1.x framework upgrade belongs in its own pull request with the full
-# backend suite. These are accepted for a short window only, NOT assessed as
-# unreachable: agenthub/cloud_api.py and agenthub/mcp_server.py read request.url
-# and request.base_url, which GHSA-86qp-5c8j-p5mr and GHSA-jp82-jpqv-5vv3 affect.
-[[IgnoredVulns]]
-id = "GHSA-86qp-5c8j-p5mr"
-ignoreUntil = 2026-11-20
-reason = "starlette Host header poisons request.url.path; possibly reachable (request.url.path routing in cloud_api.py). Pending starlette 1.x upgrade."
-
-[[IgnoredVulns]]
-id = "GHSA-jp82-jpqv-5vv3"
-ignoreUntil = 2026-11-20
-reason = "starlette request path poisons request.url.hostname; possibly reachable (request.base_url origin check). Pending starlette 1.x upgrade."
-
-[[IgnoredVulns]]
-id = "GHSA-7f5h-v6xp-fcq8"
-ignoreUntil = 2026-11-20
-reason = "starlette FileResponse Range-header DoS; agenthub does not use FileResponse or StaticFiles (not verified for mcp). Pending starlette 1.x upgrade."
-
-[[IgnoredVulns]]
-id = "GHSA-x746-7m8f-x49c"
-ignoreUntil = 2026-11-20
-reason = "starlette HTTPEndpoint getattr dispatch; agenthub registers plain function routes with explicit methods (not verified for mcp). Pending starlette 1.x upgrade."
-
-[[IgnoredVulns]]
-id = "GHSA-wqp7-x3pw-xc5r"
-ignoreUntil = 2026-11-20
-reason = "starlette StaticFiles UNC-path SSRF affects Windows hosts only; the image is Linux and agenthub does not use StaticFiles. Pending starlette 1.x upgrade."
-
-[[IgnoredVulns]]
-id = "GHSA-82w8-qh3p-5jfq"
-ignoreUntil = 2026-11-20
-reason = "starlette urlencoded request.form() ignores limits; agenthub does not call request.form() (not verified for mcp). Pending starlette 1.x upgrade."

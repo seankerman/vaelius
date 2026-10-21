@@ -12,6 +12,8 @@ The release workflow publishes the section whose heading matches the tag.
   and `requirements-dev.txt` (pip-compile with `--generate-hashes`) replace
   `requirements-runtime.lock`. The image and CI install them with `--require-hashes`
   and build wheels without fetching an unverified build backend.
+- `starlette` 1.9.0 (cloud extra and hashed locks) fixes six advisories; the
+  server dispatches on the ASGI path rather than the Host-derived `request.url`.
 - `certifi` 2026.10.19 removes the emSign root whose intermediate CA keys were
   compromised (GHSA-6q48-6c7w-9gw2).
 - Runtime base image updated to Python 3.12.15 (`python:3.12.15-slim-trixie`),

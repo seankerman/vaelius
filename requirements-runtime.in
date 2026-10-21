@@ -13,6 +13,6 @@ psycopg[binary]==3.2.10
 pypdf==6.19.0
 python-docx==1.2.0
 requests==2.34.2
-starlette==0.48.0
+starlette==1.9.0
 tokenizers==0.23.2
 uvicorn==0.35.0

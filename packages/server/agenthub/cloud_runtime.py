@@ -166,6 +166,10 @@ def registry_from_settings(settings,home):
         if reranking.get('ledger') is not None and not Path(reranking['ledger']).expanduser().is_absolute():raise ValueError('reranker_shared_ledger_required')
         # Startup refuses an enabled stage whose provider/model is not allowlisted.
         require_stage_allowed(model_policy,reranker_config,'reranking')
+    from agenthub.write_limits import limits_from_settings
+    from agenthub.governance import notice_from_settings
+    ingest_limits=limits_from_settings(settings.get('ingest_limits'))
+    capture_notice=notice_from_settings(settings.get('capture_notice'))
     model=None
     objects=None
     if settings.get('objects'):
@@ -188,6 +192,7 @@ def registry_from_settings(settings,home):
             dsn=make_conninfo(dsn,host=override['host'],port=override['port'])
         store=CloudStore(path,dsn,tenant,registry=registry)
         store.credential_lifetimes=lifetimes
+        store.ingest_limits=ingest_limits;store.capture_notice_config=capture_notice
         store.curation_enabled=processing.get('curation_enabled',False)
         store.retrieval_corpus=configuration.get('corpus','sources')
         if objects is not None:

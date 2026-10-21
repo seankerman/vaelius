@@ -41,7 +41,10 @@ def document_context(store,ctx,document_id,*,revision,query='',offset=0):
         rows={s['id']:s for s in peers};rows.update({s['id']:s for s in good})
         chosen=select_context([s['id'] for s in good],list(rows.values()),query=query,cutoff=time.time())
         from agenthub.processing.media_projection import project_media
+        from agenthub.provenance import source_provenance
+        origins=source_provenance(db,[s['id'] for s in chosen])
         for source in chosen:
+            source['provenance'],source['instruction_like']=origins.get(source['id'],(None,False))
             source['text_ranges']=project_media(source['body'])[0]
             # Kind is a capture classification, not a verified named speaker.
             source['speaker']=source.get('speaker') or {'UserPromptSubmit':'user','Stop':'assistant',

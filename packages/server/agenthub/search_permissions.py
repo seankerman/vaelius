@@ -61,9 +61,11 @@ def policy_condition(ctx, *, raw=False):
                             JOIN enterprise_projects project ON project.tenant=membership.tenant AND project.id=membership.project
                             WHERE membership.tenant=? AND membership.project=policy.definition->>'project'
                                 AND membership.principal=? AND membership.active=1 AND project.active=1)))
+                    AND (coalesce((policy.definition->>'quarantined')::boolean,false)=false
+                        OR policy.definition->>'owner'=?)
                 )"""
     args = (ctx['tenant'], delegated, delegated, now, ctx['tenant'], now,
-            ctx['actor'], ctx['actor'], ctx['actor'], ctx['tenant'], ctx['actor'])
+            ctx['actor'], ctx['actor'], ctx['actor'], ctx['tenant'], ctx['actor'], ctx['actor'])
     if raw:
         # Raw originals are owner-only, including organization/team sources.
         # Document visibility alone never grants raw-source access.

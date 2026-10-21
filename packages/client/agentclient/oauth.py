@@ -212,6 +212,8 @@ def enroll(home,*,url,tenant,client_id,enrollment,callback,credential_store='aut
             raise ValueError('credential_identity_changed')
         store.write('pending',json.dumps(pending))
         finish_login(store,pending)
+    from agentclient.capture_notice import on_enrollment
     return {'profile':str(profile),'credential_stored':True,'credential_store':store_kind,
             'refresh_token_stored':refresh is not None,'reauthenticated':reauthenticate,'projects_enrolled':len(config['projects']),
-            'client_model_calls':0,'local_corpus_opened':False,'host_hooks_installed':False}
+            'client_model_calls':0,'local_corpus_opened':False,'host_hooks_installed':False,
+            'capture_notice':on_enrollment(profile)}

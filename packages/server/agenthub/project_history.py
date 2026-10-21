@@ -213,7 +213,21 @@ def _card(entry, *, compact=False):
         card.update(summary=entry["summary"], evidence_refs=entry["evidence_refs"],
                     rationale=entry["rationale"], statuses=entry["statuses"],
                     coverage_gaps=entry["coverage_gaps"], detail_available=True)
+        if "provenance" in entry:
+            from agenthub.provenance import decorate
+            card = decorate(card, entry["provenance"], entry.get("instruction_like", False),
+                            ("summary", "rationale"))
     return card
+
+
+def _attach_provenance(db, entries):
+    """Derived summaries carry who captured their sources, where and when."""
+    from agenthub.provenance import derived_provenance
+    known = derived_provenance(db, {entry["episode_id"]: [d[0] for d in entry["dependency_fingerprint"]]
+                                    for entry in entries})
+    for entry in entries:
+        if entry["episode_id"] in known:
+            entry["provenance"], entry["instruction_like"] = known[entry["episode_id"]]
 
 
 def _minimal_overview(entries, project, revision, offset, page_limit, max_bytes, gaps):
@@ -316,6 +330,7 @@ def project_overview(store, ctx, project, *, cursor=None, page_limit=8,
                   "coverage_gaps": gaps, "has_more": bool(entries[offset:]),
                   "next_cursor": f"ph1_{offset}_{summary_revision}" if entries[offset:] else None,
                   "derived_context": True}
+        _attach_provenance(db, entries[offset:offset + page_limit])
         for entry in entries[offset:offset + page_limit]:
             # Keep the early/middle/recent navigation when a compact drill-down
             # card fits; drop anchors only after both card shapes fail.
@@ -356,11 +371,18 @@ def _detail_card(assertion):
     return {key: assertion[key] for key in keys if key in assertion}
 
 
-def _pack_detail(view, offset, limit, text_offset, max_bytes):
+def _pack_detail(view, offset, limit, text_offset, max_bytes, provenance=None):
     summary = str(view.get("summary") or "")
     result = {key: view.get(key) for key in ("episode_id", "occurrence_id",
               "curated_revision_id", "summary_revision", "generation_id", "project",
               "session", "source_turn") if key in view}
+    if provenance is not None:
+        # Derived episode text; flag it when its sources or its own text read as instructions.
+        from agenthub.instruction_shape import instruction_like
+        texts = [summary, *(str(a.get("text") or "") for a in view.get("assertions") or [])]
+        result["provenance"] = provenance[0]
+        if provenance[1] or instruction_like("\n".join(texts)):
+            result["instruction_like"] = True
     result.update(summary=summary[:500], assertions=[], offset=offset,
                   next_offset=None, next_text_offset=None, has_more=False,
                   coverage_gaps=list(view.get("coverage_gaps") or []),
@@ -472,4 +494,6 @@ def project_episode_detail(store, ctx, project, episode_id, *, limit=8, offset=0
         fresh, _ = _source_authorizer(store, db, ctx, row["project"], project)
         if _active_generation(db) != generation or not all(fresh(source_id) for source_id in source_ids):
             raise HistoryDenied()
-        return _pack_detail(view, offset, limit, text_offset, max_bytes)
+        from agenthub.provenance import derived_provenance
+        provenance = derived_provenance(db, {episode_id: source_ids}).get(episode_id)
+        return _pack_detail(view, offset, limit, text_offset, max_bytes, provenance)

@@ -54,7 +54,7 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
                 def operation(path, value=None):
                     # Each call resolves current identity through the same REST
                     # operation boundary; no token or permission result is cached.
-                    return deliver(request, 'GET' if value is None else 'POST', path, value)
+                    return deliver(request, 'GET' if value is None else 'POST', path, value, mcp=True)
                 tools=MemoryTools(project,SimpleNamespace(request=operation),session=session)
                 return tools.call(params.name,arguments)
             result=await run_in_threadpool(invoke)

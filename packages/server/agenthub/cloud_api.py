@@ -16,6 +16,7 @@ from starlette.routing import Route
 from agenthub.enterprise import Denied, Conflict
 from agenthub.cloud_identity import IdentityError
 from agenthub.request_timing import capture, span, timed, emit
+from agenthub.write_limits import RateLimited, WriteTooLarge, check as check_write_limit
 
 JSON_LIMIT=262144
 FILE_LIMIT=50*1024*1024
@@ -51,6 +52,15 @@ class SecureTransport:
         await self.app(scope,receive,secure_send)
 
 class AuthenticationRequired(Denied):pass
+
+# Requests that create content a different reader could later receive. Removal
+# (withdraw/delete), policy narrowing and reads are never rate limited.
+CONTENT_WRITES=('/enterprise/v1/sources','/enterprise/v2/parts','/enterprise/v1/reviewed-notes')
+
+
+def limits_apply(path,data):
+    return path in CONTENT_WRITES or (path=='/enterprise/v1/lifecycle' and isinstance(data,dict)
+        and data.get('operation')=='correct')
 
 def pack_search_result(request,result):
     """Pack exact evidence after selection; partial useful evidence stays explicit."""
@@ -111,9 +121,17 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             meter=Meter(store);ident='retrieval:'+uuid.uuid4().hex
             meter.metric(ident,'retrieval_requests',1)
             meter.metric(ident+':cards','delivered_cards',len(result.get('results',[])))
-    def deliver(request,method,path,data):
+    def provenance(store,path,result,data=None):
+        # Added to v3 envelopes. The strict v1 envelopes stay unchanged for HTTP
+        # clients; v1 document detail is decorated only for server-side MCP results.
+        decorate=getattr(store,'decorate_delivery',None)
+        if decorate is None or not getattr(store,'dsn',None):return result
+        with span('provenance'):return decorate(path,result,data)
+    def deliver(request,method,path,data,*,mcp=False):
         store,ctx=authenticate(request)
         with span('ready'):store.require_ready()
+        if method=='POST' and limits_apply(path,data):
+            check_write_limit(store,ctx,len(json.dumps(data,ensure_ascii=False).encode()))
         if (method=='POST' and path in ('/enterprise/v1/search','/enterprise/v3/search')
                 and hasattr(store,'validate_search_delivery')):
             # Ranking/embedding uses MVCC without holding up policy writers.
@@ -152,6 +170,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 result=checked(result)
             result.pop('_candidate_pool',None)
             if ranker is not None:result=pack_search_result(data,result)
+            if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
             meter_search(store,ctx,result)
             return result
         with getattr(store,'delivery_read_lock',store.delivery_lock)():
@@ -163,7 +182,9 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return {'service':'Vaelius','models':'idle','build_ids':build_ids}
             if method=='GET' and path=='/enterprise/v3/auth/credential':return store.credential_status(ctx)
             if method=='GET' and path=='/enterprise/v1/processing-status':return store.processing_status(ctx)
-            if method=='GET' and path.startswith('/enterprise/v1/documents/'):return store.detail(ctx,path.rsplit('/',1)[1])
+            if method=='GET' and path.startswith('/enterprise/v1/documents/'):
+                detail=store.detail(ctx,path.rsplit('/',1)[1])
+                return provenance(store,path,detail) if mcp else detail
             if method=='POST' and path=='/enterprise/v3/document-evidence':
                 if set(data)-{'id','revision','offset'} or not all(isinstance(data.get(k),str) for k in ('id','revision')):
                     raise ValueError('invalid_source_evidence_request')
@@ -178,20 +199,22 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             if method=='POST' and path=='/enterprise/v3/temporal-detail':
                 if set(data)-{'id','as_of','time_mode'} or not isinstance(data.get('id'),str):
                     raise ValueError('invalid_temporal_detail')
-                return store.detail(ctx,data['id'],as_of=data.get('as_of'),time_mode=data.get('time_mode'))
+                return provenance(store,path,store.detail(ctx,data['id'],as_of=data.get('as_of'),time_mode=data.get('time_mode')))
             if method=='GET' and path.startswith('/enterprise/v1/timeline/'):return store.timeline(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v1/sources/'):return store.source(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v2/sources/'):return store.general_source(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v1/explain/'):return store.explain(ctx,path.rsplit('/',1)[1])
             if method=='POST' and path in ('/enterprise/v1/search','/enterprise/v3/search'):
-                result=store.search(ctx,data);meter_search(store,ctx,result);return result
+                result=store.search(ctx,data)
+                if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
+                meter_search(store,ctx,result);return result
             if method=='POST' and path=='/enterprise/v3/timeline':
                 if set(data)-{'id','offset','limit','cursor'} or not isinstance(data.get('id'),str):
                     raise ValueError('invalid_timeline_request')
                 if 'cursor' in data and 'offset' in data:raise ValueError('timeline_cursor_request')
-                return store.timeline(ctx,data['id'],offset=data.get('offset',0),
+                return provenance(store,path,store.timeline(ctx,data['id'],offset=data.get('offset',0),
                     limit=data.get('limit',3),cursor=data.get('cursor'),
-                    cursor_mode=('offset' not in data))
+                    cursor_mode=('offset' not in data)))
             if method=='POST' and path=='/enterprise/v3/project-history':
                 if set(data)-{'project','cursor','limit'} or not isinstance(data.get('project'),str):
                     raise ValueError('invalid_project_history_request')
@@ -208,6 +231,8 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return document_store(store).describe(ctx,data['source_id'],version=data.get('version'))
             if method=='POST' and path=='/enterprise/v3/source-documents/list':
                 return {'documents':document_store(store).list(ctx,title=data.get('title',''),limit=data.get('limit',20))}
+            if method=='POST' and path=='/enterprise/v3/capture-notice' and hasattr(store,'capture_notice'):
+                return store.capture_notice(ctx,data)
             if method=='POST' and path=='/enterprise/v3/preferences':
                 return store.preferences(ctx,project=data['project'],task=data.get('task'),explicit=data.get('explicit'),
                     session=data.get('session'),mode=data.get('mode','explicit'))
@@ -284,6 +309,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                         if size>FILE_LIMIT:raise OverflowError()
                         temporary.write(chunk)
                     temporary.seek(0)
+                    await run_in_threadpool(check_write_limit,store,ctx,size)
                     value=await run_in_threadpool(document_store(store).ingest,ctx,data['connection'],data['external_id'],
                         data['version'],data['filename'],temporary,title=data.get('title'),media_type=data.get('media_type'))
                 return JSONResponse(value)
@@ -373,7 +399,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return StreamingResponse(content(),media_type='application/octet-stream',headers=headers)
             value=await run_in_threadpool(deliver,request,request.method,path,data)
             return JSONResponse(value,headers=NO_STORE)
-        except OverflowError:return JSONResponse({'error':'body_size'},status_code=413)
+        except RateLimited as limited:
+            return JSONResponse({'error':'rate_limited','scope':limited.scope},status_code=429,
+                headers=NO_STORE|{'Retry-After':str(limited.retry_after)})
+        except (OverflowError,WriteTooLarge):return JSONResponse({'error':'body_size'},status_code=413)
         except AuthenticationRequired:
             if hasattr(registry,'protected_metadata'):
                 return JSONResponse({'error':'authentication_required'},status_code=401,

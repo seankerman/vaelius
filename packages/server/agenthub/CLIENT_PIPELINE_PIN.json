@@ -3,7 +3,7 @@
   "contract_version": "enterprise-local-2",
   "modules": {
     "agentclient.cleaning": "5fac2d1998a3007dd5eeea40bdb7980fc5c6deba54a565540776becef5c274c1",
-    "agentclient.cloud_contract": "3edbfd8e2e9223d4f3d92de5ad9c3f978ffc7bd45b1ae8d76f513192e509ac05",
+    "agentclient.cloud_contract": "27492da0546537faeaa4c969ff179f512e3dc6efb09aa8ee580e66b39611cd17",
     "agentclient.enterprise_contract": "2adcde4f27ec3edb20deb186bf608fb8b0d4cb7ac74c780589a045ececb5a2b2",
     "agentclient.general_contract": "858a819fc83c1c84828598c07b64b3159c05d34cc27939d6c3628cfda48850f7",
     "agentclient.secret_detection": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",

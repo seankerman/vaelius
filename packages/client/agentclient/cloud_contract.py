@@ -80,5 +80,15 @@ def validate_response(path,value):
         if (set(value)!={'status','id','classification','independently_verified'} or value['status']!='recorded' or value['classification']!='agent_self_report' or value['independently_verified'] is not False):raise ValueError('invalid_feedback_response')
     elif route=='preferences':
         if not isinstance(value.get('preferences'),list):raise ValueError('invalid_preference_response')
+    elif route=='capture-notice':
+        if (not {'notice','policy_url','captured','notice_version','source'}<=set(value)
+                or set(value)-{'notice','policy_url','captured','notice_version','source','readers'}
+                or not isinstance(value['notice'],str) or not 1<=len(value['notice'])<=2000
+                or (value['policy_url'] is not None and (not isinstance(value['policy_url'],str)
+                    or not value['policy_url'].startswith('https://') or len(value['policy_url'])>512))
+                or not isinstance(value['captured'],list)
+                or ('readers' in value and (not isinstance(value['readers'],dict)
+                    or not isinstance(value['readers'].get('description'),str)))):
+            raise ValueError('invalid_capture_notice')
     else:raise ValueError('unknown_cloud_response')
     return value

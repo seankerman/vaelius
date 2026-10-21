@@ -80,11 +80,16 @@ def context_page(ident,revision,sources,*,offset=0,max_chars=4000):
                 end=min(start+900,right)
                 while end>start and len(json.dumps(body[start:end]))>min(1800,max_chars//2):end-=1
                 if end==start:raise ValueError('context_character_bound')
-                chunks.append({'source_id':source['id'],'source_version':source['version'],
+                chunk={'source_id':source['id'],'source_version':source['version'],
                     'start':start,'end':end,'text':body[start:end],
                     'speaker':source.get('speaker') or 'unknown',
                     'occurred_at':source.get('occurred_at'),
-                    'context_relation':source.get('context_relation','cited_message')})
+                    'context_relation':source.get('context_relation','cited_message')}
+                # Callers that know who captured the message attach provenance.
+                if 'provenance' in source:
+                    from agenthub.provenance import decorate
+                    chunk=decorate(chunk,source['provenance'],source.get('instruction_like',False),('text',))
+                chunks.append(chunk)
                 start=end
         # Put cited portions first, then allow reading the entire message.
         spans=source.get('focus_spans',[])

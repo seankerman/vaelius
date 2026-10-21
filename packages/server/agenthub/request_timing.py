@@ -14,7 +14,8 @@ import uuid
 
 _CURRENT=ContextVar('agenthub_search_timing',default=None)
 _STAGES=frozenset({'authenticate','ready','search','candidates','lexical_sql',
-    'embedding','vector_sql','rerank','selection','delivery_lock_wait','delivery_check','meter'})
+    'embedding','vector_sql','rerank','selection','delivery_lock_wait','delivery_check','meter',
+    'provenance'})
 
 
 class Trace:

@@ -10,6 +10,13 @@ from agentclient.enterprise_capture import redact
 from agentclient.general_contract import canonical, digest, split_event, validate_event
 
 
+def retry_after(error, *, ceiling=3600):
+    """Seconds from an HTTP 429 Retry-After header (delta-seconds form), bounded."""
+    try:value=int(str(error.headers.get('Retry-After','')).strip())
+    except (AttributeError,TypeError,ValueError):return 60
+    return min(ceiling,max(1,value))
+
+
 class Outbox:
     def __init__(self, home, *, max_bytes=64 * 1024 * 1024, max_age=86400):
         self.home = Path(home);self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -113,9 +120,12 @@ class Outbox:
                     self.db.execute('DELETE FROM pending WHERE digest=?', (row['digest'],))
                     self.db.execute('DELETE FROM receipts WHERE created<?', (time.time()-self.max_age,))
                 accepted+=1
-            except Exception:
+            except Exception as exc:
+                delay=min(300,2**min(row['failures'],8))
+                # A 429 keeps the event and waits for the service's Retry-After.
+                if getattr(exc,'code',None)==429:delay=max(delay,retry_after(exc))
                 with self.db:self.db.execute('UPDATE pending SET failures=failures+1,next_attempt=? WHERE digest=?',
-                    (time.time()+min(300,2**min(row['failures'],8)),row['digest']))
+                    (time.time()+delay,row['digest']))
                 blocked=True;break
         return {'acknowledged_events':accepted, 'blocked':blocked, **self.status()}
 

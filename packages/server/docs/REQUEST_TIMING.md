@@ -24,6 +24,7 @@ log sink; timing collection does not write another database row per stage.
 | delivery_lock_wait | Acquiring the final shared delivery lock |
 | delivery_check | Current authorization/revision check, including reauthentication |
 | meter | Post-search authentication and usage recording |
+| provenance | Per-card author/project/capture-time lookup after authorization (v3 only) |
 
 **Durations are inclusive and overlap. Do not sum them.** Request elapsed time
 also includes dispatch/thread scheduling, body decoding and response encoding.

@@ -21,6 +21,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
         revoke=sub.add_parser(command,help='revoke this profile\'s token family and delete local tokens')
         revoke.add_argument('--local-only',action='store_true',help='delete local tokens without contacting the service')
     enroll=sub.add_parser('enroll-project');enroll.add_argument('--root',required=True);enroll.add_argument('--name',required=True)
+    notice=sub.add_parser('notice',help='show what is captured for a project, who can read it, and how to stop')
+    notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     args=parser.parse_args(argv);home=private_dir(args.home)
     if args.command=='uninstall':
         from agentclient.install import uninstall
@@ -59,6 +61,13 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 result=handle(home,json.loads(raw))
             except Exception as exc:
                 result={'systemMessage':'Vaelius capture unavailable ('+type(exc).__name__+'). Normal work continues.'}
+        elif args.command=='notice':
+            from agentclient import capture_notice
+            value=capture_notice.fetch(config,args.project,timeout=5)
+            result={'project':args.project,'notice':capture_notice.text(value,args.project),
+                'notice_version':value.get('notice_version'),'source':value.get('source'),
+                'capture':'paused' if config.get('paused') else ('disabled' if args.project in config.get('capture_disabled_projects',[]) else 'on')}
+            if args.acknowledge:result['acknowledgement']=capture_notice.record(home,args.project,value,'cli')
         elif args.command=='install':
             from agentclient.install import install
             result=install(home,args.codex_home,{}, {})

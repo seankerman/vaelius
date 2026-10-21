@@ -22,6 +22,7 @@ class RetrievalMixin:
         for source in sources:
             if (not source['active'] or source['tenant']!=ctx['tenant']
                     or frozen[source['id']]!=[source['source_version'],source['policy_version']]):return False
+            if source.get('principal_quarantine') and source['owner']!=ctx['actor']:return False
             if not self._general_source_allowed(db,dict(ctx,actor=release['actor']),source):return False
         return True
 

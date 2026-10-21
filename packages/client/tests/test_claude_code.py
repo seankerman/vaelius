@@ -180,6 +180,24 @@ class HookEventTests(Profile):
         self.assertEqual(backend.calls, [])
         self.assertEqual(self.outbox(), [])
 
+    def test_scope_file_folder_is_captured_with_its_sharing_request(self):
+        scoped = Path(self.tmp.name).resolve() / 'scoped';scoped.mkdir()
+        (scoped / '.vaelius').write_text('project = "scoped-demo"\nsharing = "team"\n')
+        self.config['knowledge_backend']['connection_ids'] = {'demo': 'c1', 'scoped-demo': 'c2'}
+        self.save()
+        backend = Backend()
+        self.hook('UserPromptSubmit', backend, cwd=scoped)
+        [event] = backend.delivered()
+        self.assertEqual((event['project'], event['sharing'], event['turn']), ('scoped-demo', 'team', PROMPT))
+
+    def test_read_only_scope_file_recalls_without_capturing(self):
+        (self.project / '.vaelius').write_text('project = "demo"\ncapture = "read-only"\n')
+        backend = Backend()
+        for kind in ('UserPromptSubmit', 'PostToolUse', 'Stop'):
+            result = self.hook(kind, backend)
+        self.assertEqual(backend.delivered(), [])
+        self.assertIn('additionalContext', self.hook('UserPromptSubmit', backend)['hookSpecificOutput'])
+
     def test_codex_host_keeps_its_capture_owner(self):
         from agentclient.hooks import handle
         backend = Backend()
@@ -315,6 +333,17 @@ class HeaderHelperTests(Profile):
         self.assertTrue(headers['X-AgentNetwork-Session'].startswith('mcp-'))
         self.assertTrue(all(isinstance(v, str) for v in headers.values()))
 
+    def test_scope_file_project_binds_the_connection_even_read_only(self):
+        scoped = Path(self.tmp.name).resolve() / 'scoped';scoped.mkdir()
+        (scoped / '.vaelius').write_text('project = "scoped-demo"\ncapture = "read-only"\n')
+        code, out, err = self.run_cli('mcp-headers', '--project-dir', str(scoped))
+        self.assertEqual((code, err), (0, ''))
+        self.assertEqual(json.loads(out)['X-AgentNetwork-Project'], 'scoped-demo')
+        (scoped / '.vaelius').write_text('project = "scoped-demo"\ncapture = "off"\n')
+        code, out, err = self.run_cli('mcp-headers', '--project-dir', str(scoped))
+        self.assertEqual(code, 0)
+        self.assertNotIn('X-AgentNetwork-Project', json.loads(out))
+
     def test_token_is_never_released_to_another_url(self):
         for url in ('https://memory.example.invalid/mcp', 'http://127.0.0.1:65531/mcp', 'http://127.0.0.1:65530/other'):
             code, out, err = self.run_cli('mcp-headers', '--project', 'demo', env={'CLAUDE_CODE_MCP_SERVER_URL': url})
@@ -426,6 +455,16 @@ class InstallerTests(Profile):
         uninstall(self.home, scope='project')
         self.assertFalse(local.exists())
         self.assertEqual(json.loads(self.state.read_text()), json.loads(self.original[self.state]))
+
+    def test_scope_file_roots_get_an_mcp_entry(self):
+        scoped = Path(self.tmp.name).resolve() / 'scoped';scoped.mkdir()
+        (scoped / '.vaelius').write_text('project = "scoped-demo"\n')
+        result = self.install(scope='project', project_root=scoped)
+        self.assertEqual(result['mcp_projects'], ['scoped-demo'])
+        # Once a hook has recorded the scope file's enrollment, user scope registers it too.
+        from agentclient.scope_file import record_enrollment
+        record_enrollment(self.home, {'root': str(scoped), 'project': 'scoped-demo', 'scope_file': str(scoped / '.vaelius')})
+        self.assertEqual(self.install()['mcp_projects'], ['demo', 'scoped-demo'])
 
     def test_refusals_change_nothing(self):
         with self.assertRaises(ValueError):

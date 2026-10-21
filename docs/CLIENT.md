@@ -68,8 +68,9 @@ exactly: the header helper releases credentials only to that profile's own `/mcp
 endpoint and refuses any other URL. To try a checkout without a marketplace, start
 Claude Code with `claude --plugin-dir /absolute/checkout/integrations/claude-code`.
 
-The plugin registers a `vaelius` HTTP MCP server bound to the enrolled project of
-the folder Claude Code started in. Its tools are named
+The plugin registers a `vaelius` HTTP MCP server bound to the project of the folder
+Claude Code started in, as the hooks resolve it: an enrolled project or a
+[repository scope file](#repository-scope-files), including a `read-only` one. Its tools are named
 `mcp__plugin_vaelius_vaelius__<tool>`. Claude Code runs a plugin's header helper
 without environment variables whose names contain `KEY`, `TOKEN`, `SECRET`,
 `PASSWORD` or `AUTH`, so AWS sign-in must come from a named AWS profile (as set up
@@ -91,10 +92,11 @@ vaelius-client --home /absolute/private/client-profile install --claude-code --s
 `--scope user` writes the hooks to `~/.claude/settings.json` (or to the folder named
 by `CLAUDE_CONFIG_DIR` or `--claude-config-dir`). `--scope project` writes them to the
 project's `.claude/settings.local.json`, which is personal and not committed; that
-root must be enrolled. Every MCP connection is bound to one project, so both scopes
-register a `vaelius` HTTP MCP server for each enrolled project root in Claude Code's
-per-project ("local") MCP configuration in `~/.claude.json`. Run the command again
-after enrolling another project or upgrading Python; it is idempotent. An existing
+root must be enrolled or hold a repository scope file. Every MCP connection is bound
+to one project, so both scopes register a `vaelius` HTTP MCP server for each enrolled
+project root (and each root a scope file has enrolled) in Claude Code's per-project
+("local") MCP configuration in `~/.claude.json`. Run the command again after
+enrolling another project or upgrading Python; it is idempotent. An existing
 `vaelius` server that this profile did not install is never replaced. Tools are named
 `mcp__vaelius__<tool>`. Run it while Claude Code is closed, since Claude Code
 rewrites `~/.claude.json` while it runs, then start Claude Code again.

@@ -58,8 +58,10 @@ def main():
             if exists(['skopeo', 'inspect', '--raw'], 'docker://' + mirror_ref(args.prefix, repository, '@' + digest)):
                 print('present', source, file=sys.stderr)
                 continue
+            # skopeo rejects a reference with both a tag and a digest; copy by digest.
             subprocess.run(['skopeo', 'copy', '--all', '--preserve-digests',
-                            'docker://' + source, 'docker://' + mirror_ref(args.prefix, repository, ':' + tag)],
+                            'docker://public.ecr.aws/docker/library/' + repository + '@' + digest,
+                            'docker://' + mirror_ref(args.prefix, repository, ':' + tag)],
                            check=True)
             print('mirrored', source, file=sys.stderr)
         return

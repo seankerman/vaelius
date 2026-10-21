@@ -191,21 +191,30 @@ class Worker:
             raise ValueError('invalid_worker_episode_scope')
         with self.store.open() as state,state.db:
             db=state.db
-            if getattr(db,'dialect',None)=='postgres':db.begin_write()
+            postgres=getattr(db,'dialect',None)=='postgres'
+            if postgres:db.begin_write()
             else:db.execute('BEGIN IMMEDIATE')
             now=time.time()
-            row=db.execute('''SELECT j.* FROM backend_jobs j JOIN backend_observers o ON o.id=j.observer_id
+            claimable='''SELECT j.* FROM backend_jobs j JOIN backend_observers o ON o.id=j.observer_id
                 WHERE (j.status='pending' OR j.status=? OR (j.status='running' AND j.lease_until<?))
                 AND o.status!='invalidated'
                 AND o.generation=?
                 AND NOT EXISTS(SELECT 1 FROM backend_jobs busy WHERE busy.observer_id=j.observer_id
-                    AND busy.status='running' AND busy.lease_until>=?)'''+
-                ((' AND o.connection IN ('+','.join('?' for _ in self.allowed_connections)+')') if self.allowed_connections is not None else '')+
-                ((' AND j.episode_job IN ('+','.join('?' for _ in episode_job_ids)+')') if episode_job_ids is not None else '')+
-                ' ORDER BY j.created,j.id LIMIT 1' +
-                (' FOR UPDATE OF o SKIP LOCKED' if getattr(db,'dialect',None)=='postgres' else ''),
-                ('extraction_ready' if self.config.get('_pipeline_phase')=='consolidate' else 'pending',now,self.config['episode_curation']['generation_id'],now,*(self.allowed_connections or []),
-                 *(episode_job_ids or []))).fetchone()
+                    AND busy.status='running' AND busy.lease_until>=?)'''+\
+                ((' AND o.connection IN ('+','.join('?' for _ in self.allowed_connections)+')') if self.allowed_connections is not None else '')+\
+                ((' AND j.episode_job IN ('+','.join('?' for _ in episode_job_ids)+')') if episode_job_ids is not None else '')
+            params=('extraction_ready' if self.config.get('_pipeline_phase')=='consolidate' else 'pending',now,self.config['episode_curation']['generation_id'],now,
+                *(self.allowed_connections or []),*(episode_job_ids or []))
+            # Every claimer serializes on the observer row lock. Under READ
+            # COMMITTED the candidate scan's snapshot predates that lock, so a
+            # claim committed by the previous lock holder is invisible to it.
+            # Re-read the candidate in a new statement (fresh snapshot) while
+            # holding the lock; a stale candidate is skipped and the scan retried.
+            for _ in range(100):
+                row=db.execute(claimable+' ORDER BY j.created,j.id LIMIT 1'+(' FOR UPDATE OF o SKIP LOCKED' if postgres else ''),params).fetchone()
+                if not row or not postgres:break
+                row=db.execute(claimable+' AND j.id=? FOR UPDATE OF j',(*params,row['id'])).fetchone()
+                if row:break
             if not row:return None
             fence=uuid.uuid4().hex;recovery=''
             if row['status']=='running':

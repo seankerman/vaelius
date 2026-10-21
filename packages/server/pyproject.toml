@@ -17,7 +17,7 @@ dependencies = ["vaelius-client==0.3.0"]
 semantic = ["numpy==2.5.3", "onnxruntime==1.31.0", "tokenizers==0.23.2"]
 cloud = [
   "mcp==2.3.0",
-  "psycopg[binary]==3.2.10", "starlette==1.9.0", "uvicorn==0.35.0",
+  "psycopg[binary]==3.3.6", "starlette==1.9.0", "uvicorn==0.35.0",
   "boto3==1.43.113", "pypdf==6.19.0", "python-docx==1.2.0",
   "joserfc==1.7.5", "authlib==1.8.0", "requests==2.34.2",
   "jsonschema==4.26.0",

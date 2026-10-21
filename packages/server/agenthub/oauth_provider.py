@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from agenthub.cloud_identity import IdentityError, _endpoint
 from agenthub.enterprise import Denied, Conflict, _digest
 from agenthub.postgres import TenantRegistry
+from agenthub.secret_files import MountedSecret
 
 ACTIONS={'ingest','read','source_read','feedback','curate','correct','withdraw','policy','audit','settings'}
 
@@ -29,12 +30,19 @@ class OAuthProvider:
                 or any(not isinstance(x,str) or not x for x in self.client_ids)
                 or not self.actions or not self.actions<=ACTIONS):raise ValueError('oauth_provider_configuration')
         self.client_id=settings['introspection_client_id']
-        from agenthub.secret_files import read_secret
-        self.secret=read_secret(settings['client_secret_file'])
+        # Re-read after rotation (bounded stat frequency); never logged.
+        self.secret=MountedSecret(settings['client_secret_file'])
         if http is None:
             import requests
             http=requests.Session();http.trust_env=False
         self.http=http;self._metadata=None;self._loaded=0;self._lock=threading.Lock()
+
+    @property
+    def secret(self):
+        return self._secret.value() if isinstance(self._secret,MountedSecret) else self._secret
+
+    @secret.setter
+    def secret(self,value):self._secret=value
 
     def metadata(self):
         with self._lock:

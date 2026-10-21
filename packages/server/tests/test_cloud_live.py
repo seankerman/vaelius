@@ -120,6 +120,8 @@ class ReceiverContractTests(unittest.TestCase):
         for item in case['cases']:
             with self.subTest(allowed=item['allowed']),tempfile.TemporaryDirectory() as temp:
                 profile=Path(temp);_save(profile/'runtime.json',{'provider_mode':'off','api_port':55486})
+                (profile/'credentials').mkdir(mode=0o700)
+                (profile/'credentials/acme-settings-admin.token').write_text('synthetic-admin\n')
                 report=profile/'new-report.json'
                 opener=unittest.mock.Mock()
                 opener.open.return_value=io.BytesIO(json.dumps(item['health']).encode())
@@ -134,7 +136,11 @@ class ReceiverContractTests(unittest.TestCase):
                     with self.assertRaisesRegex((ValueError,RuntimeError),expected):verify(profile,report)
                     self.assertEqual(registry.call_count,int(item['allowed']))
                     self.assertEqual(ledger.call_count,0);self.assertEqual(provider.call_count,0)
-                    opener.open.assert_called_once_with('http://127.0.0.1:55486/health',timeout=5)
+                    # Build identity comes from the authenticated route, never /health.
+                    opener.open.assert_called_once()
+                    sent=opener.open.call_args.args[0]
+                    self.assertEqual(sent.full_url,'http://127.0.0.1:55486/enterprise/v3/service-status')
+                    self.assertEqual(sent.get_header('Authorization'),'Bearer synthetic-admin')
                 if not item['allowed']:
                     self.assertFalse((profile/'live-runs').exists())
                     self.assertFalse((profile/'cloud-live-allocation.json').exists())
@@ -168,6 +174,8 @@ class LivePreflightTests(PostgresFixture,unittest.TestCase):
         credentials=profile/'credentials';credentials.mkdir()
         for principal in ('alice','bob'):
             token=credentials/('acme-'+principal+'.token');token.write_text(self.tokens[principal]);token.chmod(0o600)
+        # Build identity is read through the settings-only service-status route.
+        token=credentials/'acme-settings-admin.token';token.write_text(self.tokens['admin']);token.chmod(0o600)
         fixture_self=self
         self.store.semantic_embedder=None  # Provider-free fixture's idle model state.
         class Registry:

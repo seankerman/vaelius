@@ -1,4 +1,5 @@
 """Authenticated Streamable HTTP MCP over the canonical service operations."""
+import ipaddress
 import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -13,6 +14,27 @@ from starlette.responses import JSONResponse
 from agenthub.enterprise import Denied
 from agenthub.cloud_identity import IdentityError
 from agenthub.mcp_tools import CONTEXT_READ_INSTRUCTIONS, MemoryTools, enterprise_tools
+
+
+def transport_security(allowed_hosts, allowed_origins):
+    """SDK DNS-rebinding protection from the operator's host/origin allowlist.
+
+    The SDK compares the raw Host header (with port), so each exact name is also
+    allowed with any port, matching Starlette's TrustedHostMiddleware. Wildcards
+    cannot be expressed exactly and an empty list would admit nothing, so both
+    are configuration errors (fail closed) rather than a disabled check.
+    """
+    hosts=[];origins=list(allowed_origins)
+    for host in allowed_hosts:
+        if not isinstance(host,str) or not host or any(c in host for c in '*/[] '):
+            raise ValueError('mcp_allowed_hosts_require_exact_names')
+        try:name='['+host+']' if ipaddress.ip_address(host).version==6 else host
+        except ValueError:name=host
+        hosts+=[name,name+':*']
+        origins+=[scheme+'://'+name+port for scheme in ('https','http') for port in ('',':*')]
+    if not hosts:raise ValueError('mcp_allowed_hosts_required')
+    return TransportSecuritySettings(enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,allowed_origins=list(dict.fromkeys(origins)))
 
 
 def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge=None):
@@ -43,8 +65,9 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
 
     server=Server('vaelius-memory',version='0.3.0',instructions=CONTEXT_READ_INSTRUCTIONS,
         on_list_tools=list_tools,on_call_tool=call_tool)
-    # TrustedHostMiddleware and guarded() enforce the shared API host/origin policy.
-    security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    # Defense in depth: the SDK re-checks Host/Origin even if this endpoint is
+    # mounted without TrustedHostMiddleware; guarded() keeps the exact own-origin rule.
+    security=transport_security(allowed_hosts,allowed_origins)
     application=server.streamable_http_app(stateless_http=True,json_response=True,
         max_request_body_size=65536,transport_security=security)
 

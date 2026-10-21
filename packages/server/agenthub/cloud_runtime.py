@@ -1,7 +1,9 @@
 """Installed API/worker runtime with explicit local configuration and no startup models."""
 import argparse
+import ipaddress
 import json
 import os
+import sys
 from pathlib import Path
 from agenthub.postgres import PostgresEnterpriseStore, TenantRegistry
 from agenthub.cloud_ops import require_reconciled
@@ -70,6 +72,63 @@ def read_settings(path):
         settings['control_dsn']=read_secret(settings.pop('control_dsn_file'))
     if settings.get('provider_mode','off')!='off':raise ValueError('api_startup_cannot_enable_providers')
     return settings
+
+LOOPBACK=('127.0.0.1','localhost','::1')
+
+
+def deployment_settings(settings):
+    """Validate the declared transport; production refuses to start without one.
+
+    `deployment` is absent (development: plain HTTP, today's behavior) or:
+      {"mode":"production","tls":"proxy","trusted_proxies":["10.0.0.0/16"]}
+      {"mode":"production","tls":"direct","certfile":"/run/tls/tls.crt","keyfile":"/run/tls/tls.key"}
+    Production also requires an explicit, exact `allowed_hosts` list.
+    """
+    value=settings.get('deployment',{})
+    if not isinstance(value,dict) or set(value)-{'mode','tls','trusted_proxies','certfile','keyfile'}:
+        raise ValueError('deployment_configuration')
+    mode=value.get('mode','development');tls=value.get('tls')
+    if mode not in ('development','production') or tls not in (None,'proxy','direct'):
+        raise ValueError('deployment_configuration')
+    if tls=='proxy':
+        proxies=value.get('trusted_proxies')
+        if not isinstance(proxies,list) or not 1<=len(proxies)<=64 or set(value)-{'mode','tls','trusted_proxies'}:
+            raise ValueError('deployment_trusted_proxies_required')
+        for item in proxies:
+            # Exact addresses or networks only: never "*" or a catch-all network.
+            try:network=ipaddress.ip_network(item,strict=True) if isinstance(item,str) else None
+            except ValueError:network=None
+            if network is None or network.prefixlen==0:raise ValueError('deployment_trusted_proxies_required')
+    elif tls=='direct':
+        if set(value)-{'mode','tls','certfile','keyfile'}:raise ValueError('deployment_configuration')
+        for key in ('certfile','keyfile'):
+            if not isinstance(value.get(key),str) or not Path(value[key]).is_absolute() or not Path(value[key]).is_file():
+                raise ValueError('deployment_tls_files_required')
+        if Path(value['keyfile']).stat().st_mode&0o077:raise ValueError('deployment_tls_key_permissions')
+    elif set(value)-{'mode'}:raise ValueError('deployment_configuration')
+    if mode=='production':
+        if tls is None:raise ValueError('production_requires_tls_or_trusted_proxy')
+        hosts=settings.get('allowed_hosts')
+        if (not isinstance(hosts,list) or not hosts
+                or any(not isinstance(h,str) or not h or '*' in h for h in hosts)):
+            raise ValueError('production_requires_explicit_allowed_hosts')
+    return {'mode':mode,'tls':tls,'trusted_proxies':value.get('trusted_proxies'),
+            'certfile':value.get('certfile'),'keyfile':value.get('keyfile')}
+
+
+def server_options(deployment,bind):
+    """uvicorn transport options for a validated deployment."""
+    options={'proxy_headers':False,'server_header':False}
+    if deployment['tls']=='proxy':
+        # Only the declared proxies may set the client scheme via X-Forwarded-Proto.
+        options.update(proxy_headers=True,forwarded_allow_ips=list(deployment['trusted_proxies']))
+    elif deployment['tls']=='direct':
+        options.update(ssl_certfile=deployment['certfile'],ssl_keyfile=deployment['keyfile'])
+    elif bind not in LOOPBACK:
+        print('warning: serving plain HTTP on a non-loopback address; declare deployment.mode='
+              '"production" with a TLS proxy or certificate (docs/SELF_HOSTING.md)',file=sys.stderr)
+    return options
+
 
 def registry_from_settings(settings,home):
     configuration = settings.get('retrieval', {})
@@ -158,18 +217,23 @@ def app_from_profile(profile):
     from agenthub.document_ingest import DocumentStore
     from agenthub.object_config import objects_from_settings
     profile=Path(profile).resolve();settings=read_settings(profile/'runtime.json')
+    deployment=deployment_settings(settings)
     registry=registry_from_settings(settings,profile/'server-state')
     objects=objects_from_settings(settings)
     from agenthub.broker_config import broker_from_settings
     brokers={name:broker_from_settings(value) for name,value in settings.get('identity_brokers',{}).items()}
     return create_app(registry,build_ids=identity['build_ids'],brokers=brokers,allowed_hosts=settings.get('allowed_hosts',['127.0.0.1','localhost']),
-        allowed_origins=settings.get('allowed_origins',[]),document_factory=lambda store:DocumentStore(store,objects))
+        allowed_origins=settings.get('allowed_origins',[]),document_factory=lambda store:DocumentStore(store,objects),
+        https_only=deployment['mode']=='production')
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--profile',required=True)
     parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=55486)
     args=parser.parse_args();os.umask(0o077)
     import uvicorn
+    # Validate before building the app so a production profile without a declared
+    # TLS/proxy transport never opens a listener.
+    options=server_options(deployment_settings(read_settings(Path(args.profile).resolve()/'runtime.json')),args.bind)
     uvicorn.run(app_from_profile(args.profile),host=args.bind,port=args.port,
-        access_log=False,proxy_headers=False,timeout_graceful_shutdown=10,limit_concurrency=32)
+        access_log=False,timeout_graceful_shutdown=10,limit_concurrency=32,**options)
 if __name__=='__main__':main()

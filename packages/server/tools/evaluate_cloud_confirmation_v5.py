@@ -81,7 +81,8 @@ def evaluate(args):
             raw=response.read(MAX_ORIGINAL+1 if binary else 128*1024+1)
         if len(raw)>(MAX_ORIGINAL if binary else 128*1024):raise ValueError('confirmation_http_response_bound')
         return raw if binary else json.loads(raw)
-    health=request('/health')
+    # Build identity is authenticated operator detail (audit/settings), not /health.
+    health=request('/enterprise/v3/service-status',token=(profile/'credentials/acme-settings-admin.token').read_text().strip())
     if health.get('build_ids')!=build_ids:raise ValueError('confirmation_api_installed_build_mismatch')
     request('/ready')
     settings,registry=runtime(profile)

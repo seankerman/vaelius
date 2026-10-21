@@ -40,6 +40,26 @@ mounted owner-only secret for the confidential introspection client. Configure:
 }}
 ```
 
+The introspection secret file is re-checked at most every 30 seconds and re-read
+only when its resolved inode, size or modification time changes. Rotation therefore
+needs no restart. A missing, empty or group/world-readable replacement is ignored,
+and the last valid secret stays in use until a valid file appears. The value is
+never logged. Rotate with an overlap: enable the new client secret at the issuer,
+update the mounted file, wait at least 30 seconds, then retire the old secret.
+Two common ways to mount it:
+
+- Kubernetes: a `Secret` volume with `defaultMode: 0400`, and `runAsUser` or
+  `fsGroup` matching the service UID. Kubernetes swaps the files atomically.
+  Mount the volume directory, not a `subPath`, because `subPath` mounts never
+  receive updates.
+- AWS Secrets Manager on Kubernetes: the Secrets Store CSI Driver with the AWS
+  provider. Set `filePermission: "0400"` on the object, because the default `0644`
+  is rejected. Install the driver with `enableSecretRotation=true` and a
+  `rotationPollInterval`. The same `subPath` limitation applies.
+- AWS Secrets Manager on ECS, which injects secrets only as environment variables:
+  have a sidecar write the file with mode 0400 to a shared volume, replacing it
+  atomically by writing a temporary file and renaming it.
+
 The issuer must support authorization-code/PKCE, discovery, refresh, revocation
 and authenticated introspection. Introspection must report `active`, `sub`, `aud`,
 `client_id`, `exp` and `scope`. Rejecting missing claims is intentional. JWT issuers

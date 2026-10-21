@@ -17,6 +17,10 @@ The API uses application credentials; migration/provisioning credentials remain
 in a separate operator file. `runtime.json` must be mode 0600 or 0400. Runtime and
 worker configuration are explicit. Startup does not enable model calls, source
 collection or curation. Finite workers consume PostgreSQL jobs; repeat them as needed.
+`runtime.json` also sets per-principal and per-tenant write limits (`ingest_limits`)
+and the organization's capture notice (`capture_notice`); operators quarantine or
+bulk-withdraw a principal's content with `vaelius principal-*` commands. See
+[shared-memory governance](MEMORY_GOVERNANCE.md).
 
 ## Container
 

@@ -81,6 +81,23 @@ service, then deletes the local tokens. If revocation cannot be confirmed the
 tokens are kept for a retry; `--local-only` deletes them without contacting the
 service, leaving the session valid until its idle timeout.
 
+## Capture notice and status
+
+Login and `enroll-project` print the organization's capture notice: what is
+captured (prompts, assistant replies, tool calls and results), who can read it under
+the service's policy, and how to pause or withdraw. The hook shows the full notice
+the first time a project is captured and one capture ON/OFF status line at the start
+of every session. Displays are recorded in the profile's `notice-acknowledgements.json`.
+
+```sh
+vaelius-client --home /absolute/private/client-profile notice --project PROJECT --acknowledge
+```
+
+Automatic context is framed as reference data, not instructions, and each item
+carries its author, project, capture time and original/derived wording. A
+rate-limited capture (HTTP 429) stays in the outbox until the service's
+`Retry-After`. See [shared-memory governance](MEMORY_GOVERNANCE.md).
+
 Desktop capture is forward-only at enrollment. Capture is an explicit finite poll;
 installation does not start a recurring collector or import past conversations.
 Pausing or uninstalling does not delete server records; use backend lifecycle tools.

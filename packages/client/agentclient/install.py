@@ -30,7 +30,12 @@ def enroll_project(home, root, name):
             json.dump(config,stream,indent=2);stream.write('\n');tmp=Path(stream.name)
         tmp.chmod(0o600)
         tmp.replace(path)
-    return {'root':str(root),'project':name,'status':'enrolled_forward_only'}
+    # Enrolling a project is the explicit opt-in; show what that captures first-hand.
+    from agentclient import capture_notice
+    notice=capture_notice.fetch(config,name,timeout=2) if config.get('knowledge_backend') else capture_notice.default_notice()
+    capture_notice.record(home,name,notice,'enroll_project')
+    return {'root':str(root),'project':name,'status':'enrolled_forward_only',
+            'capture_notice':capture_notice.text(notice,name)}
 
 
 def install(home, codex_home, projects, sessions):

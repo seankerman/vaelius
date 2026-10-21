@@ -179,6 +179,12 @@ not proof of truth or complete answers. Agents can fetch cited evidence, expand
 surrounding conversation and inspect originals before deciding. LLM output is
 validated by the canonical backend; optional enrichment does not replace originals.
 
+Shared memory can carry one person's text into another person's agent. Every
+delivered item names its author, project, capture time and whether it is original
+wording; instruction-shaped text is labelled, never executed. Writes are rate
+limited per principal and tenant, and an operator can quarantine a principal or
+bulk-withdraw their content. See [shared-memory governance](MEMORY_GOVERNANCE.md).
+
 Withdrawal blocks access to dependent knowledge while preserving recorded history
 under its lifecycle policy. Deletion purges source/derived content, vectors and
 retained originals and records its denial/deletion journal. Operator retention

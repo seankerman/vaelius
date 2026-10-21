@@ -200,9 +200,10 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
         with os.fdopen(fd,'w') as stream:stream.write(json.dumps(config,indent=2)+'\n');stream.flush();os.fsync(stream.fileno())
     except (OSError,ValueError):raise EnrollmentError('private_profile_write_failed') from None
     except Exception:raise EnrollmentError('credential_store_write_failed') from None
+    from agentclient.capture_notice import on_enrollment
     return {'profile':str(profile),'credential_stored':True,'credential_store':store_kind,
             'refresh_token_stored':refresh is not None,'projects_enrolled':0,'client_model_calls':0,
-            'local_corpus_opened':False,'host_hooks_installed':False}
+            'local_corpus_opened':False,'host_hooks_installed':False,'capture_notice':on_enrollment(profile)}
 
 
 def main(argv=None):

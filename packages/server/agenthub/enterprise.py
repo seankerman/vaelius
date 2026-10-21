@@ -35,7 +35,10 @@ from agenthub.general_sources import GeneralSourcesMixin
 from agenthub.backend_retrieval import RetrievalMixin
 
 
-class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
+from agenthub.governance import GovernanceMixin
+
+
+class EnterpriseStore(GovernanceMixin,GeneralSourcesMixin,RetrievalMixin):
     def __init__(self, *args, **kwargs):
         raise RuntimeError('PostgreSQL authority required; use CloudStore')
 
@@ -180,6 +183,8 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
         if (ctx.get('delegated_projects') is not None and
                 source['external_project'] not in ctx['delegated_projects']):return False
         if not self._general_source_allowed(db,ctx,source):return False
+        # Operator quarantine withholds a principal's held sources from others.
+        if source.get("principal_quarantine") and source["owner"]!=ctx["actor"]:return False
         if raw:
             # Owner-only redacted passages, evidence and context. Retained
             # originals use _original_allowed (source_read + owner or grant).
@@ -235,6 +240,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
                      value["external_id"],ctx["enrollment"],payload_hash,visibility,"private",
                      str(value["occurred_at"]),time.time(),value.get('precision','unknown'),
                      value.get('timezone')))
+                self._governance_mark(db,ctx,source_id,cleaned)
                 self._audit(db,ctx,"ingest","accepted",source_id,1)
             return {"source_id":source_id,"disposition":"accepted"}
 
@@ -626,6 +632,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
                          _digest(json.dumps(event,sort_keys=True)),source['visibility'],'private',
                          str(event['occurred_at']),now,event.get('precision','unknown'),
                          event.get('timezone')))
+                    self._governance_mark(db,ctx,corrected_id,cleaned)
                     db.execute("INSERT INTO historical_sources VALUES(?,?) ON CONFLICT DO NOTHING",
                         (source['id'],corrected_id))
                     dependent=db.execute("SELECT document_id FROM enterprise_dependencies WHERE source_id=?",

@@ -125,6 +125,20 @@ def stop(profile):
             if known:subprocess.run([engine,'stop','--time','10',name],check=True,capture_output=True,timeout=30);stopped.append(name)
     return {'stopped':stopped,'volumes_preserved':True,'global_hooks_changed':False}
 
+GOVERNANCE_COMMANDS=('principal-quarantine','principal-release','principal-withdraw','governance-status')
+
+
+def governance_command(store,args,parser):
+    if args.command=='governance-status':return store.governance_status()
+    if not args.principal or not args.reason:parser.error('--principal and --reason are required')
+    if args.command=='principal-quarantine':
+        return store.quarantine_principal(args.principal,reason=args.reason,since=args.since)
+    if args.command=='principal-release':return store.release_principal(args.principal,reason=args.reason)
+    if not args.since:parser.error('principal-withdraw requires --since (and optionally --until)')
+    return store.withdraw_principal_content(args.principal,since=args.since,until=args.until,
+        apply=args.apply,limit=args.limit,reason=args.reason)
+
+
 def main(argv=None):
     def tenant_id(value):
         if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}', value):
@@ -133,7 +147,8 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=[
         'doctor','up','worker-run','status','stop','reindex',
         'source-index-reconcile',
-        'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable'])
+        'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
+        *GOVERNANCE_COMMANDS])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',default='acme',type=tenant_id)
     parser.add_argument('--provider-free',action='store_true')
     parser.add_argument('--live',action='store_true');parser.add_argument('--ledger');parser.add_argument('--job-id')
@@ -143,6 +158,11 @@ def main(argv=None):
     parser.add_argument('--max-calls',type=int,default=12);parser.add_argument('--max-retries',type=int,default=3)
     parser.add_argument('--output');parser.add_argument('--connection-id')
     parser.add_argument('--after',default='')
+    # Memory-governance operator commands (see docs/MEMORY_GOVERNANCE.md).
+    parser.add_argument('--principal');parser.add_argument('--reason')
+    parser.add_argument('--since',help='epoch seconds or ISO-8601 with offset');parser.add_argument('--until')
+    parser.add_argument('--apply',action='store_true',help='principal-withdraw: apply; default is a dry run')
+    parser.add_argument('--limit',type=int,default=200)
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
@@ -204,6 +224,7 @@ def main(argv=None):
             from agenthub.cloud_ops import Meter
             value=Meter(store).status()
         elif args.command=='readiness':store.require_ready();value={'ready':True,'tenant':args.tenant}
+        elif args.command in GOVERNANCE_COMMANDS:value=governance_command(store,args,parser)
         elif args.command in ('tenant-disable','tenant-enable'):
             from agenthub.postgres import TenantRegistry
             operator=json.loads((profile/'operator.json').read_text());admin=TenantRegistry(operator['control_admin_dsn'],profile/'operator-state')

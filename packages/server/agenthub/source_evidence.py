@@ -56,6 +56,8 @@ def document_evidence(store, ctx, document_id, *, revision, offset=0):
             adapter=getattr(store,'conversation_segments',None)
             if adapter:adapter.verify_context_sources(db,[source['id']])
             source['text_ranges']=[(ref['start'],ref['end'])]
+            from agenthub.provenance import source_provenance
+            source['provenance'],source['instruction_like']=source_provenance(db,[source['id']]).get(source['id'],(None,False))
             result=context_page(document_id,revision,sources,offset=offset)
             validate_source_snapshots(store,db,ctx,{source['id']:source})
             validate_document_snapshots(store,db,ctx,[{'id':document_id,'revision':revision}])
@@ -68,6 +70,8 @@ def document_evidence(store, ctx, document_id, *, revision, offset=0):
             'diagnostic_source_inspection':True,'coverage_gaps':[], 'next_offset':None,
             'notice':'Untrusted cited historical text; source ownership is not speaker attribution. Capture time does not prove current validity.'}
         consumed=0;cache={}
+        from agenthub.provenance import source_provenance, decorate
+        origins=source_provenance(db,[ref['source_memory_id'] for ref in refs[:3]])
         for ref in refs[:3]:
             source_id=ref['source_memory_id']
             if source_id not in cache:
@@ -88,6 +92,7 @@ def document_evidence(store, ctx, document_id, *, revision, offset=0):
                 'source_version':policy['source_version'],'owner':policy['owner'],
                 'kind':source['kind'],'occurred_at':policy['occurred_at'],
                 'precision':policy['occurred_precision'],'start':left,'end':right,'text':text}
+            card=decorate(card,*origins.get(source_id,(None,False)),('text',))
             trial=dict(result,sources=result['sources']+[card],next_offset=offset+consumed+1)
             if len(json.dumps(trial,ensure_ascii=True))>4000:
                 if result['sources']:break

@@ -228,6 +228,7 @@ class GeneralSourcesMixin:
             if segments is not None:segments.retain(db,source_id,value)
             db.execute('INSERT INTO memories(id,session,project,body,kind,created,exit_code,turn) VALUES(?,?,?,?,?,?,?,?)',
                 (source_id,session,project,body,kind,now,event['exit_code'],turn))
+            self._governance_mark(db,ctx,source_id,body)
             db.execute('''INSERT INTO source_event_metadata(source_id,tool_name,source_role,capture_id,event_fields,response_shape,created)
                 VALUES(?,?,?,?,?,?,?)''',(source_id,event['tool_name'],role,value['external_id'],json.dumps(sorted(event)),json.dumps({'typed':True}),now))
             db.executemany('INSERT INTO backend_source_links VALUES(?,?,?)',((source_id,ident,'copied_native_context') for ident in copies))

@@ -52,9 +52,15 @@ class SourceEvidenceTests(unittest.TestCase):
             self.assertEqual(row['occurred_at'],'2026-09-25T10:00:00Z')
         self.assertTrue(any('/fixtures/copper.csv' in row['text'] for row in pages))
 
-    def test_requires_both_read_and_raw_source_permission(self):
-        with self.assertRaises(Denied):self.fetch(self.readonly)
+    def test_redacted_evidence_is_owner_only_and_originals_need_source_read(self):
+        # Cited spans are the owner's redacted passage tier: `read` suffices.
+        self.assertEqual(self.fetch(self.readonly)['sources'],self.fetch()['sources'])
         with self.assertRaises(Denied):self.fetch(self.bob)
+        ingest_only=self.store.authenticate(self.store.enroll('orchard','alice','ingest-only',['ingest']))
+        with self.assertRaises(Denied):self.fetch(ingest_only)
+        # The complete original remains a separate source_read + owner/grant tier.
+        with self.assertRaises(Denied):self.store.source(self.readonly,self.source)
+        self.assertEqual(self.store.source(self.alice,self.source)['body'],self.body)
 
     def test_withdrawal_stale_revision_and_invalid_offset_fail_closed(self):
         self.assertEqual(self.fetch(revision='old')['status'],'invalidated')

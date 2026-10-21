@@ -89,6 +89,14 @@ def bounded_spool(stream, *, limit=FILE_LIMIT, expected_sha256=None):
         yield spool, length, sha
 
 
+def _require_tls(client):
+    """Ambient endpoint overrides (for example AWS_ENDPOINT_URL) must not
+    downgrade production object or key traffic to plaintext."""
+    endpoint = getattr(getattr(client, 'meta', None), 'endpoint_url', None)
+    if isinstance(endpoint, str) and urlsplit(endpoint).scheme != 'https':
+        raise ValueError('tls_endpoint_required')
+
+
 class FileSourceObjects:
     """Checksummed private test storage, explicitly distinct from S3 durability."""
     kind = 'private_file_recovery_adapter'
@@ -169,10 +177,7 @@ class S3SourceObjects:
             from botocore.config import Config
             self.client=boto3.client('s3',region_name=region,use_ssl=True,config=Config(
                 signature_version='s3v4',retries={'max_attempts':0},connect_timeout=5,read_timeout=15))
-            # Ambient endpoint overrides (for example AWS_ENDPOINT_URL) must not
-            # downgrade production object traffic to plaintext.
-            if urlsplit(self.client.meta.endpoint_url).scheme != 'https':
-                raise ValueError('tls_endpoint_required')
+            _require_tls(self.client)
             self._kms_endpoint = None; self._region = region
             self.kind='s3_aws';self.bucket=bucket;self.limit=limit
             return
@@ -204,8 +209,7 @@ class S3SourceObjects:
             config = Config(retries={'max_attempts': 0}, connect_timeout=5, read_timeout=15)
             if self._kms_endpoint is None:
                 self._kms_client = boto3.client('kms', region_name=self._region, use_ssl=True, config=config)
-                if urlsplit(self._kms_client.meta.endpoint_url).scheme != 'https':
-                    raise ValueError('tls_endpoint_required')
+                _require_tls(self._kms_client)
             else:
                 endpoint, access_key, secret_key = self._kms_endpoint
                 self._kms_client = boto3.client('kms', endpoint_url=endpoint, aws_access_key_id=access_key,

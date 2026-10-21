@@ -207,8 +207,10 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         origin=request.headers.get('origin')
         own=str(request.base_url).rstrip('/')
         if origin is not None and origin not in (*allowed_origins,own):return JSONResponse({'error':'forbidden'},status_code=403)
-        path=request.url.path
-        if request.url.query:return JSONResponse({'error':'unsupported_query'},status_code=400)
+        # Dispatch on the ASGI path the router matched. request.url is rebuilt
+        # from the Host header, so it must not choose the operation.
+        path=request.scope['path']
+        if request.scope.get('query_string'):return JSONResponse({'error':'unsupported_query'},status_code=400)
         try:
             if path=='/health':return JSONResponse({'service':'Vaelius','models':'idle',**({'build_ids':build_ids} if build_ids else {})})
             if path.startswith('/.well-known/oauth-protected-resource') and hasattr(registry,'protected_metadata'):
@@ -334,7 +336,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         except (ValueError,TypeError,KeyError):return JSONResponse({'error':'invalid_request'},status_code=400)
         except Exception:return JSONResponse({'error':'service_error'},status_code=503)
     async def timed_dispatch(request):
-        if request.method!='POST' or request.url.path not in ('/enterprise/v1/search','/enterprise/v3/search'):
+        if request.method!='POST' or request.scope['path'] not in ('/enterprise/v1/search','/enterprise/v3/search'):
             return await dispatch(request)
         with capture() as trace:
             status=503

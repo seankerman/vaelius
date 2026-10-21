@@ -54,7 +54,7 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
         origin=request.headers.get('origin')
         if origin is not None and origin not in (*allowed_origins,own):
             return await JSONResponse({'error':'forbidden'},status_code=403)(scope,receive,send)
-        if request.url.query:
+        if scope.get('query_string'):
             return await JSONResponse({'error':'unsupported_query'},status_code=400)(scope,receive,send)
         try:
             store,_=await run_in_threadpool(authenticate,request)

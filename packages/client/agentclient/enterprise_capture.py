@@ -1,4 +1,5 @@
 """Faithful, deterministic enterprise capture; never imports or calls a model."""
+import re
 import uuid
 
 from agentclient.cleaning import SECRET_KEYS, REDACTED_SECRET
@@ -6,6 +7,24 @@ from agentclient.secret_detection import redact_text
 from agentclient.general_contract import VERSION, validate_event
 
 SELF_TOOLS = {'agentnetwork_memory', 'mcp__agentnetwork__agentnetwork_memory'}
+# MCP server names under which hosts register the Vaelius service. Claude Code
+# names tools `mcp__<server>__<tool>`, or `mcp__plugin_<plugin>_<server>__<tool>`
+# for a plugin-provided server; Codex uses the `agentnetwork_memory` registration.
+SELF_SERVERS = {'vaelius', 'agentnetwork_memory', 'agentnetwork', 'plugin_vaelius_vaelius'}
+_MCP_TOOL = re.compile(r'mcp__(.+?)__.+')
+
+
+def self_tool(name):
+    """True when a tool call reads or writes Vaelius memory itself.
+
+    Its arguments and results are retrieved memory, so capturing them would feed
+    memory back into the corpus it came from.
+    """
+    normalized = str(name).replace('-', '_').lower()
+    if normalized in SELF_TOOLS:
+        return True
+    match = _MCP_TOOL.fullmatch(normalized)
+    return bool(match) and match.group(1) in SELF_SERVERS
 
 
 def _reason(kind, rules):
@@ -40,11 +59,16 @@ def redact(value, field='$', manifest=None):
     return value, manifest
 
 
+def turn_of(event):
+    """Codex sends `turn_id`; Claude Code identifies the turn by `prompt_id`."""
+    return event.get('turn_id') or event.get('prompt_id') or ''
+
+
 def normalize_capture(event, project, connection, *, source_type='agent', origin='host_hook', sharing='private'):
     kind = event.get('hook_event_name', '')
     tool = str(event.get('tool_name', ''))
     blocks = [];role = 'unknown';channel = '';complete = False;disposition = 'accepted'
-    if event.get('origin') == 'backend_observer' or tool.replace('-', '_').lower() in SELF_TOOLS:
+    if event.get('origin') == 'backend_observer' or self_tool(tool):
         disposition = 'excluded'
     elif kind == 'UserPromptSubmit':
         role = 'user';blocks = [{'type': 'text', 'value': str(event.get('prompt', ''))}]
@@ -56,12 +80,25 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
         role = 'tool'
         blocks = [{'type': 'tool_arguments', 'value': event.get('tool_input', {})},
                   {'type': 'tool_result', 'value': event.get('tool_response', {})}]
+    elif kind == 'PostToolUseFailure':
+        # Claude Code reports a failed or interrupted tool call separately.
+        role = 'tool'
+        failure = {'error': str(event.get('error', ''))}
+        if isinstance(event.get('is_interrupt'), bool):
+            failure['is_interrupt'] = event['is_interrupt']
+        blocks = [{'type': 'tool_arguments', 'value': event.get('tool_input', {})},
+                  {'type': 'tool_result', 'value': failure}]
     elif kind == 'Attachment':
         blocks = [{'type': 'attachment', 'value': event['attachment']}]
     elif kind == 'PostCompact':
         # Intake records source lifecycle; trusted receiver boundary is a different route.
         role = 'source'
         blocks = [{'type':'record_fields','value':{'trigger':event.get('trigger','unknown')}}]
+    elif kind == 'StopFailure':
+        # The turn ended on an API error: record that no final reply exists,
+        # keeping only the error category, never the rendered error text.
+        disposition = 'incomplete'
+        blocks = [{'type': 'record_fields', 'value': {'turn_failure': str(event.get('error', 'unknown'))[:64]}}]
     elif kind == 'gap':
         disposition = 'incomplete'
     else: disposition = 'unsupported'
@@ -75,7 +112,7 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
     value = {'version': VERSION, 'connection': connection, 'external_id': ident,
         'revision': str(event.get('revision', '1')), 'source_type': source_type,
         'project': project, 'conversation': str(event.get('session_id', '')),
-        'turn': str(event.get('turn_id', '')), 'actor': str(event.get('speaker', '')),
+        'turn': str(turn_of(event)), 'actor': str(event.get('speaker', '')),
         'source_url': str(event.get('source_url', '')), 'occurred_at': event.get('timestamp', 'unknown'),
         'origin': 'context_transfer' if any(x in tool.lower() for x in ('read_thread', 'wait_threads')) else origin,
         'disposition': disposition, 'redactions': redactions,
@@ -85,7 +122,7 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
             'complete': complete, 'expected_events': event.get('expected_events', []), 'exit_code': code},
         'blocks': safe_blocks}
     # Preserve cwd explicitly rather than dereferencing files.
-    if kind == 'PostToolUse' and event.get('cwd'):
+    if kind in {'PostToolUse', 'PostToolUseFailure'} and event.get('cwd') and disposition != 'excluded':
         value['blocks'].append({'type': 'record_fields', 'value': {'cwd': str(event['cwd'])}})
     value, extra = redact(value)
     value['redactions'] += extra
@@ -97,10 +134,12 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
 
 
 def capabilities():
-    return {'adapter': 'codex-desktop-item-completed-and-hooks-v2',
+    return {'adapter': 'agent-hooks-and-desktop-items-v3',
         'capture_owner': 'explicit hooks or desktop, never both for one conversation',
+        'hosts': {'codex': ['hooks', 'desktop_items'], 'claude-code': ['hooks']},
         'verified_shapes': ['UserMessage', 'AgentMessage', 'CommandExecution', 'McpToolCall', 'FileChange',
             'ContextCompaction', 'Plan', 'WebSearch', 'Extension', 'DynamicToolCall',
             'SubAgentActivity', 'CollabAgentToolCall', 'task_complete'],
+        'hook_events': ['UserPromptSubmit', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'StopFailure', 'PostCompact'],
         'reference_only': ['attachments'], 'excluded': ['reasoning', 'system', 'developer', 'backend_observer', 'retrieved_memory'],
         'unknown_types': 'explicit unsupported disposition', 'local_model_calls': 0}

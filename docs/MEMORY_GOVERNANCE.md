@@ -237,7 +237,10 @@ how to stop:
   `capture_disabled_projects` shows `capture OFF`; a `read-only`
   [repository scope file](CLIENT.md#repository-scope-files) shows
   `capture OFF (read-only scope file)`, and a `sharing = "team"` request is named in
-  the ON line. Folders that are not enrolled show nothing.
+  the ON line. Folders that are not enrolled show nothing. When the profile is signed
+  out, or the service is unreachable, a second line says so, how many captured items
+  are queued locally, and how to sign in again. These lines are system messages for
+  the person (Codex and Claude Code), never context for the model.
 - `vaelius-client notice --project PROJECT [--acknowledge]` prints the current notice
   and capture state, and with `--acknowledge` records it.
 

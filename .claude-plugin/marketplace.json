@@ -1,0 +1,14 @@
+{
+  "name": "vaelius",
+  "owner": {
+    "name": "Vaelius contributors"
+  },
+  "description": "Vaelius integrations for Claude Code",
+  "plugins": [
+    {
+      "name": "vaelius",
+      "source": "./integrations/claude-code",
+      "description": "Vaelius shared memory for Claude Code"
+    }
+  ]
+}

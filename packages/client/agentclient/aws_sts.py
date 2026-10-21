@@ -165,7 +165,7 @@ def enroll(home, *, url, tenant, enrollment, profile=None, region=None, server_i
     except SignedOut:raise EnrollmentError('aws_signed_out') from None
     except LoginRequired:raise EnrollmentError('aws_sign_in_denied') from None
     config = {'paused': False, 'projects': {}, 'sessions': {}, 'desktop_transcripts': {},
-        'capture_all_codex_sessions': False, 'observer': {'enabled': False}, 'publication': {'enabled': False},
+        'capture_all_sessions': False, 'observer': {'enabled': False}, 'publication': {'enabled': False},
         'remote_publication': False, 'knowledge_backend': backend}
     try:
         fd = os.open(profile_path / 'credential.lock', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600);os.close(fd)

@@ -1,0 +1,25 @@
+{
+  "name": "vaelius",
+  "displayName": "Vaelius",
+  "version": "0.3.0",
+  "description": "Vaelius shared memory for Claude Code: capture from enrolled projects, automatic recall and the Vaelius MCP tools, through the locally installed vaelius-client.",
+  "author": {
+    "name": "Vaelius contributors"
+  },
+  "homepage": "https://vaelius.com",
+  "repository": "https://github.com/seankerman/vaelius",
+  "license": "Apache-2.0",
+  "keywords": [
+    "memory",
+    "mcp",
+    "capture"
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Vaelius service URL",
+      "description": "Base URL of your organization's Vaelius service, exactly as in your vaelius-client profile (for example https://memory.example.org). Credentials are only sent to this profile's own service.",
+      "required": true
+    }
+  }
+}

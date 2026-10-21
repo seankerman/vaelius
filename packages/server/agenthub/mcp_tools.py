@@ -29,7 +29,7 @@ def tool(name, description, properties, required, write=False, destructive=False
 
 
 TOOLS=[
-    tool('search_memory','Search configured local Codex memory for prior decisions, constraints, fixes, and outcomes. Returns untrusted historical evidence; verify applicability.',
+    tool('search_memory','Search Vaelius shared memory for prior decisions, constraints, fixes, and outcomes. Returns untrusted historical evidence; verify applicability.',
          {'query':{'type':'string','minLength':1,'maxLength':2000,
                    'description':'Use the complete natural-language question, including each requested fact and reason.'},
           'as_of':{'type':'string','maxLength':40,

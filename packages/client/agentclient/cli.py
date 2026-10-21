@@ -12,9 +12,21 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--home',default=str(Path.home()/'.local/share'/profile_namespace/'client'))
     sub=parser.add_subparsers(dest='command',required=True)
-    for command in ('hook','status','backend-check','capture','capture-status','pause','resume','uninstall'):sub.add_parser(command)
+    for command in ('status','backend-check','capture','capture-status','pause','resume'):sub.add_parser(command)
+    hook=sub.add_parser('hook',help='handle one agent hook event read from stdin')
+    hook.add_argument('--host',choices=('codex','claude-code'),default='codex')
+    hook.add_argument('--via',choices=('settings','plugin'),default='settings',help=argparse.SUPPRESS)
+    headers=sub.add_parser('mcp-headers',help='print MCP authentication headers for a host header helper')
+    headers.add_argument('--project');headers.add_argument('--project-dir')
+    remove=sub.add_parser('uninstall',help='remove installed hooks and MCP entries (all hosts unless one is named)')
+    remove.add_argument('--claude-code',action='store_true',help='remove only Claude Code installations; capture is not paused')
+    remove.add_argument('--scope',choices=('user','project'))
     drain=sub.add_parser('outbox-drain');drain.add_argument('--max-events',type=int,default=32);drain.add_argument('--max-seconds',type=float,default=5)
     install=sub.add_parser('install');install.add_argument('--codex-home',default=str(Path.home()/'.codex'))
+    install.add_argument('--claude-code',action='store_true',help='install into Claude Code settings instead of Codex')
+    install.add_argument('--scope',choices=('user','project'),default='user',help='Claude Code: all folders, or one project')
+    install.add_argument('--project-root',help='Claude Code project scope: enrolled project root (default: current folder)')
+    install.add_argument('--claude-config-dir',help='Claude Code configuration folder (default: CLAUDE_CONFIG_DIR or ~/.claude)')
     renewal=sub.add_parser('credential-renew');renewal.add_argument('--force',action='store_true')
     sub.add_parser('credential-status',help='local sign-in status; contacts neither AWS nor the service')
     for command in ('logout','credential-revoke'):
@@ -27,8 +39,31 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     args=parser.parse_args(argv);home=private_dir(args.home)
     if args.command=='uninstall':
+        from agentclient import claude_code
+        if args.claude_code:
+            print(json.dumps({'removed':claude_code.uninstall(home,scope=args.scope)},indent=2));return
         from agentclient.install import uninstall
+        claude_code.uninstall(home)
         uninstall(home);return
+    if args.command=='hook':
+        # The handler reads the profile itself, so a missing profile can still be reported.
+        from agentclient.hooks import handle
+        try:
+            raw=sys.stdin.buffer.read(32*1024*1024+1)
+            if len(raw)>32*1024*1024:raise ValueError('hook_payload_bound')
+            result=handle(home,json.loads(raw),host=args.host,via=args.via)
+        except Exception as exc:
+            result={'systemMessage':'Vaelius capture unavailable ('+type(exc).__name__+'). Normal work continues.'}
+        print(json.dumps(result));return
+    if args.command=='mcp-headers':
+        from agentclient.mcp_headers import headers, failure
+        try:result=headers(home,project=args.project,project_dir=args.project_dir or None,
+                           url=os.environ.get('CLAUDE_CODE_MCP_SERVER_URL'))
+        except Exception as error:
+            print(failure(error),file=sys.stderr)
+            raise SystemExit(1) from None
+        # Only for the host's header-helper pipe; never logged.
+        print(json.dumps(result));return
     if args.command=='enroll-project':
         from agentclient.install import enroll_project
         result=enroll_project(home,args.root,args.name)
@@ -55,14 +90,6 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 # Tokens are kept so the revocation can be retried; never print them.
                 raise SystemExit(json.dumps({'error':'credential_revocation_failed',
                     'reason':type(exc).__name__,'local_credentials_deleted':False})) from None
-        elif args.command=='hook':
-            from agentclient.hooks import handle
-            try:
-                raw=sys.stdin.buffer.read(32*1024*1024+1)
-                if len(raw)>32*1024*1024:raise ValueError('hook_payload_bound')
-                result=handle(home,json.loads(raw))
-            except Exception as exc:
-                result={'systemMessage':'Vaelius capture unavailable ('+type(exc).__name__+'). Normal work continues.'}
         elif args.command=='scope-status':
             from agentclient.hooks import resolve_scope
             from agentclient.scope_file import enrollments
@@ -78,6 +105,9 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 'notice_version':value.get('notice_version'),'source':value.get('source'),
                 'capture':'paused' if config.get('paused') else ('disabled' if args.project in config.get('capture_disabled_projects',[]) else 'on')}
             if args.acknowledge:result['acknowledgement']=capture_notice.record(home,args.project,value,'cli')
+        elif args.command=='install' and args.claude_code:
+            from agentclient.claude_code import install
+            result=install(home,scope=args.scope,claude_config_dir=args.claude_config_dir,project_root=args.project_root)
         elif args.command=='install':
             from agentclient.install import install
             result=install(home,args.codex_home,{}, {})

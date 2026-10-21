@@ -130,6 +130,22 @@ Defaults, configurable in `runtime.json`:
 Bytes are request-body bytes. The principal byte budget is above the 50 MiB upload
 bound, so one upload always fits. A principal limit may not exceed its tenant limit.
 
+Omit `ingest_limits`, or any key in it, to keep the default shown above. To tighten
+or loosen a deployment, set only the keys you change, for example
+`"ingest_limits": {"principal_writes_per_window": 120, "tenant_writes_per_window": 2000}`,
+and restart the API; every API process reads the same values from `runtime.json`.
+The API refuses to start on an invalid value instead of falling back to a default:
+
+| Key | Type | Allowed |
+| --- | --- | --- |
+| `enabled` | boolean | `true` or `false` |
+| `window_seconds` | integer | 1 to 3600 |
+| `principal_writes_per_window`, `tenant_writes_per_window` | integer | 1 to 1,000,000 |
+| `principal_bytes_per_window`, `tenant_bytes_per_window` | integer | 1 to 68719476736 (64 GiB) |
+
+Unknown keys, booleans or floats where an integer is expected, and a principal limit
+above its tenant limit are rejected. `"enabled": false` turns limiting off entirely.
+
 Counters live in PostgreSQL (`ingest_rate_windows`), so every API process enforces
 the same fixed window. A request over a limit gets HTTP 429,
 `{"error":"rate_limited","scope":"principal"|"tenant"}` and a `Retry-After` header

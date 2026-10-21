@@ -19,6 +19,11 @@ DEFAULT_LIMITS = {
     'tenant_writes_per_window': 6000,
     'tenant_bytes_per_window': 512 * 1024 * 1024,
 }
+# Upper bounds for operator-configured limits: high enough for any real deployment,
+# low enough that a typo (an extra few zeros) is refused rather than silently
+# disabling the limit.
+MAX_WRITES_PER_WINDOW = 1_000_000
+MAX_BYTES_PER_WINDOW = 64 * 1024 ** 3
 _RETENTION_SECONDS = 3600
 
 
@@ -46,8 +51,11 @@ def limits_from_settings(value):
     if type(limits['window_seconds']) is not int or not 1 <= limits['window_seconds'] <= 3600:
         raise ValueError('runtime_ingest_limits_configuration')
     for key in DEFAULT_LIMITS:
-        if key.endswith('_window') and (type(limits[key]) is not int or not 1 <= limits[key] <= 2**40):
-            raise ValueError('runtime_ingest_limits_configuration')
+        if key.endswith('_window'):
+            ceiling = MAX_WRITES_PER_WINDOW if '_writes_' in key else MAX_BYTES_PER_WINDOW
+            # type() rather than isinstance(): booleans are not limits.
+            if type(limits[key]) is not int or not 1 <= limits[key] <= ceiling:
+                raise ValueError('runtime_ingest_limits_configuration')
     for kind in ('writes', 'bytes'):
         if limits['principal_' + kind + '_per_window'] > limits['tenant_' + kind + '_per_window']:
             raise ValueError('runtime_ingest_limits_principal_exceeds_tenant')

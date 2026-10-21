@@ -108,7 +108,11 @@ class ProvenanceShapeTests(unittest.TestCase):
         self.assertFalse(limits_from_settings({'enabled': False})['enabled'])
         for bad in ({'unknown': 1}, {'window_seconds': 0}, {'principal_writes_per_window': 10,
                                                             'tenant_writes_per_window': 5},
-                    {'enabled': 'yes'}):
+                    {'enabled': 'yes'}, {'principal_writes_per_window': 0},
+                    {'principal_writes_per_window': -1}, {'principal_writes_per_window': True},
+                    {'principal_writes_per_window': 10.0}, {'principal_writes_per_window': '10'},
+                    {'tenant_writes_per_window': 1_000_001},
+                    {'tenant_bytes_per_window': 64 * 1024 ** 3 + 1}, {'window_seconds': 3601}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 limits_from_settings(bad)
         configured = notice_from_settings({'text': 'Synthetic organization notice about capture. ' * 2,
@@ -368,6 +372,43 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
             row = state.db.execute('SELECT writes,bytes FROM ingest_rate_windows WHERE scope=? AND window_start=?',
                                    ('principal:acme:alice', 1_000_000_080)).fetchone()
         self.assertEqual((row['writes'], row['bytes']), (1, 10))
+
+    def test_runtime_json_ingest_limits_are_enforced(self):
+        import os
+        import tempfile
+        from agenthub.cloud_runtime import read_settings, registry_from_settings
+        from agenthub.write_limits import DEFAULT_LIMITS, RateLimited, check
+        with tempfile.TemporaryDirectory(prefix='vaelius-limits-') as home:
+            runtime = Path(home) / 'runtime.json'
+
+            def configured(limits):
+                fd = os.open(runtime, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, 'w') as stream:
+                    # The registry factory never contacts the control database here.
+                    json.dump({'control_dsn': 'postgresql://unused.invalid/control',
+                               **({'ingest_limits': limits} if limits is not None else {})}, stream)
+                registry = registry_from_settings(read_settings(runtime), Path(home) / 'server-state')
+                return registry.store_factory(Path(home) / 'hub', self.dsn, 'acme')
+
+            # Absent from runtime.json: the documented defaults apply.
+            self.assertEqual(configured(None).ingest_limits, DEFAULT_LIMITS)
+            store = configured({'principal_writes_per_window': 2, 'tenant_writes_per_window': 3})
+            self.assertEqual((store.ingest_limits['principal_writes_per_window'],
+                              store.ingest_limits['tenant_writes_per_window']), (2, 3))
+            now = 1_000_000_030.0
+            check(store, self.ctx, 10, now=now)
+            check(store, self.ctx, 10, now=now)
+            with self.assertRaises(RateLimited) as principal:
+                check(store, self.ctx, 10, now=now)
+            self.assertEqual(principal.exception.scope, 'principal')
+            check(store, self.bob, 10, now=now)
+            with self.assertRaises(RateLimited) as tenant:
+                check(store, self.bob, 10, now=now)
+            self.assertEqual(tenant.exception.scope, 'tenant')
+            # An invalid operator value refuses to start rather than falling back.
+            for bad in ({'principal_writes_per_window': 0}, {'tenant_writes_per_window': 10**7}):
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    configured(bad)
 
     def test_http_write_limit_returns_429_with_retry_after_and_never_limits_withdrawal(self):
         from starlette.testclient import TestClient

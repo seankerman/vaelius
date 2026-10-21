@@ -53,6 +53,74 @@ class PostgresWorkerTests(PostgresFixture, canonical_worker_tests.WorkerTests):
         self.assertTrue(all("error" not in result for result in results), results)
         self.assertEqual(len([result for result in results if result["job"]]), 1, results)
 
+    def test_claim_rechecks_jobs_committed_by_a_concurrent_claimer(self):
+        """A claimer whose read predates another worker's committed claim claims nothing.
+
+        Under READ COMMITTED a statement's snapshot is taken before it locks rows.
+        A test-only restrictive row policy parks the second claimer inside its
+        candidate scan (after its snapshot, before its row lock) until the first
+        claim commits, so the interleaving that flaked in CI happens every run.
+        """
+        import hashlib
+        import threading
+        import time
+        from psycopg.conninfo import make_conninfo
+        from agenthub.backend_worker import Worker
+        from agenthub.postgres import connect
+        Worker(self.store, self.config, live=False).prepare()
+        gate = int.from_bytes(hashlib.sha256(self.schema.encode()).digest()[:8], "big", signed=True)
+        parked_name = "parked-claimer-" + self.schema[-12:]
+        with connect(self.admin_dsn) as admin:
+            self.assertEqual(admin.execute("SELECT count(*) FROM backend_jobs").fetchone()[0], 1)
+            # A later job on the same observer must stay unclaimable while the first runs.
+            admin.execute("""INSERT INTO backend_jobs(id,episode_job,observer_id,source_hash,created,updated)
+                SELECT id||'-later',episode_job,observer_id,source_hash,created+1,updated FROM backend_jobs""")
+            admin.execute("""CREATE FUNCTION claim_gate() RETURNS boolean LANGUAGE plpgsql AS $$
+                BEGIN
+                  IF current_setting('application_name')='""" + parked_name + """' THEN
+                    PERFORM pg_advisory_xact_lock_shared(""" + str(gate) + """);
+                  END IF;
+                  RETURN true;
+                END $$""")
+            admin.execute("ALTER TABLE backend_observers ENABLE ROW LEVEL SECURITY")
+            admin.execute("CREATE POLICY claim_visible ON backend_observers USING (true)")
+            admin.execute("CREATE POLICY claim_parked ON backend_observers AS RESTRICTIVE USING (claim_gate())")
+        parked_store = PostgresEnterpriseStore(self.store.home,
+            make_conninfo(self.dsn, application_name=parked_name), "orchard")
+        parked_store.curation_enabled = True
+        parked = Worker(parked_store, self.config, live=False)
+        # Construct both workers up front: the parked claimer's lock_timeout
+        # should only have to cover the other worker's single claim.
+        claimer = Worker(self.store, self.config, live=False)
+        outcome = {}
+        def claim_parked():
+            try:
+                outcome["claim"] = parked.claim(lease_seconds=30)
+            except Exception as exc:
+                outcome["error"] = repr(exc)
+        with connect(self.admin_dsn, autocommit=True) as holder:
+            holder.execute("SELECT pg_advisory_lock(%s)", (gate,))
+            try:
+                thread = threading.Thread(target=claim_parked)
+                thread.start()
+                deadline = time.monotonic() + 4
+                while not holder.execute("""SELECT 1 FROM pg_stat_activity WHERE application_name=%s
+                        AND wait_event_type='Lock' AND wait_event='advisory'""", (parked_name,)).fetchone():
+                    self.assertLess(time.monotonic(), deadline, outcome)
+                    time.sleep(0.02)
+                first = claimer.claim(lease_seconds=30)
+                self.assertIsNotNone(first)
+            finally:
+                holder.execute("SELECT pg_advisory_unlock(%s)", (gate,))
+            thread.join(timeout=20)
+        self.assertFalse(thread.is_alive())
+        self.assertNotIn("error", outcome, outcome)
+        self.assertIsNone(outcome["claim"], outcome)
+        with self.store.open() as state:
+            running = [(row["id"], row["fence"]) for row in
+                state.db.execute("SELECT id,fence FROM backend_jobs WHERE status='running'")]
+        self.assertEqual(running, [(first["id"], first["fence"])])
+
     def test_partial_capture_fact_delivery_warns_and_source_withdrawal_denies(self):
         from agenthub.cloud_runtime import CloudStore
         from agentclient.enterprise_contract import VERSION

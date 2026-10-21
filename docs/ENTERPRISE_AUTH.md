@@ -21,6 +21,9 @@ Directory offboarding must update Vaelius principal/binding/group grants and the
 identity provider. Logging out does not withdraw previously retained sources or
 remove an independently authorized backend service's processing grants.
 
+[Access reviews and offboarding](ACCESS_REVIEW.md) covers the periodic access
+report, reviewer attestations, idle-access hygiene and the offboarding command.
+
 ## Operator configuration
 
 Run tenant/control migrations and application-role grants before serving. Use a

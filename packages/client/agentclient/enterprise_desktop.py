@@ -7,7 +7,7 @@ from pathlib import Path
 from agentclient.enterprise_capture import normalize_capture
 
 
-def convert(record, session, project, connection, *, turn='', order=None):
+def convert(record, session, project, connection, *, turn='', order=None, sharing='private'):
     payload=record.get('payload', {})
     if not isinstance(payload, dict): return None
     typ=record.get('type');event={'session_id':session, 'turn_id':payload.get('turn_id',turn),
@@ -99,7 +99,7 @@ def convert(record, session, project, connection, *, turn='', order=None):
             else: event.update(hook_event_name='UnsupportedHostItem')
         else: return None
     else: return None
-    return normalize_capture(event,project,connection,origin='desktop_rollout')
+    return normalize_capture(event,project,connection,origin='desktop_rollout',sharing=sharing)
 
 
 def poll(home, config, allowed_root=None):
@@ -135,8 +135,15 @@ def poll(home, config, allowed_root=None):
             if any(cursor.get(k)!=v for k,v in identity.items()) or stat.st_size<cursor['offset']:
                 gap_event(session,project,cursor,'transcript_changed',identity)
                 cursor['status']='transcript_changed';save();gaps+=1;continue
-            if config.get('paused') or project in config.get('capture_disabled_projects',[]):
-                if stat.st_size>cursor['offset']: gap_event(session,project,cursor,'paused_capture',identity)
+            # The session's repository scope file (from its recorded cwd) can make
+            # an explicitly mapped session read-only or off, and requests sharing.
+            from agentclient.hooks import resolve_scope
+            from agentclient.desktop_capture import session_cwd
+            scope=resolve_scope(config,{'session_id':session,'cwd':session_cwd(source)}) or {'capture':'on','sharing':'private'}
+            if scope.get('project',project)!=project:scope={'capture':'on','sharing':'private'}
+            if config.get('paused') or project in config.get('capture_disabled_projects',[]) or scope['capture']!='on':
+                reason='paused_capture' if config.get('paused') or project in config.get('capture_disabled_projects',[]) else 'scope_file_capture_'+scope['capture']
+                if stat.st_size>cursor['offset']: gap_event(session,project,cursor,reason,identity)
                 cursor['status']='paused_gap';cursor['offset']=stat.st_size;save();gaps+=1;continue
             with source.open('rb') as stream:
                 stream.seek(cursor['offset']);count=0
@@ -149,7 +156,7 @@ def poll(home, config, allowed_root=None):
                     try:
                         record=json.loads(line);payload=record.get('payload',{})
                         if isinstance(payload,dict) and payload.get('turn_id'): cursor['turn']=payload['turn_id']
-                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before)
+                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before,sharing=scope['sharing'])
                     except (ValueError,TypeError,KeyError):
                         event=normalize_capture({'hook_event_name':'gap','session_id':session,
                             'turn_id':cursor.get('turn',''),'event_id':'parse-gap:'+str(before)},project,capture_connection(config,project))

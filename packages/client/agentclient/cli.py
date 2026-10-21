@@ -21,6 +21,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
         revoke=sub.add_parser(command,help='revoke this profile\'s token family and delete local tokens')
         revoke.add_argument('--local-only',action='store_true',help='delete local tokens without contacting the service')
     enroll=sub.add_parser('enroll-project');enroll.add_argument('--root',required=True);enroll.add_argument('--name',required=True)
+    scope=sub.add_parser('scope-status',help='show the project, capture mode and sharing request for a folder')
+    scope.add_argument('--cwd',default=os.getcwd())
     notice=sub.add_parser('notice',help='show what is captured for a project, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     args=parser.parse_args(argv);home=private_dir(args.home)
@@ -61,6 +63,14 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 result=handle(home,json.loads(raw))
             except Exception as exc:
                 result={'systemMessage':'Vaelius capture unavailable ('+type(exc).__name__+'). Normal work continues.'}
+        elif args.command=='scope-status':
+            from agentclient.hooks import resolve_scope
+            from agentclient.scope_file import enrollments
+            value=resolve_scope(config,{'cwd':str(Path(args.cwd).expanduser().resolve())})
+            result={'cwd':str(Path(args.cwd).expanduser().resolve()),'scope':value,
+                'paused':bool(config.get('paused')),'scope_files':config.get('scope_files',['.vaelius']),
+                'scope_enrollments':enrollments(home),
+                'note':'sharing is a request; the service applies project policy and membership'}
         elif args.command=='notice':
             from agentclient import capture_notice
             value=capture_notice.fetch(config,args.project,timeout=5)

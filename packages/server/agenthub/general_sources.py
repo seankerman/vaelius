@@ -216,14 +216,19 @@ class GeneralSourcesMixin:
                     if native['body'] in quoted and self._visible_source(db,ctx,native): copies.append(native['id'])
                 if copies: role='context_transfer'
             db.execute('INSERT INTO backend_source_revisions VALUES(?,?,?,?,?,?,?,?,?)',(source_id,*key,hashed,canonical(value).decode(),now,value['disposition'],connection['policy_version']))
+            # A scope-file sharing request is capped by the project ceiling and the
+            # connection visibility now; query time rechecks the current ceiling.
+            requested,sharing=self._ingest_sharing(db,ctx,connection,value)
             db.execute('''INSERT INTO enterprise_sources
                 (id,tenant,owner,external_project,internal_project,external_id,enrollment,payload_hash,
-                 visibility,raw_visibility,occurred_at,created,occurred_precision,occurred_timezone)
-                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?)''',
+                 visibility,raw_visibility,occurred_at,created,occurred_precision,occurred_timezone,
+                 sharing,sharing_requested)
+                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?,?,?)''',
                 (source_id,ctx['tenant'],ctx['actor'],value['project'],project,
                  value['connection']+':'+value['external_id']+':'+value['revision'],ctx['enrollment'],hashed,
                  connection['visibility'],str(value['occurred_at']),now,
-                 'instant' if value['occurred_at']!='unknown' else 'unknown',None))
+                 'instant' if value['occurred_at']!='unknown' else 'unknown',None,sharing,requested))
+            if requested!=sharing:self._audit(db,ctx,'sharing_request','capped_private',source_id,connection['policy_version'])
             segments=getattr(self,'conversation_segments',None)
             if segments is not None:segments.retain(db,source_id,value)
             db.execute('INSERT INTO memories(id,session,project,body,kind,created,exit_code,turn) VALUES(?,?,?,?,?,?,?,?)',

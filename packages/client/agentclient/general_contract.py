@@ -1,6 +1,8 @@
 """Enterprise v2 source/transport contract. v1 remains a declared separate adapter.
 
 No tenant, reader list, visibility grant or provider choice comes from a source.
+An optional `sharing` field carries a repository scope file's request; the service
+caps it by project policy and connection visibility, so it never grants access.
 Connection enrollment is a trusted server operation, independently of content.
 """
 import base64
@@ -43,9 +45,13 @@ def text(value, limit=256, empty=False):
 def validate_event(value):
     object_fields(value, {'version', 'connection', 'external_id', 'revision', 'source_type',
         'project', 'conversation', 'turn', 'event', 'blocks', 'occurred_at',
-        'actor', 'source_url', 'disposition', 'redactions', 'origin'})
+        'actor', 'source_url', 'disposition', 'redactions', 'origin'}, ('sharing',))
     if value['version'] != VERSION or value['source_type'] not in SOURCE_TYPES:
         raise ValueError('unsupported_general_version_or_type')
+    # A scope-file request, never a grant: the service caps it by operator policy.
+    # Only 'team' is sent; omission means private, which older services expect.
+    if 'sharing' in value and value['sharing'] != 'team':
+        raise ValueError('invalid_sharing_request')
     for key in ('connection', 'external_id', 'project', 'conversation', 'turn', 'actor'):
         text(value[key], empty=key in {'conversation', 'turn', 'actor'})
     text(value['revision'], 16)

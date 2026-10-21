@@ -106,13 +106,19 @@ def text(notice, project=None):
     return '\n'.join(lines)
 
 
-def status(state, project, notice=None):
+def status(state, project, notice=None, *, sharing='private'):
     """One line per session: is capture on or off for this project, and how to change it."""
     if state == 'on':
         readers = (notice or {}).get('readers') or {}
         who = readers.get('description') if isinstance(readers.get('description'), str) else 'set by server policy'
+        # A scope file's request; the service's project policy decides what is shared.
+        passages = (' Conversation passages: team sharing requested by the repository scope file; '
+                    'the service decides.' if sharing == 'team' else '')
         return ('Vaelius capture ON for project ' + project + ': prompts, assistant replies and tool '
-                'calls/results are shared (readers: ' + who + '). Pause: vaelius-client pause.')
+                'calls/results are shared (readers: ' + who + ').' + passages + ' Pause: vaelius-client pause.')
+    if state == 'read-only':
+        return ('Vaelius capture OFF (read-only scope file) for project ' + project +
+                ': nothing is captured; shared memory recall stays on.')
     if state == 'paused':
         return 'Vaelius capture OFF (paused) for project ' + project + '. Resume: vaelius-client resume.'
     return 'Vaelius capture OFF for project ' + project + ' (capture disabled for this project).'

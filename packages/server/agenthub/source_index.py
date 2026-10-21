@@ -125,7 +125,8 @@ class SourceIndex:
         try:occurred=stamp(row['occurred_at'])
         except (ValueError,TypeError,OverflowError):occurred=None
         db.execute('''UPDATE enterprise_documents SET representation='raw',raw_owner=?,source_time=?,
-            source_captured=? WHERE id=?''',(row['owner'],occurred,row['created'],doc))
+            source_captured=?,raw_shared=? WHERE id=?''',(row['owner'],occurred,row['created'],
+            int(row.get('sharing')=='team'),doc))
 
 
 def search(store,ctx,value,filters,*,candidate_pool=False):

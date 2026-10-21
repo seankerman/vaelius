@@ -40,7 +40,7 @@ def redact(value, field='$', manifest=None):
     return value, manifest
 
 
-def normalize_capture(event, project, connection, *, source_type='agent', origin='host_hook'):
+def normalize_capture(event, project, connection, *, source_type='agent', origin='host_hook', sharing='private'):
     kind = event.get('hook_event_name', '')
     tool = str(event.get('tool_name', ''))
     blocks = [];role = 'unknown';channel = '';complete = False;disposition = 'accepted'
@@ -90,6 +90,9 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
     value, extra = redact(value)
     value['redactions'] += extra
     if extra and value['disposition'] == 'accepted': value['disposition'] = 'redacted'
+    # A repository scope file's request; the service decides the effective sharing.
+    if sharing == 'team': value['sharing'] = 'team'
+    elif sharing != 'private': raise ValueError('invalid_sharing_request')
     return validate_event(value)
 
 

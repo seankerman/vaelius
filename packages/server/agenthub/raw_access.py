@@ -3,7 +3,8 @@
 Two tiers, both rechecked at delivery:
 
 * Redacted passages, search results, cited evidence and conversation context are
-  read with ``read``. Raw-representation passages stay owner-only.
+  read with ``read``. Raw-representation passages stay owner-only unless the
+  source is team-shared under project policy (agenthub.project_sharing).
 * Retained originals (the complete canonical source payload or object, the v1
   source body and original document bytes) additionally need the credential's
   ``source_read`` action AND either source ownership or an explicit, active,

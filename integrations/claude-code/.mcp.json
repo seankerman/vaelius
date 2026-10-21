@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "vaelius": {
+      "type": "http",
+      "url": "${user_config.server_url}/mcp",
+      "headersHelper": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/vaelius-claude-code mcp-headers --project-dir \"${CLAUDE_PROJECT_DIR}\""
+    }
+  }
+}

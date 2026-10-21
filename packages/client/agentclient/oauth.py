@@ -189,7 +189,7 @@ def enroll(home,*,url,tenant,client_id,enrollment,callback,credential_store='aut
                     'projects_enrolled':len(config['projects']),'client_model_calls':0}
     else:
         profile=prepare_home(home);config_path=profile/'config.json'
-        config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_codex_sessions':False,
+        config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_sessions':False,
                 'observer':{'enabled':False},'publication':{'enabled':False},'remote_publication':False}
         store_kind=_credential_store(credential_store);anchor=str(profile/'credential')
     if issuer is None and reauthenticate:

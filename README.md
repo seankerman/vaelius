@@ -33,9 +33,11 @@ flowchart LR
 - **Thin client:** capture, deterministic redaction, transport outbox, enrollment,
   hooks and direct backend MCP. The client has no model or searchable corpus.
 
-The current agent integration is Codex. General local document, conversation and
-record adapters and a Slack connector are available. Other coding-agent integrations
-need their own capture adapters; MCP compatibility alone is not trace capture support.
+The agent integrations are Codex and Claude Code (a plugin or a settings
+installation; see [client installation](docs/CLIENT.md#claude-code)). General local
+document, conversation and record adapters and a Slack connector are available. Other
+coding-agent integrations need their own capture adapters; MCP compatibility alone is
+not trace capture support.
 
 ## Quick start
 

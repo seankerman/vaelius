@@ -1,0 +1,34 @@
+#!/bin/sh
+# Claude Code entry point for the Vaelius plugin. It only locates the installed
+# vaelius-client and runs it; it never installs, downloads or stores anything.
+#   VAELIUS_CLIENT       path to vaelius-client (default: found on PATH)
+#   VAELIUS_CLIENT_HOME  client profile folder (default: the client's own default)
+mode=${1:-}
+[ $# -gt 0 ] && shift
+client=${VAELIUS_CLIENT:-}
+if [ -z "$client" ]; then
+  client=$(command -v vaelius-client 2>/dev/null) || client=
+fi
+if [ -z "$client" ] || [ ! -x "$client" ]; then
+  case $mode in
+    hook)
+      # Say so once per session; stay silent on every other event.
+      if grep -q '"hook_event_name"[[:space:]]*:[[:space:]]*"SessionStart"'; then
+        printf '%s\n' '{"systemMessage":"Vaelius plugin: vaelius-client is not installed or not on PATH (set VAELIUS_CLIENT). Nothing is captured."}'
+      fi
+      exit 0 ;;
+    *)
+      echo 'Vaelius MCP unavailable: vaelius-client is not installed or not on PATH (set VAELIUS_CLIENT)' >&2
+      exit 1 ;;
+  esac
+fi
+if [ -n "${VAELIUS_CLIENT_HOME:-}" ]; then
+  set -- --home "$VAELIUS_CLIENT_HOME" "$mode" "$@"
+else
+  set -- "$mode" "$@"
+fi
+case $mode in
+  hook) exec "$client" "$@" --host claude-code --via plugin ;;
+  mcp-headers) exec "$client" "$@" ;;
+  *) echo "usage: vaelius-claude-code hook|mcp-headers [--project-dir DIR]" >&2; exit 2 ;;
+esac

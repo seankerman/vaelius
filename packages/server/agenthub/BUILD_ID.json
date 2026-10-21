@@ -1,5 +1,5 @@
 {
-  "build_id": "0ff44dedc0e7163875d3934e4e7fb0df1265d44f3e1a56993e98e9ee5155b3b7",
+  "build_id": "7b5bf07bc588302acb34f40171d3fce9342fecdf59d95f04098a319ef8008440",
   "files": {
     "CLIENT_PIPELINE_PIN.json": "0426c77d8cf1de62737efcb777146e1f8919b2217c1d0c5ff4c5b82303bc3dbb",
     "__init__.py": "503e3989491150929dc39486fcf64ad6e4e1703aadbc2c1eea08c42da3f8ee04",
@@ -41,7 +41,7 @@
     "intake_redaction.py": "05b3c000768ef284c7270db3b6a2ad97aadc0cbef055d60be0eda241129ea282",
     "local_connectors.py": "d7d81a10a2be6f26dc747af78eae18149304ab6587fe84adff9ed1b3864a8fb6",
     "mcp_server.py": "033262b224a989c7a84b27065d370408dbf44cd369e97a4370599668ec823c9c",
-    "mcp_tools.py": "dc08d61fafaace57f315fd3737af3c8fed411d37c51628f121888787bbd88b46",
+    "mcp_tools.py": "1b45048d785658a1fa9c43b670e29ba74d65d734a0c15c50116fda9331fa0896",
     "migrations/001_canonical.sql": "f0d6b66147e540cdc466cd5d14b16496586041595a258d5feb75413a4b366352",
     "migrations/002_control.sql": "431fdc39c5445163021a9711eb88a130eacc36b97ee3d3153ad36c0e5ee65856",
     "migrations/003_objects.sql": "931dc0a5d377d7650a0b1a1fcac2fb214dcddc94c6eed89e83acd41b420a189b",

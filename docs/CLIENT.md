@@ -39,6 +39,104 @@ vaelius-client --home /absolute/private/client-profile resume
 vaelius-client --home /absolute/private/client-profile uninstall
 ```
 
+## Claude Code
+
+Claude Code uses the same client profile, outbox and credentials as Codex. Sign in
+and enroll projects first (above); nothing is captured outside an enrolled project.
+Use one of the two installation methods below for a folder, not both: where a
+settings installation covers a folder, the plugin's hooks stay idle.
+
+### Plugin
+
+The repository is a Claude Code plugin marketplace; the plugin is in
+[`integrations/claude-code`](../integrations/claude-code). It runs the installed
+`vaelius-client` (found on `PATH`, or named by `VAELIUS_CLIENT`) and installs or
+downloads nothing itself. Set `VAELIUS_CLIENT_HOME` in the environment that starts
+Claude Code when the profile is not at the default location.
+
+```sh
+claude plugin marketplace add seankerman/vaelius
+claude plugin install vaelius@vaelius --config server_url=https://memory.example.org
+```
+
+Install the matching `vaelius-client` release first so that `vaelius-client` is on
+`PATH`, for example with `pipx install` of the release wheel.
+
+`server_url` is the plugin's **Vaelius service URL**; without `--config`, Claude Code
+asks for it (`/plugin configure vaelius@vaelius`). Enter the profile's service URL
+exactly: the header helper releases credentials only to that profile's own `/mcp`
+endpoint and refuses any other URL. To try a checkout without a marketplace, start
+Claude Code with `claude --plugin-dir /absolute/checkout/integrations/claude-code`.
+
+The plugin registers a `vaelius` HTTP MCP server bound to the project of the folder
+Claude Code started in, as the hooks resolve it: an enrolled project or a
+[repository scope file](#repository-scope-files), including a `read-only` one. Its tools are named
+`mcp__plugin_vaelius_vaelius__<tool>`. Claude Code runs a plugin's header helper
+without environment variables whose names contain `KEY`, `TOKEN`, `SECRET`,
+`PASSWORD` or `AUTH`, so AWS sign-in must come from a named AWS profile (as set up
+by `aws sso login --profile NAME`), not from `AWS_*` key variables.
+
+### Settings installation
+
+Without the plugin, the client adds its own hook handlers and MCP entries to
+Claude Code's configuration. It changes only entries it installed, keeps every
+unrelated setting, hook and MCP server, backs up each file before its first change,
+and records what it wrote in the profile's `claude-code-installation.json`.
+
+```sh
+vaelius-client --home /absolute/private/client-profile install --claude-code --scope user
+vaelius-client --home /absolute/private/client-profile install --claude-code --scope project \
+  --project-root /absolute/project
+```
+
+`--scope user` writes the hooks to `~/.claude/settings.json` (or to the folder named
+by `CLAUDE_CONFIG_DIR` or `--claude-config-dir`). `--scope project` writes them to the
+project's `.claude/settings.local.json`, which is personal and not committed; that
+root must be enrolled or hold a repository scope file. Every MCP connection is bound
+to one project, so both scopes register a `vaelius` HTTP MCP server for each enrolled
+project root (and each root a scope file has enrolled) in Claude Code's per-project
+("local") MCP configuration in `~/.claude.json`. Run the command again after
+enrolling another project or upgrading Python; it is idempotent. An existing
+`vaelius` server that this profile did not install is never replaced. Tools are named
+`mcp__vaelius__<tool>`. Run it while Claude Code is closed, since Claude Code
+rewrites `~/.claude.json` while it runs, then start Claude Code again.
+
+### What is captured
+
+The hooks handle `SessionStart`, `UserPromptSubmit`, `PostToolUse`,
+`PostToolUseFailure`, `Stop`, `StopFailure`, `PostCompact` and `SessionEnd`. Each
+prompt, tool call with its result, and final reply of a turn is redacted locally and
+queued in the outbox; Claude Code's `prompt_id` identifies the turn. A `StopFailure`
+records only the error category, marking a turn that has no reply. Calls to the
+Vaelius MCP tools themselves, under either tool-name form, are never captured, so
+retrieved memory is not fed back. `SessionEnd` only delivers what is queued.
+Automatic context is added on `SessionStart` and `UserPromptSubmit` as framed
+reference data.
+
+Status is shown to the person and never given to the model. Each session starts
+with the capture ON/OFF line, plus the full notice the first time a project is
+captured. When the profile is signed out the line says so and how to sign in again
+(for AWS sign-in, `aws sso login --profile NAME`). Capture keeps queuing meanwhile
+and is delivered by the first hook or `outbox-drain` after sign-in. While signed
+out, the MCP header helper fails closed and Claude Code lists the server as failed.
+
+### Removing it
+
+```sh
+claude plugin uninstall vaelius@vaelius
+vaelius-client --home /absolute/private/client-profile uninstall --claude-code
+```
+
+`uninstall --claude-code` removes only this profile's Claude Code entries (add
+`--scope user` or `--scope project` to remove one of them) and leaves capture for
+other hosts running. `uninstall` without it removes every host installation and
+pauses capture. Neither deletes server records.
+
+Capture of unenrolled folders is opt-in with `capture_all_sessions: true` in the
+profile's `config.json`, which names projects `Repo:<name>:<id>` and `Chat:<id>`.
+Profiles that still use the earlier `capture_all_codex_sessions` key keep working
+and keep their existing `CodexRepo:`/`CodexChat:` project names.
+
 ## Credentials
 
 Provider OAuth is the default for new enterprise logins. Its configured authorization

@@ -184,7 +184,7 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
         'tenant':tenant,'broker':broker,'enrollment_id':enrollment,'credential_store':store_kind}
     # A refresh-capable login renews itself; an access-only service keeps renewal off.
     if refresh is not None:backend['credential_renewal']=True
-    config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_codex_sessions':False,
+    config={'paused':False,'projects':{},'sessions':{},'desktop_transcripts':{},'capture_all_sessions':False,
         'observer':{'enabled':False},'publication':{'enabled':False},'remote_publication':False,
         'knowledge_backend':backend}
     # Exclusive private writes protect against a second enrollment process and

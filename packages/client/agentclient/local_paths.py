@@ -1,4 +1,4 @@
-"""Canonicalize local Codex working directories without accepting remote URIs."""
+"""Canonicalize local agent working directories without accepting remote URIs."""
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 

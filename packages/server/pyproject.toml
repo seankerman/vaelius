@@ -22,7 +22,7 @@ cloud = [
   "joserfc==1.7.5", "authlib==1.8.0", "requests==2.34.2",
   "jsonschema==4.26.0",
 ]
-cloud-test = ["moto[server]==5.2.3", "httpx==0.28.1"]
+cloud-test = ["moto[server]==5.2.4", "httpx==0.28.1"]
 bedrock = ["boto3==1.43.113"]
 
 [project.urls]

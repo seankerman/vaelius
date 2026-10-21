@@ -1,0 +1,37 @@
+name: Dependency audit
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so advisories published against unchanged locks still fail loudly.
+    - cron: '41 6 * * 1'
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  osv-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check lock files and reviewed exceptions
+        run: |
+          python3 scripts/check_locks.py
+          python3 scripts/vulnerability_policy.py
+      # Fails on any known vulnerability in a locked package that osv-scanner.toml
+      # does not list as a reviewed, unexpired exception.
+      - name: Scan hash-locked requirements
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --lockfile=requirements-runtime.txt
+            --lockfile=requirements-build.txt
+            --lockfile=requirements-dev.txt

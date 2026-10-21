@@ -1,0 +1,7 @@
+# Everything CI installs: runtime, build tooling and vaelius-server[cloud-test].
+# scripts/check_locks.py requires shared packages to resolve to the same
+# versions as requirements-runtime.txt and requirements-build.txt.
+-r requirements-runtime.in
+-r requirements-build.in
+httpx==0.28.1
+moto[server]==5.2.3

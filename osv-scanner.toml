@@ -1,0 +1,9 @@
+# Reviewed vulnerability exceptions. This is the only ignore list: osv-scanner reads
+# it directly, and scripts/vulnerability_policy.py turns the unexpired entries into
+# the Grype configuration for the image scan.
+#
+# Every entry needs an `id`, a `reason` and an `ignoreUntil` date no more than 90
+# days after it was added. Expired entries stop applying, so CI fails again until
+# the dependency is fixed or the exception is re-reviewed in a pull request.
+# State in the reason whether the vulnerable code is reachable; "not assessed" is
+# an acceptable answer, a guess is not.

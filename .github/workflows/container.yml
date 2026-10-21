@@ -4,16 +4,63 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-permissions:
-  contents: read
+  schedule:
+    # Weekly rescan of the unchanged image for newly published vulnerabilities.
+    - cron: '17 6 * * 1'
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   runtime-image:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build clean runtime image
         run: docker build -t vaelius:ci .
       - name: Verify installed package boundary
         run: |
           docker run --rm vaelius:ci python -c 'import os,agentclient,agenthub; from agenthub.pipeline_pin import verify; verify(); assert os.getuid()!=0; assert not os.path.exists("/Users"); print("Installed non-root image contract verified")'
+      - name: Verify the image HEALTHCHECK runs as the image user
+        # A stub /health server stands in for the API, which needs a profile and database.
+        run: |
+          docker run -d --name vaelius-health vaelius:ci python -c 'import http.server as h
+          class H(h.BaseHTTPRequestHandler):
+              def do_GET(self): self.send_response(200 if self.path == "/health" else 404); self.end_headers()
+          h.HTTPServer(("127.0.0.1", 8080), H).serve_forever()'
+          for _ in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' vaelius-health)
+            test "$status" = healthy && break
+            sleep 3
+          done
+          docker inspect --format '{{json .State.Health}}' vaelius-health
+          docker rm -f vaelius-health
+          test "$status" = healthy
+      - name: Write Grype exceptions from osv-scanner.toml
+        run: python3 scripts/vulnerability_policy.py --grype-config "$RUNNER_TEMP/grype.yaml"
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        id: syft
+      - uses: anchore/scan-action/download-grype@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        id: grype
+      - name: Image SBOM (CycloneDX)
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          "$SYFT" scan docker:vaelius:ci --source-name vaelius --source-version ci \
+            -o cyclonedx-json="$RUNNER_TEMP/vaelius-image.cdx.json"
+      - name: Image vulnerability scan (fails on fixable High/Critical)
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: |
+          "$GRYPE" docker:vaelius:ci --config "$RUNNER_TEMP/grype.yaml" \
+            --only-fixed --fail-on high -o table
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-image-sbom
+          path: ${{ runner.temp }}/vaelius-image.cdx.json
+          retention-days: 14

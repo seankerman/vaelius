@@ -1,0 +1,18 @@
+# Third-party runtime dependencies of vaelius-server[cloud,semantic], the set
+# installed in the container image. Pins must equal packages/server/pyproject.toml;
+# scripts/check_locks.py enforces that. Regenerate the hashed lock as described
+# in RELEASING.md.
+authlib==1.8.0
+boto3==1.43.103
+joserfc==1.7.5
+jsonschema==4.26.0
+mcp==2.3.0
+numpy==2.5.3
+onnxruntime==1.30.0
+psycopg[binary]==3.2.10
+pypdf==6.19.0
+python-docx==1.2.0
+requests==2.34.2
+starlette==1.9.0
+tokenizers==0.23.2
+uvicorn==0.35.0

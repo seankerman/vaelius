@@ -37,6 +37,15 @@ host services from inside a container. A profile using an in-container endpoint
 override must name exactly the intended local service network. Do not silently
 rewrite identity-broker issuer URLs.
 
+The image declares a Docker `HEALTHCHECK` that calls the unauthenticated `/health`
+liveness endpoint on port 8080 with the image's own Python, so it needs no shell or
+curl. It checks only that the API answers; `/ready` checks the database. Kubernetes
+ignores `HEALTHCHECK` (use `httpGet` probes on the same paths), Podman/Buildah drop it
+unless built with `--format docker`, and a different `--port` needs a matching
+`--health-cmd` or `--no-healthcheck`. Released images are on `ghcr.io` with signed
+provenance and SBOMs; pull them by digest and verify them as in
+[RELEASING.md](../RELEASING.md#verifying-a-release).
+
 For production, mount secrets or use workload identity for S3; configure HTTPS,
 [provider OAuth](ENTERPRISE_AUTH.md), tenant routing and lifecycle policies. The backend MCP endpoint
 uses those same identity and permission controls. [Provider configuration and

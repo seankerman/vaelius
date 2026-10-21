@@ -17,6 +17,12 @@ Follow [AGENTS.md](AGENTS.md). Add behavior-focused regressions for security and
 retrieval changes; record installed SQL counts and query latency where applicable.
 Report skipped tests and optional-provider gaps accurately.
 
+CI installs third-party packages only from hash-locked files
+(`python -m pip install --require-hashes -r requirements-dev.txt`, then
+`python scripts/build.py --no-isolation`). When you change a dependency pin, update
+the matching `requirements-*.in` file and regenerate the locks as described in
+[RELEASING.md](RELEASING.md#dependency-locks).
+
 Use focused pull requests describing the behavior and verification. Contributions
 are submitted under Apache 2.0; preserve third-party attribution. Report security
 issues privately using [SECURITY.md](SECURITY.md).

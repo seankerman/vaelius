@@ -102,14 +102,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Pull pinned base image (retries ECR Public 429s)
-        run: |
-          ref=$(sed -n 's/^FROM \([^ ]*\).*/\1/p' Dockerfile | sort -u)
-          for attempt in 1 2 3 4 5; do
-            docker pull --quiet "$ref" && exit 0
-            sleep $((attempt * 30))
-          done
-          exit 1
       - name: Build runtime image
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

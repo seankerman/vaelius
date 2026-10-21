@@ -73,13 +73,14 @@ def policy_condition(ctx, *, raw=False):
 
 
 def predicate(ctx):
+    # Raw-representation passages are redacted text visible to their owner only.
     condition,args=policy_condition(ctx)
     return """AND (ed.representation!='raw' OR (ed.raw_owner=? AND ?))
         AND (SELECT bool_and(required.dependency_count>0 AND """+condition+""" IS TRUE)
         FROM search_document_policies required
         LEFT JOIN search_policies policy ON policy.id=required.policy_id
         LEFT JOIN backend_connections connection ON connection.id=policy.definition->>'connection'
-        WHERE required.document_id=d.document_id)""",(ctx['actor'],'source_read' in ctx['actions'],*args)
+        WHERE required.document_id=d.document_id)""",(ctx['actor'],'read' in ctx['actions'],*args)
 
 
 def validate_source_snapshots(store, db, ctx, expected):
@@ -90,7 +91,9 @@ def validate_source_snapshots(store, db, ctx, expected):
     cross the connection. Missing projection, source, or body denies the snapshot.
     """
     store.current_identity(db,ctx)
-    store._need(ctx,'read');store._need(ctx,'source_read')
+    # Owner-only redacted passage tier: `read` suffices. Retained originals
+    # are a separate source_read + owner/grant check in agenthub.raw_access.
+    store._need(ctx,'read')
     condition,args=policy_condition(ctx,raw=True)
     ids=sorted(expected)
     for offset in range(0,len(ids),1000):
@@ -152,8 +155,8 @@ def validate_document_snapshots(store, db, ctx, documents):
         raise PermissionError('document_changed_or_withdrawn')
 
 def read_source_context(store,db,ctx,ids):
-    """Bounded original-source read through the same indexed raw policy oracle."""
-    store.current_identity(db,ctx);store._need(ctx,'read');store._need(ctx,'source_read')
+    """Bounded owner-only redacted source context through the indexed raw policy oracle."""
+    store.current_identity(db,ctx);store._need(ctx,'read')
     ids=sorted(set(ids))
     if len(ids)>1000:raise ValueError('context_source_batch_bound')
     if not ids:return []

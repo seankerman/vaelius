@@ -30,7 +30,8 @@ def cited_span(source, segment_id):
 
 def document_evidence(store, ctx, document_id, *, revision, offset=0):
     from agenthub.enterprise import Denied
-    store._need(ctx, 'read'); store._need(ctx, 'source_read')
+    # Cited redacted spans are the owner-only passage tier (`read`), not originals.
+    store._need(ctx, 'read')
     if (not isinstance(document_id,str) or not 1<=len(document_id)<=128 or
         not isinstance(revision,str) or not 1<=len(revision)<=128 or
         type(offset) is not int or not 0<=offset<=10000):

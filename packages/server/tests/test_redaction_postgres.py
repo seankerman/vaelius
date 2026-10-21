@@ -24,10 +24,26 @@ class RedactionPostgresTests(unittest.TestCase):
         self.ctx = self.store.authenticate(token)
         self.store.enroll_connection(self.ctx, 'capture', 'codex', 'maple', ['agent', 'document'])
 
-    def test_bypassed_client_multipart_secret_is_rejected_and_staging_removed(self):
+    def test_bypassed_client_multipart_secret_is_redacted_and_staging_removed(self):
         event = normalize_capture({'hook_event_name': 'UserPromptSubmit', 'event_id': 'source',
             'prompt': 'safe'}, 'maple', 'capture')
         event['blocks'][0]['value'] = 'x' * 95000 + '{"password":"fixture-secret"}'
+        parts = split_event(event)
+        self.assertFalse(self.store.ingest_part(self.ctx, parts[0])['complete'])
+        result = self.store.ingest_part(self.ctx, parts[1])
+        self.assertEqual((result['complete'], result['disposition']), (True, 'redacted'))
+        with self.store.open() as state:
+            self.assertEqual(state.db.execute('SELECT count(*) FROM backend_parts').fetchone()[0], 0)
+            payload = state.db.execute('SELECT payload FROM backend_source_revisions').fetchone()[0]
+            body = state.db.execute('SELECT body FROM memories WHERE id=?', (result['source_id'],)).fetchone()[0]
+        self.assertNotIn('fixture-secret', payload); self.assertNotIn('fixture-secret', body)
+        self.assertIn('server_credential_pattern', payload)
+
+    def test_identity_field_credential_is_rejected_and_staging_removed(self):
+        event = normalize_capture({'hook_event_name': 'UserPromptSubmit', 'event_id': 'source',
+            'prompt': 'safe'}, 'maple', 'capture')
+        event['blocks'][0]['value'] = 'x' * 95000
+        event['external_id'] = 'password=fixture-secret'
         parts = split_event(event)
         self.assertFalse(self.store.ingest_part(self.ctx, parts[0])['complete'])
         with self.assertRaisesRegex(ValueError, '^invalid_or_unredacted_enterprise_source$'):

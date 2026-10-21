@@ -81,6 +81,13 @@ SAML and upstream OIDC federation are broker responsibilities. Production uses
 TLS, a service UID, persistent identity-server storage/backups and managed secrets;
 the disposable development fixture below is not a production deployment.
 
+`actions` bounds what token scopes can grant. Omitting it maps every Vaelius scope
+except `source_read`; list `source_read` (as above) only when users of that provider
+should download retained originals, which still requires source ownership or an
+explicit owner grant. Interactive enrollment without operator `enrollment_actions`
+likewise omits `source_read`. See the
+[raw-access policy](DATA_BOUNDARIES.md#raw-access-policy) for upgrade steps.
+
 ## Plugin enrollment and migration
 
 ```sh

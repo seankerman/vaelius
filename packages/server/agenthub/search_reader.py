@@ -62,7 +62,9 @@ def restrict(store, state, ctx, project=None):
     releases = [r[0] for r in state.db.execute('SELECT document_id FROM backend_releases WHERE tenant=?', (ctx['tenant'],))]
     releases = [doc for doc in releases if store._document_allowed(state.db, ctx, doc)]
     context = dict(tenant=ctx['tenant'], actor=ctx['actor'], scopes=scopes, project=project,
-        source_read='source_read' in ctx['actions'],
+        # Migration 031 names this flag source_read; it gates owner-only redacted
+        # passages, which now need only `read`. Originals use agenthub.raw_access.
+        source_read='read' in ctx['actions'],
         delegated=sorted(ctx['delegated_projects']) if ctx.get('delegated_projects') is not None else None,
         review=selected_documents(store, ctx), releases=releases)
     connection = state.db.connection

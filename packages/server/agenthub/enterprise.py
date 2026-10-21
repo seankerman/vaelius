@@ -181,11 +181,17 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
                 source['external_project'] not in ctx['delegated_projects']):return False
         if not self._general_source_allowed(db,ctx,source):return False
         if raw:
-            return source["owner"]==ctx["actor"] and "source_read" in ctx["actions"]
+            # Owner-only redacted passages, evidence and context. Retained
+            # originals use _original_allowed (source_read + owner or grant).
+            return source["owner"]==ctx["actor"] and "read" in ctx["actions"]
         if "read" not in ctx["actions"]:return False
         if source["visibility"]=="private":return source["owner"]==ctx["actor"]
         if source["visibility"]=="team":return self._project_member(db,ctx,source["external_project"])
         return True
+
+    def _original_allowed(self, db, ctx, source):
+        from agenthub.raw_access import original_allowed
+        return original_allowed(self,db,ctx,source)
 
     def ingest(self, ctx, value):
         self._need(ctx,"ingest");validate_source(value)
@@ -484,7 +490,7 @@ class EnterpriseStore(GeneralSourcesMixin,RetrievalMixin):
         self._need(ctx,"source_read")
         with self.open() as state:
             db=state.db;row=db.execute("SELECT * FROM enterprise_sources WHERE id=?",(source_id,)).fetchone()
-            if not self._visible_source(db,ctx,row,raw=True):raise Denied()
+            if not self._original_allowed(db,ctx,row):raise Denied()
             memory=db.execute("SELECT body,kind,created FROM memories WHERE id=? AND active=1",(source_id,)).fetchone()
             if not memory:raise Denied()
             return {"id":source_id,"body":memory["body"],"kind":memory["kind"],

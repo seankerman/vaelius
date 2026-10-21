@@ -4,8 +4,10 @@ The runtime defaults to `retrieval.corpus: sources`,
 `processing.curation_enabled: false`, and `reranking.enabled: false`.
 The client is unchanged: deterministic secret cleaning, capture, transport and
 delivery. Permitted person/location facts remain in the private authority; this
-is not blanket PII anonymization. Raw chat passages require the source owner and
-`source_read`, including on team/organization connections. Existing document
+is not blanket PII anonymization. Raw chat passages are redacted text visible only
+to the source owner (with `read`), including on team/organization connections.
+Complete originals additionally need `source_read` and ownership or an explicit
+grant ([raw-access policy](../../../docs/DATA_BOUNDARIES.md#raw-access-policy)). Existing document
 visibility, identity, delegation, connection freshness and source policies still
 apply. Returning a passage never grants access to its original.
 

@@ -55,11 +55,15 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT count(*) FROM episode_candidates').fetchone()[0],0)
 
     def test_owner_only_even_with_team_connection_and_read_only_credential(self):
-        self.ingest();self.drain()
+        source=self.ingest();self.drain()
         bob=self.store.authenticate(self.tokens['bob'])
         self.assertEqual(self.search(bob)['results'],[])
+        # Redacted passages are the owner's own content: `read` suffices. The
+        # retained original still needs source_read (agenthub.raw_access).
         token=self.store.enroll('acme','alice','read-only',['read'])
-        self.assertEqual(self.search(self.store.authenticate(token))['results'],[])
+        reader=self.store.authenticate(token)
+        self.assertEqual(self.search(reader)['results'],self.search()['results'])
+        with self.assertRaises(Denied):self.store.general_source(reader,source)
 
     def test_history_cutoff_and_no_invented_supersession(self):
         self.ingest(0);self.ingest(1);self.drain()

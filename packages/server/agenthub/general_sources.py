@@ -6,7 +6,7 @@ import hashlib
 import json
 import time
 
-from agentclient.enterprise_capture import redact
+from agenthub.intake_redaction import redact_capture
 from agentclient.general_contract import canonical, digest, validate_event, validate_part, EVENT_BYTES
 
 
@@ -137,8 +137,13 @@ class GeneralSourcesMixin:
             if (peers['size'] or 0)+(0 if prior else len(decoded))>EVENT_BYTES: raise ValueError('reassembly_too_large')
             total=db.execute('SELECT coalesce(sum(length(data)),0) FROM backend_parts WHERE connection=?',(value['connection'],)).fetchone()[0]
             if total+len(decoded)>64*1024*1024: raise ValueError('connection_parts_backpressure')
-            db.execute("INSERT INTO backend_parts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",(*key,value['digest'],value['part_index'],value['part_count'],decoded,time.time()))
-            rows=db.execute('SELECT * FROM backend_parts WHERE connection=? AND external_id=? AND revision=? ORDER BY part_index',key).fetchall()
+            if value['part_count']==1 and not prior:
+                # A single-part event is complete on arrival: never stage its
+                # bytes. Only multi-part reassembly holds transport fragments.
+                rows=[{'part_index':0,'data':decoded}]
+            else:
+                db.execute("INSERT INTO backend_parts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",(*key,value['digest'],value['part_index'],value['part_count'],decoded,time.time()))
+                rows=db.execute('SELECT * FROM backend_parts WHERE connection=? AND external_id=? AND revision=? ORDER BY part_index',key).fetchall()
             if len(rows)!=value['part_count']:
                 return {'disposition':'incomplete','digest':value['digest'],'received_parts':len(rows),'complete':False,'source_id':''}
             raw=b''.join(r['data'] for r in rows)
@@ -146,8 +151,8 @@ class GeneralSourcesMixin:
         try:
             payload=json.loads(raw);validate_event(payload)
             if (payload['connection'],payload['external_id'],payload['revision'])!=key: raise Conflict()
-            safe,_=redact(payload)
-            if safe!=payload:raise ValueError('unredacted_enterprise_source')
+            # Re-redact before the canonical payload, rows or object are written.
+            payload,_=redact_capture(payload)
         except ValueError:
             # Incomplete fragments are transport staging, never source/model
             # input. Drop rejected reassemblies, including earlier fragments.
@@ -166,8 +171,9 @@ class GeneralSourcesMixin:
     def ingest_general(self, ctx, value):
         from agenthub.enterprise import Conflict, Denied, _scope, _digest
         self._need(ctx,'ingest');validate_event(value)
-        safe,_=redact(value)
-        if safe!=value: raise ValueError('unredacted_enterprise_source')
+        # Defense in depth: never trust caller redaction. The stored payload is
+        # re-redacted with the pinned shared detector and its manifest extended.
+        value,_=redact_capture(value)
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db;connection=self._connection(db,ctx,value['connection'])
             if value['project']!=connection['project'] or value['source_type'] not in json.loads(connection['source_types']): raise Denied()
@@ -262,7 +268,7 @@ class GeneralSourcesMixin:
                     return segments.fetch(ctx,source_id)
         with self.open() as state:
             source=state.db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-            if not self._visible_source(state.db,ctx,source,raw=True): raise Denied()
+            if not self._original_allowed(state.db,ctx,source): raise Denied()
             row=state.db.execute('SELECT revision,payload FROM backend_source_revisions WHERE source_id=?',(source_id,)).fetchone()
             if not row: raise Denied()
             return {'source_id':source_id,'revision':row['revision'],'payload':json.loads(row['payload'])}

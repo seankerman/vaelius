@@ -46,4 +46,7 @@ class PackageBoundary(unittest.TestCase):
         value=verify()
         self.assertTrue(any(name.startswith('agenthub.processing.') for name in value['modules']))
         self.assertTrue(set(n for n in value['modules'] if n.startswith('agentclient.'))<=
-            {'agentclient.enterprise_contract','agentclient.general_contract','agentclient.cloud_contract','agentclient.cleaning'})
+            {'agentclient.enterprise_contract','agentclient.general_contract','agentclient.cloud_contract','agentclient.cleaning',
+             'agentclient.secret_detection'})
+        # Server re-redaction and the operator scanner use the pinned client detector.
+        self.assertIn('agentclient.secret_detection',value['modules'])

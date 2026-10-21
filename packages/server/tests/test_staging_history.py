@@ -90,6 +90,10 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
                 item['filename'],io.BytesIO(item['bytes'].encode()),title=original['title']))
         choices=self.service.list(self.bob,title=original['title'],limit=20)
         self.assertEqual(len(choices),2);self.assertEqual(len({c['source_id'] for c in choices}),2)
+        # Team visibility lists originals; downloading them needs an owner grant.
+        with self.assertRaises(Denied):self.service.fetch(self.bob,sources[0]['source_id'],version=original['versions'][0]['version'])
+        from agenthub import raw_access
+        raw_access.grant(self.store,self.alice,'connection','native-history','project','maple')
         for item,source in zip(original['versions'],sources):
             stream,headers=self.service.fetch(self.bob,source['source_id'],version=item['version'])
             with stream:actual=stream.read()

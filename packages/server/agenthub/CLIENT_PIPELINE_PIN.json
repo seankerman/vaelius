@@ -2,10 +2,11 @@
   "client_version": "0.3.0",
   "contract_version": "enterprise-local-2",
   "modules": {
-    "agentclient.cleaning": "a2ff9d7c30a45e216ae177134332e1879bec020921a2eb81429d5b479612bb3d",
+    "agentclient.cleaning": "5fac2d1998a3007dd5eeea40bdb7980fc5c6deba54a565540776becef5c274c1",
     "agentclient.cloud_contract": "3edbfd8e2e9223d4f3d92de5ad9c3f978ffc7bd45b1ae8d76f513192e509ac05",
     "agentclient.enterprise_contract": "2adcde4f27ec3edb20deb186bf608fb8b0d4cb7ac74c780589a045ececb5a2b2",
     "agentclient.general_contract": "858a819fc83c1c84828598c07b64b3159c05d34cc27939d6c3628cfda48850f7",
+    "agentclient.secret_detection": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",
     "agenthub.processing.__init__": "961019d775e8e3a8a4280fc7ec84281af060dd3004e6a52cdeb973b37b4a02a5",
     "agenthub.processing.accounting": "ef0e6dfae1b9ac247e6901a3fd271a303d2146b73ecff59f8d3d1fdd1ed6a5d9",
     "agenthub.processing.cards": "c90a41144f8c5a884ba95686561b6ba83f97f2dd3fd57be1ec83dbe835fb097f",

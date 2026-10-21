@@ -113,6 +113,14 @@ on Linux with `--require-hashes`, so a platform-only dependency missing from a l
 fails there. Dependabot proposes weekly, grouped updates to the locks, GitHub Actions
 and the base images (see [.github/dependabot.yml](.github/dependabot.yml)).
 
+CI builds resolve the digest-pinned base images from a GHCR mirror
+(`ghcr.io/OWNER/vaelius-base/*`), because anonymous `public.ecr.aws` pulls are
+throttled on shared runners. The Dockerfiles keep their public `FROM` lines; CI
+overrides each one with a BuildKit named context for the same digest
+(`scripts/base_images.py`). [base-images.yml](.github/workflows/base-images.yml)
+copies new pins with `skopeo copy --all --preserve-digests` when they reach `main`,
+and weekly; until then CI falls back to `public.ecr.aws`.
+
 ## Vulnerability exceptions
 
 CI fails on any known vulnerability in the locks (osv-scanner) and on fixable

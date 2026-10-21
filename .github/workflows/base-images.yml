@@ -1,0 +1,40 @@
+# Mirrors the digest-pinned public.ecr.aws base images to GHCR, digests preserved,
+# so CI resolves them with GITHUB_TOKEN instead of anonymous ECR Public pulls, which
+# are throttled on shared runners. CI falls back to ECR Public for any image that is
+# not mirrored yet (for example a base-image bump before it reaches main).
+name: Base image mirror
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - containers/**
+      - scripts/base_images.py
+      - .github/workflows/base-images.yml
+  schedule:
+    - cron: '29 5 * * 1'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # create or update ghcr.io/OWNER/vaelius-base/*
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Copy missing base images to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          echo "$REGISTRY_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          python3 scripts/base_images.py mirror "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vaelius-base"
+      - name: Log out of the registry
+        if: always()
+        run: skopeo logout ghcr.io || true

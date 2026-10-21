@@ -523,10 +523,19 @@ class Worker:
         if reviewed_reason is not None and (not reprocess or retain_validated or
                 reviewed_reason not in {'missing_durable_fact','incorrect_attribution','incomplete_record'}):
             raise ValueError('invalid_reprocessing_review')
-        with self.store.open() as state,state.db:
-            row=state.db.execute('SELECT * FROM backend_jobs WHERE id=?',(job_id,)).fetchone()
+        def recoverable(row):
             if not row or row['status'] not in ({'complete'} if reprocess else {'held','running'}):raise ValueError('recoverable_worker_job_required')
             if row['status']=='running' and row['lease_until']>=time.time():raise ValueError('worker_still_leased')
+        with self.store.open() as state,state.db:
+            row=state.db.execute('SELECT * FROM backend_jobs WHERE id=?',(job_id,)).fetchone()
+            recoverable(row)
+            if getattr(state.db,'dialect',None)=='postgres':
+                # claim() serializes on the observer row lock. Under READ
+                # COMMITTED the read above may predate a claim committed by the
+                # previous lock holder, so re-read and lock the job under it.
+                state.db.execute('SELECT 1 FROM backend_observers WHERE id=? FOR UPDATE',(row['observer_id'],))
+                row=state.db.execute('SELECT * FROM backend_jobs WHERE id=? AND observer_id=? FOR UPDATE',(job_id,row['observer_id'])).fetchone()
+                recoverable(row)
             episode=state.db.execute('SELECT * FROM curation_episode_jobs WHERE id=?',(row['episode_job'],)).fetchone()
             if not episode or episode['status']=='withdrawn':raise ValueError('withdrawn_worker_job')
             if reviewed_stage_limit is not None and (reprocess or not retain_validated or

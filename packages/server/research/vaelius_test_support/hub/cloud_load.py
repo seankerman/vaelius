@@ -104,7 +104,7 @@ def _initialize_source(config,tenant):
     store=_store(config,tenant);tenant_config=config['tenants'][tenant]
     store.create_organization(tenant);actor='volume-author';project='synthetic-volume'
     store.create_principal(tenant,actor);store.create_project(tenant,project);store.set_membership(tenant,project,actor,True)
-    token=store.enroll(tenant,actor,'volume-fixture',['ingest','read','source_read','policy','withdraw','correct'])
+    token=store.enroll(tenant,actor,'volume-fixture',['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
     ctx=store.authenticate(token);store.enroll_connection(ctx,'volume-original','volume-fixture',project,['document'],visibility='private',reader_ids=[actor])
     raw=''.join(fixture_text(i) for i in range(1,CAPACITY_PER_TENANT+1)).encode()
     objects=FileSourceObjects(Path(config['root'])/'objects'/tenant)

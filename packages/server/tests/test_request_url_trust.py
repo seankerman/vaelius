@@ -120,7 +120,8 @@ class RequestUrlTrustTests(unittest.TestCase):
         registry = oauth_registry()
         app = create_app(registry, allowed_hosts=['localhost', 'evil.example'])
         expected = {'resource': RESOURCE, 'authorization_servers': [ISSUER],
-                    'scopes_supported': ['vaelius:read'], 'bearer_methods_supported': ['header']}
+                    'scopes_supported': ['vaelius:read'], 'bearer_methods_supported': ['header'],
+                    'vaelius_authorization_servers': [{'issuer': ISSUER, 'scopes_supported': ['vaelius:read']}]}
         for headers in FORGED_HEADERS:
             with self.subTest(headers=headers):
                 for path in ('/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'):

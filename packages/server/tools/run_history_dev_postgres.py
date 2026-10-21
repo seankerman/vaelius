@@ -387,7 +387,7 @@ def run(services_path, output_path, *, question_id=None):
                     store.set_membership("synthetic-lab", project, principal, True)
             store.set_membership("synthetic-lab", "larch-team", "alex-42", True)
             tokens = {principal: store.enroll("synthetic-lab", principal, "h1-" + principal,
-                ["ingest", "read", "source_read", "correct", "withdraw", "policy"])
+                ["ingest", "read", "source_read", "feedback", "curate", "correct", "withdraw", "policy"])
                 for principal in ("ada", "ben", "alex-42")}
             ctx = {principal: store.authenticate(token) for principal, token in tokens.items()}
             connections = {}

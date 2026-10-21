@@ -165,6 +165,12 @@ def migrate_snapshot(snapshot, store, *, expected_sha256, objects, allow_missing
                     if serial:
                         largest = max((row['id'] for row in rows), default=0)
                         db.execute('SELECT setval(?::regclass,?,?)', (serial, max(1, largest), bool(largest)))
+            # Snapshot grants predate separate 'feedback'/'curate' enforcement
+            # (migration 043) and keep the abilities they had (target was empty).
+            for table in ('enterprise_credentials','enterprise_credential_families','enterprise_delegations'):
+                if (table in copied and 'legacy_actions' not in
+                        {r[1] for r in source.execute('PRAGMA table_info(' + table + ')')}):
+                    db.execute(sql.SQL('UPDATE {} SET legacy_actions=1').format(sql.Identifier(table)))
             for item in locators:
                 db.execute('INSERT INTO cloud_migrated_source_objects VALUES(?,?,?,?,?,?)',
                     (item['source_id'], item['key'], item['sha256'], item['length'], item['representation'], int(item['original_complete'])))

@@ -28,7 +28,7 @@ def rehearse(profile,store,settings):
     tokens={}
     for actor in ('alice','bob'):
         source.create_principal(tenant,actor);source.set_membership(tenant,'recovery-fixture',actor,True)
-        tokens[actor]=source.enroll(tenant,actor,'recovery-fixture-'+actor,['ingest','read','source_read','policy','withdraw','correct'])
+        tokens[actor]=source.enroll(tenant,actor,'recovery-fixture-'+actor,['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
     ctx=source.authenticate(tokens['alice'])
     source.enroll_connection(ctx,'recovery-docs','recovery-fixture','recovery-fixture',['document'],
         visibility='team',reader_ids=['alice','bob'])

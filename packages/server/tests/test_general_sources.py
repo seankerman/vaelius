@@ -16,7 +16,7 @@ class GeneralSourceTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.store=EnterpriseStore(Path(self.tmp.name)/'hub')
         self.store.create_organization('orchard');self.store.create_principal('orchard','alice')
         self.store.create_project('orchard','maple');self.store.set_membership('orchard','maple','alice',True)
-        self.token=self.store.enroll('orchard','alice','device',['ingest','read','source_read','policy','withdraw','correct'])
+        self.token=self.store.enroll('orchard','alice','device',['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
         self.ctx=self.store.authenticate(self.token)
         self.store.enroll_connection(self.ctx,'agent-one','host-codex','maple',['agent'])
         self.fixture=json.loads((Path(__file__).resolve().parent/'fixtures/processing/local_backend_v2.json').read_text())

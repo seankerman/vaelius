@@ -217,7 +217,7 @@ class CloudPreferencesMixin:
         """
         from agenthub.enterprise import Denied, _digest
         from agenthub.processing.knowledge import apply_resolved_observation
-        if not _processing:self._need(ctx,'correct')
+        if not _processing:self._need(ctx,'curate')
         elif not ctx.get('processing_connection'):raise Denied()
         now=time.time()
         with self.delivery_lock(),self.open() as state,state.db:

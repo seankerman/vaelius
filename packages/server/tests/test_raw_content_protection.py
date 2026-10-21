@@ -79,15 +79,11 @@ class LeastPrivilegeDefaultsTests(unittest.TestCase):
         from agenthub.cloud_api import create_app
         captured = {}
 
-        class Store:
-            def complete_enrollment(self, broker, **values):
+        class Registry:
+            def complete_login(self, tenant, broker_name, broker, **values):
                 captured.update(values)
                 return {'access_token': 'synthetic-access', 'expires_at': 1, 'refresh_token': None,
                         'refresh_expires_at': None, 'session_expires_at': None}
-
-        class Registry:
-            def resolve(self, tenant):
-                return Store()
 
         client = TestClient(create_app(Registry(), allowed_hosts=['testserver'], brokers={'fixture': object()}))
         response = client.post('/enterprise/v3/auth/complete', json={'tenant': 'orchard', 'broker': 'fixture',

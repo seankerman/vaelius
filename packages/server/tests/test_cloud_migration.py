@@ -24,7 +24,7 @@ class MigrationTests(PostgresFixture, unittest.TestCase):
         self.old = PostgresEnterpriseStore(home,database(home),'acme')
         self.old.create_organization('acme'); self.old.create_principal('acme', 'alice')
         self.old.create_project('acme', 'maple'); self.old.set_membership('acme', 'maple', 'alice', True)
-        token = self.old.enroll('acme', 'alice', 'old-device', ['ingest','read','source_read','withdraw','correct','policy'])
+        token = self.old.enroll('acme', 'alice', 'old-device', ['ingest','read','source_read','withdraw','feedback','curate','correct','policy'])
         self.ctx = self.old.authenticate(token)
         self.source = self.old.ingest(self.ctx, {'version': VERSION, 'external_id':'artifact',
             'session':'chat', 'turn':'1', 'project':'maple', 'kind':'Stop',
@@ -85,7 +85,7 @@ class MigrationTests(PostgresFixture, unittest.TestCase):
 
     def test_cloud_reenrollment_and_post_migration_withdrawal_survive_code_rollback(self):
         receipt = self.migrate()
-        token = self.store.enroll('acme', 'alice', 'cloud-device', ['read','ingest','source_read','withdraw','correct'])
+        token = self.store.enroll('acme', 'alice', 'cloud-device', ['read','ingest','source_read','withdraw','feedback','curate','correct'])
         ctx = self.store.authenticate(token)
         self.assertIsNotNone(self.store.detail(ctx, self.document))
         self.store.lifecycle(ctx, {'version':VERSION,'target_id':self.source,'expected_revision':'1',

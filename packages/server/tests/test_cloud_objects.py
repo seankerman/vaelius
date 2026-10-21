@@ -157,7 +157,7 @@ class DocumentPostgresTests(unittest.TestCase):
         self.store.create_project(tenant,self.project)
         for actor in (self.alice,self.bob):
             self.store.create_principal(tenant,actor);self.store.set_membership(tenant,self.project,actor,True)
-        actions=['ingest','read','source_read','policy','withdraw','correct']
+        actions=['ingest','read','source_read','policy','withdraw','feedback','curate','correct']
         self.ctx={actor:self.store.authenticate(self.store.enroll(tenant,actor,actor,actions)) for actor in (self.alice,self.bob)}
         self.connection='objects-'+suffix
         self.store.enroll_connection(self.ctx[self.alice],self.connection,'documents-'+suffix,self.project,['document'],visibility='team',reader_ids=[self.alice,self.bob])

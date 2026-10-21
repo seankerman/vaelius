@@ -36,7 +36,7 @@ class LogicalRecoveryPostgresTests(unittest.TestCase):
         self.tokens={}
         for actor in ('alice','bob'):
             self.source.create_principal('acme',actor);self.source.set_membership('acme','recovery-fixture',actor,True)
-            self.tokens[actor]=self.source.enroll('acme',actor,actor,['ingest','read','source_read','policy','withdraw','correct'])
+            self.tokens[actor]=self.source.enroll('acme',actor,actor,['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
         self.ctx=self.source.authenticate(self.tokens['alice'])
         self.source.enroll_connection(self.ctx,'recovery-docs','recovery-fixture','recovery-fixture',['document'],visibility='team',reader_ids=['alice','bob'])
         self.source_objects=FileSourceObjects(self.root/'source-objects');self.target_objects=FileSourceObjects(self.root/'target-objects')

@@ -315,7 +315,9 @@ class CloudIdentityMixin:
                     WHERE tenant=%s AND principal=%s AND acting_for=%s AND active=1''',
                     (tenant,principal,acting_for)).fetchone()
                 represented=db.execute('SELECT active FROM enterprise_principals WHERE tenant=%s AND id=%s',(tenant,acting_for)).fetchone()
-                if not grant or not represented or not represented['active'] or not set(actions)<=set(json.loads(grant['actions'])):raise Denied()
+                from agenthub.enterprise import effective_actions
+                if (not grant or not represented or not represented['active']
+                        or not set(actions)<=effective_actions(grant['actions'],grant['legacy_actions'])):raise Denied()
             scope=json.dumps(sorted(set(actions)))
             db.execute('''INSERT INTO enterprise_credential_families
                 (id,tenant,principal,acting_for,enrollment,actions,identity_issuer,identity_subject,
@@ -377,7 +379,8 @@ class CloudIdentityMixin:
         if row['oauth_provider'] is not None and not hasattr(self.registry,'authenticate_token'):raise Denied()
         if (row['principal']!=ctx['principal'] or row['tenant']!=ctx['tenant']
                 or (row['acting_for'] or row['principal'])!=ctx['actor']):raise Denied()
-        ctx['actions'] &= set(json.loads(row['actions']))
+        from agenthub.enterprise import effective_actions
+        ctx['actions'] &= effective_actions(row['actions'],row['legacy_actions'])
         if row['identity_issuer']:
             try:
                 self.identity_bindings.check(row['identity_issuer'],row['identity_subject'],ctx['tenant'],
@@ -388,7 +391,7 @@ class CloudIdentityMixin:
                 WHERE tenant=%s AND principal=%s AND acting_for=%s AND active=1''',
                 (ctx['tenant'],ctx['principal'],ctx['actor'])).fetchone()
             if not grant: raise Denied()
-            ctx['actions'] &= set(json.loads(grant['actions']))
+            ctx['actions'] &= effective_actions(grant['actions'],grant['legacy_actions'])
             ctx['delegated_projects'] = set(json.loads(grant['projects']))
         return ctx
 
@@ -419,11 +422,11 @@ class CloudIdentityMixin:
             state.db.execute('UPDATE enterprise_credentials SET active=0 WHERE digest=%s',(old['digest'],))
             state.db.execute('''INSERT INTO enterprise_credentials
                 (digest,tenant,principal,acting_for,enrollment,actions,active,created,expires_at,
-                identity_issuer,identity_subject,identity_provider,rotated_from,family)
-                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)''',
+                identity_issuer,identity_subject,identity_provider,rotated_from,family,legacy_actions)
+                VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s)''',
                 (_digest(token),old['tenant'],old['principal'],old['acting_for'],old['enrollment'],
                  old['actions'],time.time(),min(time.time()+expires_in,old['expires_at']),old['identity_issuer'],
-                 old['identity_subject'],old['identity_provider'],old['digest'],old['family']))
+                 old['identity_subject'],old['identity_provider'],old['digest'],old['family'],old['legacy_actions']))
             self._audit(state.db,ctx,'credential_rotation','applied',_digest(token))
         if getattr(self,'registry',None):self.registry.bind_credential(token,ctx['tenant'])
         return token
@@ -515,11 +518,11 @@ class CloudIdentityMixin:
                 db.execute('UPDATE enterprise_credentials SET active=0 WHERE family=%s AND active=1',(row['id'],))
                 db.execute('''INSERT INTO enterprise_credentials
                     (digest,tenant,principal,acting_for,enrollment,actions,active,created,expires_at,
-                    identity_issuer,identity_subject,identity_provider,rotated_from,family)
-                    VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)''',
+                    identity_issuer,identity_subject,identity_provider,rotated_from,family,legacy_actions)
+                    VALUES(%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s)''',
                     (access_digest,row['tenant'],row['principal'],row['acting_for'],row['enrollment'],
                      row['actions'],now,access_expires,row['identity_issuer'],row['identity_subject'],
-                     row['identity_provider'],presented,row['id']))
+                     row['identity_provider'],presented,row['id'],row['legacy_actions']))
                 db.execute('''INSERT INTO enterprise_refresh_tokens(digest,family,active,created,idle_expires_at)
                     VALUES(%s,%s,1,%s,%s)''',(refresh_digest,row['id'],now,refresh_expires))
                 self._audit(db,ctx,'credential_refresh','applied',row['id'])
@@ -545,7 +548,9 @@ class CloudIdentityMixin:
         is not a token-validity oracle. Pre-family credentials revoke only themselves.
         """
         from agenthub.enterprise import _digest
-        if not isinstance(token,str) or not 1<=len(token)<=256:raise ValueError('invalid_revocation_request')
+        # Same bound as authentication: a provider-issued (long) access token is
+        # revocable here too, and its length says nothing about its validity.
+        if not isinstance(token,str) or not 1<=len(token)<=16384:raise ValueError('invalid_revocation_request')
         digest=_digest(token)
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
@@ -567,6 +572,9 @@ class CloudIdentityMixin:
                     'request_id':request_id},'credential_revocation','applied' if changed else 'already_revoked',digest)
         return {'revoked':True}
 
+    # Store-level login (state kept in this tenant's database). The HTTP routes use
+    # TenantRegistry.begin_login/complete_login instead, which keep pending state in
+    # the control plane so an unknown tenant is indistinguishable from a known one.
     def begin_enrollment(self, broker):
         request = broker.begin()
         with self.open() as state,state.db:
@@ -586,6 +594,10 @@ class CloudIdentityMixin:
         if not row or row['expires_at']<=time.time():
             raise IdentityError('identity_callback_denied')
         identity = broker.exchange(code,json.loads(row['request_json']),callback_uri=callback_uri)
+        return self.enroll_identity(identity,enrollment=enrollment,actions=actions)
+
+    def enroll_identity(self, identity, *, enrollment, actions):
+        """Issue a refresh-capable credential to the principal bound to a verified identity."""
         binding = self.identity_bindings.resolve(identity,self.tenant_id)
         return self.enroll_with_refresh(self.tenant_id,binding['principal'],enrollment,actions,
             external_identity=identity)
@@ -626,7 +638,7 @@ class CloudIdentityMixin:
 
     def processing_identity(self,db,connection):
         """Resolve processing attribution from a current enrollment, not prose."""
-        from agenthub.enterprise import Denied
+        from agenthub.enterprise import Denied, effective_actions
         rows=db.execute('''SELECT * FROM enterprise_credentials WHERE tenant=%s AND enrollment=%s
             AND active=1 AND expires_at>%s ORDER BY created DESC''',
             (connection['tenant'],connection['enrollment'],time.time())).fetchall()
@@ -635,7 +647,7 @@ class CloudIdentityMixin:
             if actor!=connection['owner']:continue
             ctx={'tenant':row['tenant'],'principal':row['principal'],'actor':actor,
                 'acting_for':row['acting_for'],'enrollment':row['enrollment'],
-                'actions':set(json.loads(row['actions'])),'delegated_projects':None,
+                'actions':effective_actions(row['actions'],row['legacy_actions']),'delegated_projects':None,
                 'credential_digest':row['digest'],'request_id':'backend-observer',
                 'processing_connection':connection['id']}
             try:self.current_identity(db,ctx)

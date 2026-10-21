@@ -16,7 +16,7 @@ class Store:
     def delivery_lock(self): return nullcontext()
     def authenticate(self, token, request_id=None):
         if token != 'synthetic-token': raise Denied()
-        return {'tenant': 'synthetic', 'actor': 'alice', 'request_id': request_id}
+        return {'tenant': 'synthetic', 'actor': 'alice', 'actions': {'read'}, 'request_id': request_id}
     def detail(self, ctx, ident, *, as_of=None, time_mode=None):
         self.calls.append((ident, as_of, time_mode))
         if ident != 'ta_early': raise Denied()

@@ -6,6 +6,7 @@ No SQLite corpus is opened, staged or silently used when PostgreSQL fails.
 """
 from contextlib import contextmanager
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -319,6 +320,9 @@ class PostgresEnterpriseStore(HybridRetrievalMixin, CloudIdentityMixin, CloudPre
         return {"path": str(destination), "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()}
 
 
+TENANT_NAME = re.compile(r"[A-Za-z0-9_-]{1,80}")
+
+
 class TenantRegistry:
     """Server-owned credential routes, bounded tenant-store cache, no corpus."""
     def __init__(self, control_dsn, home, *, max_stores=16, store_factory=PostgresEnterpriseStore):
@@ -331,7 +335,7 @@ class TenantRegistry:
             yield PostgresConnection(connection)
 
     def register(self, tenant, dsn):
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", tenant):
+        if not TENANT_NAME.fullmatch(tenant):
             raise ValueError("invalid_tenant")
         now = time.time()
         with connect(self.control_dsn) as db:
@@ -371,6 +375,55 @@ class TenantRegistry:
                     self._stores.pop(next(iter(self._stores)))
                 self._stores[tenant] = self.store_factory(self.home / tenant, row[0], tenant, registry=self)
             return self._stores[tenant]
+
+    # Interactive login requests live in the control plane, keyed by a digest of
+    # their state, so `begin` does identical work for every well-formed tenant name
+    # and never reveals whether that tenant exists. Storage is bounded: past either
+    # cap the oldest pending request is dropped (its login then fails at completion),
+    # never the new one, so the response does not change either.
+    LOGIN_PENDING_PER_TENANT = 1000
+    LOGIN_PENDING_TOTAL = 20000
+
+    def begin_login(self, tenant, broker_name, broker):
+        from agenthub.cloud_identity import _sha
+        if not isinstance(tenant, str) or not TENANT_NAME.fullmatch(tenant):
+            raise ValueError("invalid_tenant")
+        request = broker.begin()
+        now = time.time()
+        with connect(self.control_dsn) as db:
+            db.execute("SELECT pg_advisory_xact_lock(hashtext('login-admission'))")
+            db.execute("DELETE FROM cloud_login_requests WHERE expires_at<=%s", (now,))
+            db.execute("""DELETE FROM cloud_login_requests WHERE digest IN (SELECT digest FROM cloud_login_requests
+                WHERE tenant=%s ORDER BY created DESC,digest OFFSET %s)""", (tenant, self.LOGIN_PENDING_PER_TENANT - 1))
+            db.execute("""DELETE FROM cloud_login_requests WHERE digest IN (SELECT digest FROM cloud_login_requests
+                ORDER BY created DESC,digest OFFSET %s)""", (self.LOGIN_PENDING_TOTAL - 1,))
+            db.execute("INSERT INTO cloud_login_requests(digest,tenant,broker,request_json,created,expires_at) VALUES(%s,%s,%s,%s,%s,%s)",
+                (_sha(request["state"]), tenant, broker_name, json.dumps(request), now, request["expires"]))
+        return {"url": request["url"], "state": request["state"], "expires_at": request["expires"]}
+
+    def complete_login(self, tenant, broker_name, broker, *, state, code, callback_uri, enrollment, actions):
+        """Consume a login request; the tenant is resolved only after its state matches.
+
+        Every failure (unknown or expired state, a state begun for another tenant or
+        broker, a rejected code, an unknown or inactive tenant, an unbound identity)
+        is the same IdentityError, so completion is no tenant oracle either.
+        """
+        from agenthub.cloud_identity import IdentityError, _sha
+        if (not isinstance(tenant, str) or not TENANT_NAME.fullmatch(tenant)
+                or not isinstance(state, str) or not 20 <= len(state) <= 256):
+            raise IdentityError("identity_callback_denied")
+        with connect(self.control_dsn) as db:
+            row = db.execute("DELETE FROM cloud_login_requests WHERE digest=%s RETURNING tenant,broker,request_json,expires_at",
+                (_sha(state),)).fetchone()
+        if (not row or row["expires_at"] <= time.time() or row["tenant"] != tenant
+                or row["broker"] != broker_name):
+            raise IdentityError("identity_callback_denied")
+        identity = broker.exchange(code, json.loads(row["request_json"]), callback_uri=callback_uri)
+        try:
+            store = self.resolve(tenant)
+        except Denied:
+            raise IdentityError("identity_callback_denied") from None
+        return store.enroll_identity(identity, enrollment=enrollment, actions=actions)
 
     def store_for_token(self, token):
         if not isinstance(token, str) or not token or len(token) > 16384:

@@ -72,7 +72,7 @@ class IdentityPostgresTests(unittest.TestCase):
         for project in (self.modern,self.legacy):
             self.store.create_project('orchard',project)
             for user in (self.alice,self.bob):self.store.set_membership('orchard',project,user,True)
-        actions=['ingest','read','source_read','correct','withdraw','policy','settings']
+        actions=['ingest','read','source_read','feedback','curate','correct','withdraw','policy','settings']
         self.tokens={user:self.store.enroll('orchard',user,user,actions if user!=self.admin_user else ['read','settings'])
             for user in (self.alice,self.bob,self.admin_user)}
         self.ctx={user:self.store.authenticate(token) for user,token in self.tokens.items()}
@@ -408,8 +408,8 @@ class IdentityPostgresTests(unittest.TestCase):
                 federation_required=federated,allowed_providers=['company'] if federated else ['native'])
             start=client.post('/enterprise/v3/auth/begin',json={'tenant':'orchard','broker':'fixture'})
             self.assertEqual(start.status_code,200,start.json())
-            with self.store.open() as state:
-                saved=state.db.execute('SELECT request_json FROM cloud_login_states WHERE digest=%s',(_sha(start.json()['state']),)).fetchone()
+            with self.registry.open_control() as db:
+                saved=db.execute('SELECT request_json FROM cloud_login_requests WHERE digest=%s',(_sha(start.json()['state']),)).fetchone()
             callback=login_local_fixture(broker,settings,federated=federated,request=json.loads(saved['request_json']))
             data={'tenant':'orchard','broker':'fixture','state':callback['state'],'code':callback['code'],
                 'callback_uri':callback['callback_uri'],'enrollment':'broker-'+principal}

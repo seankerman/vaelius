@@ -218,12 +218,14 @@ def main(argv=None):
     parser.add_argument('--broker',help='configured legacy login broker')
     parser.add_argument('--timeout',type=float,default=180);parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--oauth-client-id',help='use standard provider OAuth instead of legacy enrollment')
+    parser.add_argument('--oauth-issuer',help='your organization\'s OAuth issuer, from your administrator; '
+        'required when the service advertises more than one')
     parser.add_argument('--reauthenticate',action='store_true',help='preserve this existing profile and enrollment')
     parser.add_argument('--credential-store',choices=('auto','keyring','file'),default='auto',
         help='auto uses the OS keychain when the optional keyring package has a usable backend')
     args=parser.parse_args(argv)
     if args.auth=='aws-sts':
-        if args.broker or args.oauth_client_id or args.callback_uri or args.reauthenticate:
+        if args.broker or args.oauth_client_id or args.oauth_issuer or args.callback_uri or args.reauthenticate:
             parser.error('--auth aws-sts takes no callback, broker, OAuth or reauthentication options')
     elif args.aws_profile or args.aws_region or args.aws_server_id:
         parser.error('--aws-* options require --auth aws-sts')
@@ -242,7 +244,8 @@ def main(argv=None):
                 credential_store=args.credential_store)
             if args.oauth_client_id or not args.broker:
                 from agentclient.oauth import enroll as oauth_enroll
-                result=oauth_enroll(args.home,client_id=args.oauth_client_id or 'vaelius-plugin',reauthenticate=args.reauthenticate,**common)
+                result=oauth_enroll(args.home,client_id=args.oauth_client_id or 'vaelius-plugin',reauthenticate=args.reauthenticate,
+                    issuer=args.oauth_issuer,**common)
             else:
                 if args.reauthenticate:raise EnrollmentError('oauth_client_id_required_for_reauthentication')
                 if not args.broker:raise EnrollmentError('legacy_broker_required')

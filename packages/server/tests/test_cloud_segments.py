@@ -234,7 +234,7 @@ class SegmentRecoveryTests(unittest.TestCase):
         self.target.conversation_segments=ConversationSegments(self.target,self.restored_objects)
         self.source.create_organization('acme');self.source.create_principal('acme','alice')
         self.source.create_project('acme','maple');self.source.set_membership('acme','maple','alice',True)
-        self.token=self.source.enroll('acme','alice','device',['ingest','read','source_read','policy','withdraw','correct'])
+        self.token=self.source.enroll('acme','alice','device',['ingest','read','source_read','policy','withdraw','feedback','curate','correct'])
         self.ctx=self.source.authenticate(self.token)
         self.source.enroll_connection(self.ctx,'segment-agent','codex','maple',['agent'],visibility='private')
         self.ids=[self.source.ingest_general(self.ctx,value)['source_id'] for value in FIXTURE['events']]

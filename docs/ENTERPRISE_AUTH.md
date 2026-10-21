@@ -24,6 +24,71 @@ remove an independently authorized backend service's processing grants.
 [Access reviews and offboarding](ACCESS_REVIEW.md) covers the periodic access
 report, reviewer attestations, idle-access hygiene and the offboarding command.
 
+## Actions and route authorization
+
+Every authenticated route requires an action, checked right after authentication
+and again by the operation itself. A route that is not in the service's action
+table is refused, so a new route cannot ship without being classified. Missing
+actions answer `404`, the same as a missing resource.
+
+| Route | Requires |
+|---|---|
+| `GET /enterprise/v1/status` (MCP `memory_status`) | `read` |
+| Search, document detail, evidence, context, timeline, project history, preferences, original-document describe/list/download | `read` (originals also need `source_read` and ownership or a raw grant) |
+| `GET /enterprise/v1/sources/*`, `GET /enterprise/v2/sources/*` | `source_read` |
+| `GET /enterprise/v1/explain/*` | `read` or `settings` |
+| `POST /enterprise/v1/sources`, `/v2/parts`, original-document upload | `ingest` |
+| `POST /enterprise/v1/boundary` (compaction boundary) | `ingest` |
+| `POST /enterprise/v1/receipts` (delivery receipts) | `ingest` and `read` |
+| `POST /enterprise/v3/feedback` (MCP `report_memory_outcome`) | `feedback` and `read` |
+| `POST /enterprise/v1/reviewed-notes` (MCP `submit_memory_candidate`), `POST /enterprise/v3/preferences/curate` | `curate` |
+| `POST /enterprise/v1/lifecycle` | `correct`, `withdraw` (also for `delete`) or `policy`, by operation |
+| `POST /enterprise/v3/preferences/withdraw` | `withdraw` |
+| `POST /enterprise/v2/release` | `policy` and `read` |
+| Directory events and SCIM | `settings` (and the tenant administrator flag) |
+| `GET /enterprise/v1/processing-status` | `audit` |
+| `GET /enterprise/v3/service-status` | `audit` or `settings` |
+| Access review | `audit` or `policy` (and the tenant administrator flag) |
+
+Four routes are open to any authenticated credential, because each acts only on
+the presented credential or returns text meant for every user:
+
+- `GET /enterprise/v3/auth/credential` reports the presented credential (tenant,
+  principal, enrollment, actions, expiry). Every credential needs it to schedule
+  its own renewal.
+- `POST /enterprise/v3/auth/rotate` replaces the presented access token with one
+  that has the same actions and no later expiry.
+- `POST /enterprise/v3/auth/adopt` binds the presented provider token to an
+  enrollment of its own principal; one held by another principal is a conflict.
+- `POST /enterprise/v3/capture-notice` returns the capture notice; reader detail is
+  returned only for a connection the caller owns.
+
+A malformed request body is reported (`400`) only after authentication; an
+unauthenticated caller gets the same `401`/`404` for any route.
+
+### `feedback` and `curate`
+
+`feedback` (outcome reports) and `curate` (reviewed notes and preference curation)
+are enforced as their own actions. Previously `read` was enough for feedback and
+`correct` for curation. Upgrading keeps existing access working: migration
+`043_action_grants.sql` marks every credential, refresh session and delegation that
+exists when it runs, and those grants keep the implied abilities (`read` implies
+`feedback`, `correct` implies `curate`). Their stored action lists are not
+rewritten, so renewal still reports the same actions and clients' scope checks keep
+passing. Grants issued after the upgrade state their actions explicitly:
+
+- Interactive enrollment without operator `enrollment_actions` now grants
+  `ingest, read, feedback, correct, withdraw`. Add `curate` there (or to a
+  delegation) for users who should submit reviewed notes; `curate` is reported as
+  privileged in [access reviews](ACCESS_REVIEW.md).
+- Provider OAuth tokens need the `vaelius:feedback` scope to report outcomes (the
+  plugin already requests it) and `vaelius:curate` to curate.
+- Delegations may now include `curate`. Updating a delegation makes its action list
+  explicit.
+- `/enterprise/v1/status` needs `read`, and compaction boundaries and delivery
+  receipts need `ingest`. A read-only credential's hooks record these as capture
+  gaps and continue.
+
 ## Operator configuration
 
 Run tenant/control migrations and application-role grants before serving. Use a
@@ -123,10 +188,45 @@ user reauthenticates in the same profile.
 deletes local tokens after confirmed provider revocation, unless `--local-only` is
 explicitly selected. It does not delete knowledge.
 
-MCP advertises `/.well-known/oauth-protected-resource/mcp`; tenant-specific login
-metadata is at `/.well-known/oauth-protected-resource/mcp/TENANT`. Invalid tokens
-receive a 401 discovery challenge. The installed plugin's credential helper also
-works with this same provider path; it contains no alternative corpus or service.
+MCP advertises `/.well-known/oauth-protected-resource/mcp`. Invalid tokens receive
+a 401 discovery challenge. The installed plugin's credential helper also works with
+this same provider path; it contains no alternative corpus or service.
+
+Unauthenticated discovery does not reveal which tenants exist. Every well-formed
+`/.well-known/oauth-protected-resource/mcp/TENANT` path returns the same
+resource-wide document as `/mcp`, with status `200`, whether or not `TENANT` is
+configured. It lists every configured issuer, and `vaelius_authorization_servers`
+gives each issuer's own scopes. Clients learn their tenant, and their issuer when
+the service has more than one, from the enrollment details their administrator
+gives them:
+
+```sh
+python -m agentclient.cloud_enroll ... --tenant company \
+  --oauth-issuer https://identity.example.org/realms/company
+```
+
+With a single configured issuer `--oauth-issuer` is optional. `--reauthenticate`
+reuses the issuer the profile already signed in with. The tenant is confirmed after
+sign-in: the service reports the token's tenant and the client refuses a mismatch.
+Clients released before this change need exactly one advertised issuer.
+
+Legacy interactive login (`/enterprise/v3/auth/begin` and `/complete`, used only
+with `legacy_interactive` or without provider OAuth) is no tenant oracle either.
+`begin` validates the broker name, then records the request in the control plane for
+any well-formed tenant name and answers the same way. The tenant is looked up only
+when a matching state returns, and every completion failure (unknown state, a state
+begun for another tenant or broker, a rejected code, an unknown tenant, an unbound
+identity) is the same `404`. At most 1,000 requests per tenant name and 20,000 in
+total are pending; beyond that the oldest is dropped, so a flood delays logins but
+never changes the response. Rate-limit these routes at the proxy as well. Run the
+control-plane migrations (they add `cloud_login_requests`); the control
+application role needs `INSERT` and `DELETE` on it, which the local profile setup
+grants.
+
+`/enterprise/v3/auth/revoke` answers `200 {"revoked": true}` for every token up to
+16,384 characters, whether valid, unknown, expired or already revoked (RFC 7009),
+so it does not reveal validity. Provider-issued access tokens are revocable there
+too: the service stops accepting them, while the issuer still owns their lifetime.
 
 Before rolling back to a binary without provider authentication, run the explicit
 operator fence `agenthub.oauth_provider.prepare_legacy_rollback(store)` against

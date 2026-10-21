@@ -82,3 +82,47 @@ class OAuthRecovery(unittest.TestCase):
                 self.assertEqual(renew(cfg)['status'],'recovered');request.assert_not_called()
             self.assertEqual(json.loads(config.read_text())['projects'],original['projects'])
             self.assertEqual(json.loads(config.read_text())['sessions'],original['sessions'])
+
+
+class DiscoveryIssuerSelection(unittest.TestCase):
+    """The service publishes one resource-wide document; the enrollment picks its issuer."""
+    A, B = 'https://identity.example/realms/acme', 'https://identity.example/realms/bravo'
+
+    def discover(self, document, **kwargs):
+        from agentclient.oauth import discover
+        def request(url, data=None):
+            if url.endswith('/.well-known/openid-configuration'):
+                issuer = url.removesuffix('/.well-known/openid-configuration')
+                return {'issuer': issuer, 'code_challenge_methods_supported': ['S256'],
+                        'authorization_endpoint': issuer + '/auth', 'token_endpoint': issuer + '/token',
+                        'revocation_endpoint': issuer + '/revoke'}
+            self.assertEqual(url, 'https://memory.example/.well-known/oauth-protected-resource/mcp/acme')
+            return document
+        with patch('agentclient.oauth.request', side_effect=request):
+            return discover('https://memory.example', 'acme', 'plugin', **kwargs)
+
+    def document(self):
+        return {'resource': 'https://memory.example/mcp', 'authorization_servers': [self.A, self.B],
+                'scopes_supported': ['vaelius:feedback', 'vaelius:ingest', 'vaelius:read', 'vaelius:source_read'],
+                'bearer_methods_supported': ['header'],
+                'vaelius_authorization_servers': [
+                    {'issuer': self.A, 'scopes_supported': ['vaelius:feedback', 'vaelius:ingest', 'vaelius:read']},
+                    {'issuer': self.B, 'scopes_supported': ['vaelius:read']}]}
+
+    def test_several_issuers_need_the_enrollment_issuer(self):
+        with self.assertRaisesRegex(ValueError, 'explicit_single_tenant_issuer_required'):
+            self.discover(self.document())
+        chosen = self.discover(self.document(), issuer=self.A)
+        self.assertEqual((chosen['issuer'], chosen['token_endpoint']), (self.A, self.A + '/token'))
+        # The chosen issuer's own scopes, not the union across issuers.
+        self.assertEqual(chosen['scope'], 'openid vaelius:feedback vaelius:ingest vaelius:read')
+        self.assertEqual(self.discover(self.document(), issuer=self.B)['scope'], 'openid vaelius:read')
+
+    def test_issuer_must_be_advertised_by_the_service(self):
+        with self.assertRaisesRegex(ValueError, 'oauth_issuer_not_advertised'):
+            self.discover(self.document(), issuer='https://identity.example/realms/elsewhere')
+
+    def test_single_issuer_document_still_discovers_without_an_issuer(self):
+        document = {'resource': 'https://memory.example/mcp', 'authorization_servers': [self.A],
+                    'scopes_supported': ['vaelius:read', 'vaelius:feedback'], 'bearer_methods_supported': ['header']}
+        self.assertEqual(self.discover(document)['issuer'], self.A)

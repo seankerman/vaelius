@@ -14,7 +14,7 @@ requires-python = ">=3.12"
 dependencies = ["vaelius-client==0.3.0"]
 
 [project.optional-dependencies]
-semantic = ["numpy==2.5.3", "onnxruntime==1.30.0", "tokenizers==0.23.2"]
+semantic = ["numpy==2.5.3", "onnxruntime==1.31.0", "tokenizers==0.23.2"]
 cloud = [
   "mcp==2.3.0",
   "psycopg[binary]==3.2.10", "starlette==1.9.0", "uvicorn==0.35.0",

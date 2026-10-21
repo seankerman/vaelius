@@ -146,7 +146,7 @@ def load_context(state, job, config, *, deadline=None):
     with db:
         prior_count=db.execute('SELECT count(*) FROM backend_observer_dependencies WHERE observer_id=?',(job['observer_id'],)).fetchone()[0]
         compact=int(config.get('backend_worker',{}).get('compact_after_chars',256000))
-        if prior_count+len(current)>source_bound or observer['context_chars']>=compact or config.get('backend_execution',{}).get('kind')=='operator_api':
+        if prior_count+len(current)>source_bound or observer['context_chars']>=compact or config.get('backend_execution',{}).get('kind') in ('operator_api','bedrock'):
             db.execute("UPDATE backend_observers SET provider_session=NULL,pending_session=NULL,context_chars=0,observer_epoch=observer_epoch+1,status='reconstruct' WHERE id=?",(job['observer_id'],))
             db.execute('DELETE FROM backend_observer_dependencies WHERE observer_id=?',(job['observer_id'],))
         elif observer['provider_session'] or observer['pending_session']:

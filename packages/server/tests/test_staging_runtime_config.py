@@ -21,7 +21,8 @@ class RuntimeConfigurationTests(unittest.TestCase):
              patch('agenthub.cloud_ops.Meter'):
             home = Path(directory)
             worker = home/'worker.json'
-            worker.write_text(json.dumps({'observer': {'model': 'gpt-6-luna'}}))
+            worker.write_text(json.dumps({'backend_execution': {'kind': 'codex'},
+                                          'observer': {'model': 'synthetic-model'}}))
             worker.chmod(0o600)
             settings = {'control_dsn': 'synthetic'}
             factory = registry_from_settings(settings, home).store_factory
@@ -31,9 +32,12 @@ class RuntimeConfigurationTests(unittest.TestCase):
             self.assertEqual(store.retrieval_corpus,'sources')
             settings['reranking'] = {'enabled': True, 'worker_config': str(worker),
                                     'ledger': str(home/'shared.sqlite'), 'timeout_seconds': 30}
+            with self.assertRaisesRegex(ValueError, 'model_provider_not_allowlisted'):
+                registry_from_settings(settings, home)
+            settings['models'] = {'allowed_providers': ['codex'], 'allowed_models': ['synthetic-model']}
             factory = registry_from_settings(settings, home).store_factory
             ranker = factory(home, 'synthetic', 'org').serving_reranker
-            self.assertEqual(ranker.config['observer']['model'], 'gpt-6-luna')
+            self.assertEqual(ranker.config['observer']['model'], 'synthetic-model')
             self.assertEqual(ranker.config['observer']['reasoning'], 'low')
             self.assertEqual(ranker.timeout_seconds, 30)
             provider.assert_not_called()

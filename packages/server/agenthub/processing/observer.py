@@ -7,7 +7,7 @@ def call_model(state, cfg, purpose, instruction, payload, schema, runner, contex
     current=json.loads((state.home/'config.json').read_text())
     if current.get('paused') or not current.get('observer',{}).get('enabled'):
         raise HarnessError('observer_paused')
-    model = cfg["observer"].get("model", "gpt-6-luna")
+    model = cfg["observer"].get("model")
     with state.db:
         sql="INSERT INTO model_calls(created,purpose,model,status) VALUES(?,?,?,'started')"
         call_id=state.db.execute(sql+" RETURNING id",(time.time(),purpose,model)).fetchone()[0]

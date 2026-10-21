@@ -11,6 +11,7 @@ import unittest
 from agenthub.serving_reranker import ServingReranker, apply_selection, candidate_packet
 
 FIXTURE = Path(__file__).parent/'fixtures/serving_reranker_v1/cases.json'
+CONFIG = {'backend_execution': {'kind': 'codex'}, 'observer': {'model': 'synthetic-model'}}
 
 
 class Meter:
@@ -36,7 +37,7 @@ class ServingRerankerTests(unittest.TestCase):
             self.calls.append((home, config, instruction, payload, schema))
             if isinstance(output, Exception): raise output
             return output, self.usage
-        return ServingReranker(self.root/'private', {}, ledger=self.root/'ledger.sqlite',
+        return ServingReranker(self.root/'private', CONFIG, ledger=self.root/'ledger.sqlite',
                                meter=self.meter, runner=runner, **kwargs)
 
     def test_process_admission_is_nonblocking_and_has_no_accounting_attempt(self):
@@ -127,7 +128,7 @@ class ServingRerankerTests(unittest.TestCase):
     def test_model_and_tools_are_internally_fixed(self):
         self.ranker({'order': [], 'support': 'none'}).rerank('query', self.cases[3]['cards'])
         _, config, instruction, payload, schema = self.calls[0]
-        self.assertEqual(config['observer']['model'], 'gpt-6-luna')
+        self.assertEqual(config['observer']['model'], 'synthetic-model')
         self.assertEqual(config['observer']['reasoning'], 'low')
         self.assertEqual(config['observer']['timeout_seconds'], 20)
         self.assertEqual(config['_purpose'], 'serving_rerank')
@@ -164,9 +165,13 @@ class ServingRerankerTests(unittest.TestCase):
         self.assertEqual(self.meter.events, [])
 
     def test_unknown_or_incomplete_provider_configuration_rejected(self):
-        for config in ({'backend_execution': {'kind': 'unknown'}}, {'backend_execution': {'kind': 'operator_api'}}):
-            with self.assertRaisesRegex(RuntimeError, 'unknown_execution_adapter|explicit_operator_provider_config_required'):
-                ServingReranker(self.root, config, ledger=self.root/'ledger', meter=self.meter)
+        from agenthub.model_policy import ModelPolicy
+        policy = ModelPolicy(frozenset({'operator_api', 'bedrock', 'codex'}))
+        for config in ({'backend_execution': {'kind': 'unknown', 'model': 'synthetic-model'}},
+                       {'backend_execution': {'kind': 'operator_api'}}, {'backend_execution': {'kind': 'bedrock'}}, {}):
+            with self.subTest(config=config), self.assertRaisesRegex(
+                    RuntimeError, 'model_provider_not_allowlisted|model_stage_model_required|model_stage_provider_required'):
+                ServingReranker(self.root, config, ledger=self.root/'ledger', meter=self.meter, model_policy=policy)
 
     def test_runtime_bounds_reject_bool_and_unbounded_settings(self):
         for option in ({'timeout_seconds': True}, {'timeout_seconds': 600},

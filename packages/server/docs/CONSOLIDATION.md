@@ -1,7 +1,7 @@
 # Supported service boundary
 
 The 0.3 package has one PostgreSQL API/worker path. AgentHub owns processing,
-model defaults (GPT-6 Luna, low reasoning), continuous contexts, embeddings,
+model execution (operator-allowlisted providers, no default model), continuous contexts, embeddings,
 identity, policy, source objects, curation, retrieval and lifecycle.
 
 `agenthub doctor --profile PROFILE` checks local configuration;

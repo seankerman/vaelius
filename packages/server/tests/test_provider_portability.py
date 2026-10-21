@@ -29,14 +29,16 @@ class ProviderPortability(unittest.TestCase):
         from agenthub.cloud_execution import execution_identity
         with tempfile.TemporaryDirectory() as td:
             key=Path(td)/'key';key.write_text('fixture');key.chmod(0o600)
+            from agenthub.model_policy import ModelPolicy
             cfg={'backend_execution':{'kind':'operator_api','model':'configured-model','credential_file':str(key)}}
-            api=execution_from_config(cfg)
+            policy=ModelPolicy(frozenset({'operator_api'}))
+            api=execution_from_config(cfg,policy=policy)
             self.assertEqual(api.model,'configured-model')
             self.assertNotEqual(execution_identity(cfg),execution_identity({'observer':{'model':'configured-model'}}))
             identity=execution_identity(cfg);key.write_text('rotated-fixture')
             self.assertEqual(identity,execution_identity(cfg))
             key.chmod(0o644)
-            with self.assertRaisesRegex(Exception,'credential_permissions'):execution_from_config(cfg)
+            with self.assertRaisesRegex(Exception,'credential_permissions'):execution_from_config(cfg,policy=policy)
 
     def test_api_unspecified_reasoning_is_not_the_same_as_explicit_low(self):
         from agenthub.cloud_execution import execution_identity

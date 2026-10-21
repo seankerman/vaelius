@@ -155,12 +155,16 @@ def registry_from_settings(settings,home):
     if (not isinstance(reranking,dict) or set(reranking)-{'enabled','worker_config','ledger','timeout_seconds'}
             or type(reranking.get('enabled',False)) is not bool):
         raise ValueError('runtime_reranking_configuration')
+    from agenthub.model_policy import policy_from_settings, require_stage_allowed
+    model_policy=policy_from_settings(settings)
     reranker_config=None
     if reranking.get('enabled'):
         source=Path(reranking['worker_config']).expanduser()
         if not source.is_absolute() or source.stat().st_mode&0o077:raise ValueError('reranker_private_configuration')
         reranker_config=json.loads(source.read_text())
         if reranking.get('ledger') is not None and not Path(reranking['ledger']).expanduser().is_absolute():raise ValueError('reranker_shared_ledger_required')
+        # Startup refuses an enabled stage whose provider/model is not allowlisted.
+        require_stage_allowed(model_policy,reranker_config,'reranking')
     model=None
     objects=None
     if settings.get('objects'):
@@ -196,7 +200,7 @@ def registry_from_settings(settings,home):
             from agenthub.cloud_ops import Meter
             store.serving_reranker=ServingReranker(path/'reranking',reranker_config,
                 ledger=Path(reranking['ledger']).expanduser() if reranking.get('ledger') else None,meter=Meter(store),
-                timeout_seconds=reranking.get('timeout_seconds',20))
+                timeout_seconds=reranking.get('timeout_seconds',20),model_policy=model_policy)
         for key, default in [('candidate_limit', 20), ('numeric_mode', 'legacy'),
                              ('lexical_weight', 1), ('vector_weight', 1), ('require_prose', False),
                              ('authorization_shape', 'compiled'), ('selection_policy', 'baseline')]:

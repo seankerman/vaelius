@@ -45,7 +45,10 @@ def _invoke(home, config, instruction, payload, schema, *, session_id=None,
             session_dir=None):
     settings = config.get("observer", {})
     executable = resolve_executable(settings.get("executable", "codex"))
-    model = settings.get("model", "gpt-6-luna")
+    model = settings.get("model")
+    if not isinstance(model, str) or not model:
+        # The operator names the model; there is no built-in subscription model.
+        raise HarnessError("model_required", outcome="cancelled")
     # Subscription access is intentional. Never silently fall back to API billing.
     env = {k: v for k, v in os.environ.items() if k in
            {"HOME", "PATH", "USER", "LOGNAME", "TMPDIR", "LANG", "CODEX_HOME"}}
@@ -151,7 +154,7 @@ def run_structured(home,config,instruction,payload,schema):
     from agenthub.processing.usage import Ledger
     ledger=Ledger(config);ident=None
     try:
-        ident=ledger.reserve(config.get('_purpose','evaluation'),config.get('observer',{}).get('model','gpt-6-luna'),config.get('_call_context'))
+        ident=ledger.reserve(config.get('_purpose','evaluation'),config.get('observer',{}).get('model'),config.get('_call_context'))
         result,usage=_invoke(home,config,instruction,payload,schema)
         ledger.finish(ident,'done',usage)
         return result,usage
@@ -181,7 +184,7 @@ def run_structured_session(home, config, instruction, payload, schema, *,
     ident = None
     try:
         ident = ledger.reserve(config.get('_purpose', 'continuous_observer'),
-                               config.get('observer', {}).get('model', 'gpt-6-luna'),
+                               config.get('observer', {}).get('model'),
                                config.get('_call_context'))
         result, cumulative, actual_session_id = _invoke(
             home, config, instruction, payload, schema,

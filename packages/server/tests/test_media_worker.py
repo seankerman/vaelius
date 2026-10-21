@@ -24,17 +24,21 @@ class MediaWorkerTests(unittest.TestCase):
         self.assertEqual(generation,'newer-generation')
         self.assertIsNotNone(first.claim())
 
-    def test_backend_default_is_gpt6_without_changing_explicit_or_client_profiles(self):
+    def test_backend_has_no_default_model_and_keeps_explicit_profiles(self):
         from agenthub.cloud_local import worker_config
         with tempfile.TemporaryDirectory() as directory:
-            self.assertEqual(worker_config(Path(directory),provider_free=False)['observer']['model'],'gpt-6-luna')
+            self.assertNotIn('model',worker_config(Path(directory),provider_free=False)['observer'])
             self.assertEqual(worker_config(Path(directory),provider_free=True)['observer']['model'],'fixture')
-        self.config['observer'].pop('model')
         worker=Worker(self.store,self.config,live=False);worker.prepare()
-        self.assertNotIn('model',self.config['observer'])
-        self.assertEqual(worker.config['observer']['model'],'gpt-6-luna')
         with self.store.open() as state:
-            self.assertEqual(state.db.execute('SELECT model FROM backend_observers').fetchone()[0],'gpt-6-luna')
+            self.assertEqual(state.db.execute('SELECT model FROM backend_observers').fetchone()[0],'fixture')
+        self.config['observer'].pop('model')
+        with self.assertRaisesRegex(ValueError,'model_stage_model_required'):
+            Worker(self.store,self.config,runner=lambda *a,**k:None,live=False)
+        maintenance=Worker(self.store,self.config,live=False)  # Model-free operations remain available.
+        self.assertIsNotNone(maintenance.status())
+        with self.assertRaisesRegex(ValueError,'model_stage_model_required'):
+            maintenance.prepare()
 
     def test_explicit_sample_filter_does_not_claim_an_unselected_job(self):
         self.turn('2')

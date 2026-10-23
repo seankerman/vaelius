@@ -106,7 +106,9 @@ class RetrievalMixin:
                 sources=db.execute('''SELECT s.* FROM enterprise_dependencies x
                     JOIN enterprise_sources s ON s.id=x.source_id
                     WHERE x.document_id=?''',(document_id,)).fetchall()
-                if sources and (all(self._visible_source(db,ctx,source) for source in sources)
+                capped=prior['level_capped']==1 and not all(
+                    source['owner']==ctx['actor'] or self._passage_shared(db,ctx,source) for source in sources)
+                if sources and ((all(self._visible_source(db,ctx,source) for source in sources) and not capped)
                                 or self._release_allowed(db,ctx,document_id,sources)):
                     return prior
         if not table_exists(db,'backend_native_artifacts'):return None

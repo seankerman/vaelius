@@ -105,8 +105,9 @@ def document_metadata(db, document_ids):
     the sources span several), the CURRENT sharing level, the lowest over every
     source, and `projects`, every other project whose content it carries (present
     only when there is one). A passage's level is its stored level under every current ceiling
-    (agenthub.project_sharing); a curated or derived document's level is the
-    capture connection's visibility. Later layers can make anything derived from a
+    (agenthub.project_sharing); a curated or derived document registered after
+    migration 047 (level_capped) has the same level, an earlier one the capture
+    connection's visibility. Later layers can make anything derived from a
     delivered item inherit this restriction.
     """
     from agenthub.search_permissions import LEVEL
@@ -159,7 +160,7 @@ _METADATA_SQL = '''WITH requested AS MATERIALIZED (
             CASE WHEN r.source_id IS NULL THEN 'agent'
                  WHEN jsonb_array_length(c.source_types::jsonb)=1 THEN c.source_types::jsonb->>0
                  ELSE r.payload::jsonb->>'source_type' END AS source_type,
-            CASE WHEN ed.representation!='raw'
+            CASE WHEN ed.representation!='raw' AND ed.level_capped=0
                      THEN coalesce(array_position(ARRAY['team','organization'],s.visibility),0)
                  WHEN project.id IS NULL OR author.id IS NULL THEN 0
                  ELSE <LEVEL> END AS level

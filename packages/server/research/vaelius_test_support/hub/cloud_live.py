@@ -182,7 +182,7 @@ def _retry_current_state(store,alice,bob,failed,data):
             event.update(event_id=ids[position],session_id=run,turn_id=turn['id'],source_order=order*10+position,
                 timestamp=f'2026-09-26T{10+order:02d}:00:00Z')
             if event['hook_event_name']=='Stop':event['expected_events']=ids
-            value=normalize_capture(event,run,run);expected[value['external_id']]=value
+            value=normalize_capture(event,run,run,sharing='team');expected[value['external_id']]=value
     with store.delivery_lock(),store.open() as state:
         db=state.db;connection=store._connection(db,alice,run)
         if (connection['project'],connection['namespace'],connection['policy_version'],connection['visibility'],
@@ -385,6 +385,9 @@ def verify(profile,report_path,*,live=False,config_path=None,ledger_path=None,ma
     store.create_project('acme',run)
     for principal in ('alice','bob'):store.set_membership('acme',run,principal,True)
     store.enroll_connection(alice,run,'cloud-live',run,['agent'],visibility='team',reader_ids=['alice','bob'])
+    # The capture is shared with the project team: the author opts in and the scope
+    # file requests team, so derived memory reaches bob (agenthub.project_sharing).
+    store.sharing_setting(alice,{'max_sharing':'team'})
     generation=run;config={**base,'paused':False,'accounting_home':str(accounting),'publication':{'enabled':False},
         'knowledge_backend':{'mode':'enterprise_local'},'observer':{**base.get('observer',{}),'enabled':True,'model':MODEL,'start_at':0,'min_interval_seconds':0},
         'episode_curation':{'enabled':True,'policy':'durable_memory','generation_id':generation,'settle_seconds':0},
@@ -422,7 +425,7 @@ def verify(profile,report_path,*,live=False,config_path=None,ledger_path=None,ma
                 event.update(event_id=expected[position],session_id=run,turn_id=turn['id'],source_order=order*10+position,
                     timestamp=f'2026-09-26T{10+order:02d}:00:00Z')
                 if event['hook_event_name']=='Stop':event['expected_events']=expected
-                value=normalize_capture(event,run,run)
+                value=normalize_capture(event,run,run,sharing='team')
                 for part in split_event(value):receipt=transport.request('/enterprise/v2/parts',part)
                 if store.general_source(alice,receipt['source_id'])['payload']!=value:raise ValueError('cloud_live_capture_fidelity')
             if used>=max_calls-1:raise ValueError('receiver_attempt_must_remain')

@@ -172,8 +172,10 @@ class DocumentStore:
             meter.metric('document:'+identity+':'+kind,kind,amount,details=details)
 
     def ingest(self, ctx, connection, external_id, version, filename, stream, *,
-               title=None, media_type=None, source_url='', occurred_at='unknown'):
+               title=None, media_type=None, source_url='', occurred_at='unknown', sharing=None):
         self.store._need(ctx, 'ingest')
+        if sharing is not None and sharing not in ('private', 'team', 'organization'):
+            raise ValueError('invalid_sharing_request')
         enrolled = self._connection(ctx, connection)
         if 'document' not in json.loads(enrolled['source_types']):
             raise ValueError('document_connection_required')
@@ -234,7 +236,10 @@ class DocumentStore:
         # not weaken or overflow the agent-event contract.
         event = normalize_capture({'hook_event_name':'NativeSource','event_id':external_id,
             'revision':str(version),'timestamp':occurred_at,'source_url':source_url},
-            enrolled['project'],connection,source_type='document',origin='original_document')
+            enrolled['project'],connection,source_type='document',origin='original_document',
+            # An upload asks to share at its connection's visibility unless it names a
+            # level; the person's own setting and every ceiling still cap it.
+            sharing=sharing or enrolled['visibility'])
         event['event']['role'] = 'source'; event['disposition'] = 'accepted'
         event['blocks'] = [{'type':'attachment','value':{'reference':'source-object:'+identity,
             'media_type':prepared.media_type,'name':filename}}]

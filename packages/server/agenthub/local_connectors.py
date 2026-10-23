@@ -183,7 +183,11 @@ class Connector:
             value=normalize_capture({'hook_event_name':kind,'event_id':item['id'],'session_id':item.get('conversation',''),
                 'turn_id':item.get('turn',''),'revision':revision,'timestamp':item['occurred_at'],
                 'source_order':item.get('order'),
-                'speaker':item.get('actor',''),'source_url':item['source_url']},connection['project'],row['connection'],source_type=item['source_type'],origin='local_connector')
+                'speaker':item.get('actor',''),'source_url':item['source_url']},connection['project'],row['connection'],source_type=item['source_type'],origin='local_connector',
+                # A native document or record corpus asks to share at its connection's
+                # visibility (conversations stay private by default); the owner's own
+                # setting and every ceiling still cap it (agenthub.project_sharing).
+                sharing=connection['visibility'] if item['source_type'] in ('document','record') else 'private')
             value['blocks'],value['redactions']=redact(item['blocks'],'$.blocks')
             value['redactions']+=manifests[item['id']]
             value['disposition']='redacted' if value['redactions'] else 'accepted'

@@ -208,6 +208,69 @@ class ProjectSharingMixin:
         return (self._level_reaches(db, ctx, source['external_project'], level, origin_projects(source))
                 and self._visible_source(db, ctx, source))
 
+    # Explicit owner grants (agenthub.owner_controls) ------------------------------
+
+    def _origin_level(self, db, source):
+        """The origin term alone (for reports): origin ceiling under each carried project's ceiling."""
+        carried = []
+        for name in origin_projects(source):
+            row = db.execute('''SELECT coalesce(p.max_sharing,o.default_max_sharing) ceiling
+                FROM enterprise_projects p JOIN enterprise_organizations o ON o.id=p.tenant
+                WHERE p.tenant=? AND p.id=? AND p.active=1''', (source['tenant'], name)).fetchone()
+            carried.append(row['ceiling'] if row else 'private')
+        return lowest(origin_ceiling(source), *carried)
+
+    def _passage_granted(self, db, ctx, source):
+        """Python mirror of search_permissions.SOURCE_GRANTED for one source row.
+
+        An active passage grant from the source's owner (source, its session or its
+        connection) to the reader or a project the reader is an active member of;
+        never while the operator restricts owner-issued grants (owner_sharing), in
+        an inactive project, or to a quarantined reader. Sharing
+        levels and their ceilings govern sharing with a whole audience; a grant
+        names its readers and is governed by owner_sharing instead.
+        The ordinary source rules other than visibility are the caller's.
+        """
+        if (not source or source['tenant'] != ctx['tenant'] or not source['active']
+                or source['owner'] == ctx['actor']):
+            return False
+        if db.execute('SELECT 1 FROM enterprise_principal_quarantine WHERE tenant=? AND principal=?',
+                      (ctx['tenant'], ctx['actor'])).fetchone():
+            return False
+        row = db.execute('''SELECT o.owner_sharing FROM enterprise_organizations o
+            JOIN enterprise_projects p ON p.tenant=o.id AND p.id=? AND p.active=1
+            WHERE o.id=?''', (source['external_project'], source['tenant'])).fetchone()
+        if not row:
+            return False
+        scopes = {('source', source['id'])}
+        session = db.execute('SELECT session FROM memories WHERE id=?', (source['id'],)).fetchone()
+        if session and session['session'] is not None:
+            scopes.add(('session', session['session']))
+        connection = db.execute('SELECT connection FROM backend_source_revisions WHERE source_id=?',
+                                (source['id'],)).fetchone()
+        if connection:
+            scopes.add(('connection', connection['connection']))
+        grants = db.execute('''SELECT scope_kind,scope_id,grantee_kind,grantee,issued_with FROM raw_source_grants
+            WHERE tenant=? AND revoked IS NULL AND passages=1 AND granted_by=?''',
+            (source['tenant'], source['owner'])).fetchall()
+        if not any((grant['scope_kind'], grant['scope_id']) in scopes
+                   and (grant['issued_with'] == 'policy' or row['owner_sharing'] == 'allowed')
+                   and ((grant['grantee_kind'] == 'principal' and grant['grantee'] == ctx['actor'])
+                        or (grant['grantee_kind'] == 'project' and self._active_member(db, ctx, grant['grantee'])))
+                   for grant in grants):
+            return False
+        # The origin (migration 046) is one of the ordinary rules every reader passes
+        # (EnterpriseStore._source_rules); a grant never stands in for it.
+        return True
+
+    @staticmethod
+    def _active_member(db, ctx, project, *, project_active=True):
+        """The reader's own active membership; delegation limits are the caller's ordinary rules."""
+        return bool(db.execute('''SELECT 1 FROM enterprise_memberships m JOIN enterprise_projects p
+            ON p.tenant=m.tenant AND p.id=m.project WHERE m.tenant=? AND m.project=? AND m.principal=?
+            AND m.active=1''' + (' AND p.active=1' if project_active else ''),
+            (ctx['tenant'], project, ctx['actor'])).fetchone())
+
     def _passage_readers(self, db, source):
         """Principals whose redacted-passage tier covers this source under current policy.
 

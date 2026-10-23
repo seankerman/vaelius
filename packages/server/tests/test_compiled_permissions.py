@@ -29,11 +29,11 @@ class CompiledPermissions(CompletePolicyEquivalence):
                 (id,tenant,owner,external_project,internal_project,external_id,
                  enrollment,payload_hash,visibility,raw_visibility,active,
                  policy_version,source_version,occurred_at,created,
-                 occurred_precision,occurred_timezone)
+                 occurred_precision,occurred_timezone,sharing)
                 SELECT 'compact-noise-' || n::text,tenant,owner,external_project,
                  internal_project,'noise-' || n::text,enrollment,payload_hash,
                  visibility,raw_visibility,active,policy_version,source_version,
-                 occurred_at,created,occurred_precision,occurred_timezone
+                 occurred_at,created,occurred_precision,occurred_timezone,sharing
                 FROM enterprise_sources CROSS JOIN generate_series(1,20000) n WHERE id=?""", (source,))
             state.db.execute("INSERT INTO enterprise_dependencies SELECT ?,id FROM enterprise_sources WHERE id LIKE ?", (document, 'compact-noise-%'))
         self.compare_full(expected={'alice': {document}, 'bob': {document}, 'admin': set()})

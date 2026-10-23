@@ -374,7 +374,7 @@ class LoginAndRevocationPostgresTests(unittest.TestCase):
         self.assertEqual(issued.status_code, 200, issued.text)
         ctx = self.store.authenticate(issued.json()['credential'])
         self.assertEqual(ctx['actor'], 'alice')
-        self.assertEqual(ctx['actions'], {'ingest', 'read', 'feedback', 'correct', 'withdraw'})
+        self.assertEqual(ctx['actions'], {'ingest', 'read', 'feedback', 'correct', 'withdraw', 'share'})
         self.assertEqual(self.complete('orchard', state).status_code, 404)
 
     def test_pending_logins_are_bounded_without_changing_the_response(self):

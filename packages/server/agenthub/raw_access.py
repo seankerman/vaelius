@@ -10,8 +10,16 @@ Two tiers, both rechecked at delivery:
   ``source_read`` action AND one of: source ownership; the original's own
   sharing level (``originals_sharing``, default private, never above the
   passage level) reaching the reader under every current ceiling; or an
-  explicit, active, owner-issued grant to the reading principal or to a project
-  it belongs to. Sharing passages never shares originals.
+  explicit, active, owner-issued grant of the originals tier to the reading
+  principal or to a project it belongs to. Sharing passages never shares
+  originals.
+
+Grants (table raw_source_grants) cover one source, one capture session or one
+connection, and carry the tiers they grant: redacted passages and/or originals.
+Owners manage them with the `share` action (agenthub.owner_controls); the
+operator-style commands below keep needing `policy`. Owner-issued grants stop
+applying while the operator restricts owner sharing (owner_sharing='lower_only'),
+and no grant carries a source beyond its origin (agenthub.project_sharing).
 
 Grants never bypass tenant, lifecycle, delegation or connection-reader checks.
 ``source_read`` is not part of default enrollment or default OAuth scope
@@ -22,7 +30,7 @@ import re
 import time
 
 GRANTEE_KINDS = ('principal', 'project')
-SCOPE_KINDS = ('source', 'connection')
+SCOPE_KINDS = ('source', 'session', 'connection')
 
 
 def original_allowed(store, db, ctx, source):
@@ -44,16 +52,21 @@ def original_allowed(store, db, ctx, source):
 
 
 def _granted(store, db, ctx, source):
-    rows = db.execute('''SELECT grantee_kind,grantee FROM raw_source_grants
-        WHERE tenant=? AND revoked IS NULL AND granted_by=?
-        AND ((scope_kind='source' AND scope_id=?) OR (scope_kind='connection' AND scope_id IN
-            (SELECT connection FROM backend_source_revisions WHERE source_id=?)))''',
-        (ctx['tenant'], source['owner'], source['id'], source['id'])).fetchall()
+    """An active originals-tier grant from the source's owner reaches the reader."""
+    rows = db.execute('''SELECT g.grantee_kind,g.grantee,g.issued_with,o.owner_sharing FROM raw_source_grants g
+        JOIN enterprise_organizations o ON o.id=g.tenant
+        WHERE g.tenant=? AND g.revoked IS NULL AND g.originals=1 AND g.granted_by=?
+        AND ((g.scope_kind='source' AND g.scope_id=?)
+            OR (g.scope_kind='session' AND g.scope_id=(SELECT session FROM memories WHERE id=?))
+            OR (g.scope_kind='connection' AND g.scope_id IN
+                (SELECT connection FROM backend_source_revisions WHERE source_id=?)))''',
+        (ctx['tenant'], source['owner'], source['id'], source['id'], source['id'])).fetchall()
     for row in rows:
-        if row['grantee_kind'] == 'principal' and row['grantee'] == ctx['actor']:
-            return True
-        if row['grantee_kind'] == 'project' and store._project_member(db, ctx, row['grantee']):
-            return True
+        if row['issued_with'] == 'share' and row['owner_sharing'] != 'allowed':
+            continue
+        if ((row['grantee_kind'] == 'principal' and row['grantee'] == ctx['actor'])
+                or (row['grantee_kind'] == 'project' and store._project_member(db, ctx, row['grantee']))):
+            return store._origin_reaches(db, ctx, source)
     return False
 
 
@@ -71,8 +84,23 @@ def _owned_scope(db, ctx, scope_kind, scope_id):
     if scope_kind == 'source':
         row = db.execute('SELECT tenant,owner,active FROM enterprise_sources WHERE id=?', (scope_id,)).fetchone()
         return bool(row and row['tenant'] == ctx['tenant'] and row['owner'] == ctx['actor'] and row['active'])
+    if scope_kind == 'session':
+        return bool(db.execute('''SELECT 1 FROM memories m JOIN enterprise_sources s ON s.id=m.id
+            WHERE m.session=? AND s.tenant=? AND s.owner=? AND s.active=1 LIMIT 1''',
+            (scope_id, ctx['tenant'], ctx['actor'])).fetchone())
     row = db.execute('SELECT tenant,owner,active FROM backend_connections WHERE id=?', (scope_id,)).fetchone()
     return bool(row and row['tenant'] == ctx['tenant'] and row['owner'] == ctx['actor'] and row['active'])
+
+
+def upsert_grant(store, db, ctx, scope_kind, scope_id, grantee_kind, grantee, *, passages, originals, issued_with):
+    """Record one grant in the caller's transaction (ownership already checked)."""
+    db.execute('''INSERT INTO raw_source_grants
+        (tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,created,revoked,passages,originals,issued_with)
+        VALUES(?,?,?,?,?,?,?,NULL,?,?,?) ON CONFLICT(tenant,scope_kind,scope_id,grantee_kind,grantee)
+        DO UPDATE SET granted_by=excluded.granted_by,created=excluded.created,revoked=NULL,revoked_by=NULL,
+        passages=excluded.passages,originals=excluded.originals,issued_with=excluded.issued_with''',
+        (ctx['tenant'], scope_kind, scope_id, grantee_kind, grantee, ctx['actor'], time.time(),
+         int(passages), int(originals), issued_with))
 
 
 def grant(store, ctx, scope_kind, scope_id, grantee_kind, grantee):
@@ -92,11 +120,8 @@ def grant(store, ctx, scope_kind, scope_id, grantee_kind, grantee):
                 (ctx['tenant'], grantee)).fetchone()
         if not known:
             raise ValueError('unknown_raw_grantee')
-        db.execute('''INSERT INTO raw_source_grants
-            (tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,created,revoked)
-            VALUES(?,?,?,?,?,?,?,NULL) ON CONFLICT(tenant,scope_kind,scope_id,grantee_kind,grantee)
-            DO UPDATE SET granted_by=excluded.granted_by,created=excluded.created,revoked=NULL''',
-            (ctx['tenant'], scope_kind, scope_id, grantee_kind, grantee, ctx['actor'], time.time()))
+        upsert_grant(store, db, ctx, scope_kind, scope_id, grantee_kind, grantee,
+                     passages=False, originals=True, issued_with='policy')
         store._audit(db, ctx, 'raw_grant', 'granted', json.dumps([scope_kind, scope_id, grantee_kind, grantee]))
     return {'scope_kind': scope_kind, 'scope_id': scope_id, 'grantee_kind': grantee_kind,
             'grantee': grantee, 'active': True}
@@ -106,9 +131,13 @@ def revoke(store, ctx, scope_kind, scope_id, grantee_kind, grantee):
     store._need(ctx, 'policy')
     _validate(scope_kind, scope_id, grantee_kind, grantee)
     with store.delivery_lock(), store.open() as state, state.db:
-        changed = state.db.execute('''UPDATE raw_source_grants SET revoked=? WHERE tenant=? AND scope_kind=?
-            AND scope_id=? AND grantee_kind=? AND grantee=? AND granted_by=? AND revoked IS NULL''',
-            (time.time(), ctx['tenant'], scope_kind, scope_id, grantee_kind, grantee, ctx['actor'])).rowcount
+        changed = state.db.execute('''UPDATE raw_source_grants SET revoked=?,revoked_by=? WHERE tenant=?
+            AND scope_kind=? AND scope_id=? AND grantee_kind=? AND grantee=? AND granted_by=? AND revoked IS NULL''',
+            (time.time(), ctx['actor'], ctx['tenant'], scope_kind, scope_id, grantee_kind, grantee,
+             ctx['actor'])).rowcount
+        if changed:
+            from agenthub.owner_controls import refresh_grant_flags
+            refresh_grant_flags(state.db, scope=(ctx['tenant'], ctx['actor'], scope_kind, scope_id))
         store._audit(state.db, ctx, 'raw_grant', 'revoked' if changed else 'absent',
             json.dumps([scope_kind, scope_id, grantee_kind, grantee]))
     return {'scope_kind': scope_kind, 'scope_id': scope_id, 'grantee_kind': grantee_kind,
@@ -119,10 +148,20 @@ def grants(store, ctx):
     """Active grants issued by the caller."""
     store._need(ctx, 'policy')
     with store.open() as state:
-        rows = state.db.execute('''SELECT scope_kind,scope_id,grantee_kind,grantee,created FROM raw_source_grants
+        rows = state.db.execute('''SELECT scope_kind,scope_id,grantee_kind,grantee,created,passages,originals,
+            issued_with FROM raw_source_grants
             WHERE tenant=? AND granted_by=? AND revoked IS NULL ORDER BY scope_kind,scope_id,grantee_kind,grantee''',
             (ctx['tenant'], ctx['actor'])).fetchall()
     return [dict(row) for row in rows]
+
+
+def scope_sources(db, tenant, owner, scope_kind, scope_id, *, limit=None):
+    """IDs of the owner's sources a grant scope covers (bounded by `limit` when given)."""
+    where = {'source': 's.id=?', 'session': 's.id IN (SELECT id FROM memories WHERE session=?)',
+             'connection': 's.id IN (SELECT source_id FROM backend_source_revisions WHERE connection=?)'}[scope_kind]
+    return [row[0] for row in db.execute('SELECT s.id FROM enterprise_sources s WHERE s.tenant=? AND s.owner=? AND '
+                                         + where + ' ORDER BY s.id' + (' LIMIT %d' % limit if limit else ''),
+                                         (tenant, owner, scope_id))]
 
 
 def source_read_report(store):

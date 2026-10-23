@@ -51,9 +51,10 @@ from agenthub.backend_retrieval import RetrievalMixin
 
 from agenthub.governance import GovernanceMixin
 from agenthub.project_sharing import ProjectSharingMixin
+from agenthub.owner_controls import OwnerControlsMixin
 
 
-class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,RetrievalMixin):
+class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,GeneralSourcesMixin,RetrievalMixin):
     def __init__(self, *args, **kwargs):
         raise RuntimeError('PostgreSQL authority required; use CloudStore')
 
@@ -102,7 +103,7 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
                 (tenant,'local_operator','membership','granted' if active else 'revoked',project+':'+principal,time.time()))
 
     def enroll(self, tenant, principal, enrollment, actions, *, acting_for=None):
-        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","policy","audit","settings","legal_hold"}
+        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","share","moderate","policy","audit","settings","legal_hold"}
         if not isinstance(enrollment,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}",enrollment):
             raise ValueError("invalid_enrollment")
         if not actions or set(actions)-allowed:raise ValueError("invalid_actions")
@@ -192,7 +193,9 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
           (ctx["tenant"],project,ctx["actor"])).fetchone()
         return bool(row)
 
-    def _visible_source(self, db, ctx, source, *, raw=False):
+    def _source_rules(self, db, ctx, source):
+        """Every ordinary source rule except visibility: tenant, lifecycle,
+        delegation, connection readers and freshness, operator quarantine, origin."""
         if not source or source["tenant"]!=ctx["tenant"] or not source["active"]:
             return False
         if (ctx.get('delegated_projects') is not None and
@@ -203,14 +206,25 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         # Origin labels (agenthub.project_sharing): what the captured content came
         # from also caps every document derived from it, curated ones included.
         if source["owner"]!=ctx["actor"] and not self._origin_reaches(db,ctx,source):return False
+        return True
+
+    def _granted_source(self, db, ctx, source):
+        """An explicit owner grant (agenthub.owner_controls) of this source's passages
+        to the reader; it stands in for visibility, never for any other rule."""
+        return "read" in ctx["actions"] and self._source_rules(db,ctx,source) and self._passage_granted(db,ctx,source)
+
+    def _visible_source(self, db, ctx, source, *, raw=False):
+        if not self._source_rules(db,ctx,source):return False
         if raw:
-            # Redacted passages, evidence and context: the owner, or a reader
-            # the source's current sharing level reaches (agenthub.project_sharing).
+            # Redacted passages, evidence and context: the owner, a reader the
+            # source's current sharing level reaches (agenthub.project_sharing),
+            # or a reader it is explicitly granted to (agenthub.owner_controls).
             # Retained originals use _original_allowed (source_read + owner,
             # their own sharing level, or an explicit grant).
             if "read" not in ctx["actions"]:return False
             if source["owner"]==ctx["actor"]:return True
-            return self._passage_shared(db,ctx,source) and self._visible_source(db,ctx,source)
+            if self._passage_shared(db,ctx,source) and self._visible_source(db,ctx,source):return True
+            return self._passage_granted(db,ctx,source)
         if "read" not in ctx["actions"]:return False
         if source["visibility"]=="private":return source["owner"]==ctx["actor"]
         if source["visibility"]=="team":return self._project_member(db,ctx,source["external_project"])
@@ -254,14 +268,19 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
             source_id=state.enqueue(event)
             if value["kind"]!="gap":state.process()
             with db:
+                # A legacy capture's visibility is its sharing request: stored at the
+                # minimum with the person, project and tenant ceilings, so documents
+                # derived from it are capped like passages (migration 047).
+                requested,sharing,_,_=self._ingest_sharing(db,ctx,{'visibility':visibility},
+                    {'sharing':visibility,'project':value['project']})
                 db.execute("""INSERT INTO enterprise_sources(id,tenant,owner,external_project,internal_project,
                     external_id,enrollment,payload_hash,visibility,raw_visibility,occurred_at,created,
-                    occurred_precision,occurred_timezone)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    occurred_precision,occurred_timezone,sharing,sharing_requested)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (source_id,ctx["tenant"],ctx["actor"],value["project"],project,
                      value["external_id"],ctx["enrollment"],payload_hash,visibility,"private",
                      str(value["occurred_at"]),time.time(),value.get('precision','unknown'),
-                     value.get('timezone')))
+                     value.get('timezone'),sharing,requested))
                 self._governance_mark(db,ctx,source_id,cleaned)
                 self._audit(db,ctx,"ingest","accepted",source_id,1)
             return {"source_id":source_id,"disposition":"accepted"}
@@ -348,12 +367,27 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         dependencies=db.execute("""SELECT s.* FROM enterprise_dependencies x
             JOIN enterprise_sources s ON s.id=x.source_id WHERE x.document_id=?""",(document_id,)).fetchall()
         if not dependencies:return None
-        if not all(self._visible_source(db,ctx,s) for s in dependencies) and not self._release_allowed(db,ctx,document_id,dependencies):return None
-        if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
+        raw=doc.get("representation")=="raw"
+        # A passage explicitly granted to the reader through every source it depends
+        # on passes the visibility and reader-scope rules (search_permissions.DOCUMENT_GRANTED).
+        granted=(raw and doc.get("raw_granted")==1 and doc["raw_owner"]!=ctx["actor"]
+                 and all(self._granted_source(db,ctx,s) for s in dependencies))
+        released=None
+        if not granted:
+            if not all(self._visible_source(db,ctx,s) for s in dependencies):
+                released=self._release_allowed(db,ctx,document_id,dependencies)
+                if not released:return None
+            if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
         # Mirrors the raw clause of search_permissions.predicate: a passage is
-        # the owner's, or shared with the reader through every source it depends on.
-        if doc.get("representation")=="raw" and ("read" not in ctx["actions"] or (doc["raw_owner"]!=ctx["actor"]
+        # the owner's, shared with the reader through every source it depends on, or granted.
+        if raw and ("read" not in ctx["actions"] or (doc["raw_owner"]!=ctx["actor"] and not granted
                 and not all(self._visible_source(db,ctx,s,raw=True) for s in dependencies))):return None
+        # A derived document registered after migration 047 is capped like a passage:
+        # every source it depends on is the reader's own or shared with the reader.
+        if (not raw and doc.get("level_capped")==1 and not all(
+                s["owner"]==ctx["actor"] or self._passage_shared(db,ctx,s) for s in dependencies)):
+            if released is None:released=self._release_allowed(db,ctx,document_id,dependencies)
+            if not released:return None
         return doc
 
     def refresh_documents(self, *, db=None, document_id=None):
@@ -658,15 +692,18 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
                         (corrected_id,event.get('tool_name',''),'episode_evidence',
                          event.get('capture_id'),json.dumps(event.get('event_fields',[])),
                          json.dumps(event.get('response_shape')),now))
+                    # A correction keeps the corrected source's stored levels.
                     db.execute("""INSERT INTO enterprise_sources(id,tenant,owner,external_project,internal_project,
                         external_id,enrollment,payload_hash,visibility,raw_visibility,occurred_at,created,
-                        occurred_precision,occurred_timezone)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        occurred_precision,occurred_timezone,sharing,sharing_requested,originals_sharing,
+                        originals_requested)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (corrected_id,ctx['tenant'],ctx['actor'],source['external_project'],
                          source['internal_project'],event['external_id'],ctx['enrollment'],
                          _digest(json.dumps(event,sort_keys=True)),source['visibility'],'private',
                          str(event['occurred_at']),now,event.get('precision','unknown'),
-                         event.get('timezone')))
+                         event.get('timezone'),source['sharing'],source['sharing_requested'],
+                         source['originals_sharing'],source['originals_requested']))
                     self._governance_mark(db,ctx,corrected_id,cleaned)
                     db.execute("INSERT INTO historical_sources VALUES(?,?) ON CONFLICT DO NOTHING",
                         (source['id'],corrected_id))

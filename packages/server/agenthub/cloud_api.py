@@ -86,6 +86,17 @@ ROUTE_ACTIONS={
     # Reading one's own sharing setting is open; changing it needs a capture or
     # policy action (see route_rule).
     ('POST','/enterprise/v3/sharing'):ANY_CREDENTIAL,
+    # Owner self-service over the caller's own sources (agenthub.owner_controls).
+    # Each business method also checks ownership; raising sharing additionally
+    # needs `share`, and granting is refused for delegated credentials.
+    ('POST','/enterprise/v3/my-data'):READ,
+    ('POST','/enterprise/v3/my-data/forget'):(('withdraw',),),
+    ('POST','/enterprise/v3/my-data/sharing'):(('withdraw',),('share',)),
+    ('POST','/enterprise/v3/my-data/grants'):READ,
+    ('POST','/enterprise/v3/my-data/grant'):(('share',),('policy',)),
+    ('POST','/enterprise/v3/my-data/revoke'):(('share',),('withdraw',),('policy',)),
+    # Project maintainers hide (withdraw) others' content in their project.
+    ('POST','/enterprise/v3/moderation/withdraw'):(('moderate',),),
     ('POST','/enterprise/v3/preferences'):READ,
     ('POST','/enterprise/v3/preferences/curate'):(('curate',),),
     ('POST','/enterprise/v3/preferences/withdraw'):(('withdraw',),),
@@ -130,6 +141,11 @@ SELF_SERVICE={
     ('POST','/enterprise/v3/sharing'):'reports the presented principal\'s own sharing setting; changing it '
         'needs ingest or policy, acts only on that principal and is refused for delegated credentials',
 }
+# Owner self-service and moderation routes and the business method each calls.
+OWNER_ROUTES={'/enterprise/v3/my-data':'mine','/enterprise/v3/my-data/forget':'forget',
+    '/enterprise/v3/my-data/sharing':'change_sharing','/enterprise/v3/my-data/grants':'grants',
+    '/enterprise/v3/my-data/grant':'grant','/enterprise/v3/my-data/revoke':'revoke',
+    '/enterprise/v3/moderation/withdraw':'moderate'}
 # Routes that carry their own credential in the body (or are a credential
 # exchange) and so run before Bearer authentication.
 CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/enterprise/v3/auth/aws-sts',
@@ -201,7 +217,9 @@ def pack_search_result(request,result):
 # Default actions of an interactive enrollment. 'feedback' keeps the outcome
 # reporting that 'read' used to imply. 'curate' (reviewed notes, preference
 # curation) is privileged and granted explicitly through `enrollment_actions`.
-DEFAULT_ENROLLMENT_ACTIONS=('ingest','read','feedback','correct','withdraw')
+# 'withdraw' and 'share' are the owner's self-service over their own content
+# (agenthub.owner_controls); 'moderate' is a project role, never a default.
+DEFAULT_ENROLLMENT_ACTIONS=('ingest','read','feedback','correct','withdraw','share')
 # Unauthenticated /ready reuses one bounded evaluation for this many seconds.
 READINESS_TTL_SECONDS=10.0
 
@@ -356,6 +374,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     session=data.get('session'),mode=data.get('mode','explicit'))
         # These business methods own their policy/write transaction boundary.
         if method=='POST' and path=='/enterprise/v3/sharing':return store.sharing_setting(ctx,data)
+        if method=='POST' and path in OWNER_ROUTES:return getattr(store,OWNER_ROUTES[path])(ctx,data)
         if method=='POST' and path=='/enterprise/v3/preferences/curate':
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])
@@ -441,7 +460,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 metadata=request.headers.get('x-document-metadata','')
                 if len(metadata.encode())>4096:raise ValueError('metadata_bound')
                 data=json.loads(metadata)
-                if set(data)-{'connection','external_id','version','filename','title','media_type'}:raise ValueError('upload_metadata')
+                if set(data)-{'connection','external_id','version','filename','title','media_type','sharing'}:raise ValueError('upload_metadata')
                 with tempfile.SpooledTemporaryFile(max_size=1024*1024) as temporary:
                     size=0
                     async for chunk in request.stream():
@@ -451,7 +470,8 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     temporary.seek(0)
                     await run_in_threadpool(check_write_limit,store,ctx,size)
                     value=await run_in_threadpool(document_store(store).ingest,ctx,data['connection'],data['external_id'],
-                        data['version'],data['filename'],temporary,title=data.get('title'),media_type=data.get('media_type'))
+                        data['version'],data['filename'],temporary,title=data.get('title'),media_type=data.get('media_type'),
+                        sharing=data.get('sharing'))
                 return JSONResponse(value)
             data=None
             if request.method=='POST':

@@ -118,6 +118,14 @@ class DiscoveryIssuerSelection(unittest.TestCase):
         self.assertEqual(chosen['scope'], 'openid vaelius:feedback vaelius:ingest vaelius:read')
         self.assertEqual(self.discover(self.document(), issuer=self.B)['scope'], 'openid vaelius:read')
 
+    def test_owner_self_service_scopes_are_requested_when_offered(self):
+        document = self.document()
+        document['vaelius_authorization_servers'][0]['scopes_supported'] += ['vaelius:withdraw', 'vaelius:share',
+                                                                            'vaelius:moderate']
+        # Withdraw and share (forget, change sharing, grants) are requested; moderation never is.
+        self.assertEqual(self.discover(document, issuer=self.A)['scope'],
+                         'openid vaelius:feedback vaelius:ingest vaelius:read vaelius:withdraw vaelius:share')
+
     def test_issuer_must_be_advertised_by_the_service(self):
         with self.assertRaisesRegex(ValueError, 'oauth_issuer_not_advertised'):
             self.discover(self.document(), issuer='https://identity.example/realms/elsewhere')

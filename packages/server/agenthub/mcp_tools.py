@@ -98,11 +98,66 @@ TOOLS.append(tool('report_memory_outcome','Report whether this exact memory revi
      ['id','revision','request_key','outcome'],write=True))
 
 
+# Owner self-service (agenthub.owner_controls). Destructive and sharing tools
+# need an explicit `confirm`: false previews; the preview's confirm_token applies.
+TWO_STEP=('Call first with confirm=false: it changes nothing and returns a preview with a confirm_token. '
+    'Show the preview to the user and ask them; only after they explicitly agree, call again with the same '
+    'arguments and confirm set to that confirm_token.')
+CONFIRM={'anyOf':[{'type':'boolean','const':False},{'type':'string','pattern':'^[0-9a-f]{32}$'}],
+    'description':'false to preview; the confirm_token from the preview to apply after the user agreed.'}
+SELECTION={
+    'session':{'type':'string','minLength':1,'maxLength':256,
+        'description':'"current" for the session captured most recently in this project (what we just did), '
+            'a session handle from list_my_memories, or a host conversation ID.'},
+    'source_ids':{'type':'array','minItems':1,'maxItems':200,'items':{'type':'string','minLength':1,'maxLength':128}},
+    'since':{'type':'string','maxLength':40,'description':'Captured on or after this date or time (UTC, ISO 8601).'},
+    'until':{'type':'string','maxLength':40,'description':'Captured before this date or time (UTC, ISO 8601).'},
+    'whole_project':{'type':'boolean','description':'Select everything of yours in this project.'},
+    'all_projects':{'type':'boolean','default':False,
+        'description':'Select across every project instead of only this one.'}}
+LEVEL={'type':'string','enum':['private','team','organization']}
+GRANTEE={'with_principal':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$','description':'One person (principal ID).'},
+    'with_project':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$',
+        'description':'Every active member of this project, for example "share with my team".'}}
+OWNER_TOOLS=('list_my_memories','forget_memories','change_memory_sharing','share_memories','unshare_memories',
+    'list_memory_shares')
+TOOLS.extend([
+    tool('list_my_memories','List what Vaelius holds that you created: your captured sources or sessions, with '
+        'each source\'s current sharing level and which setting holds it there. Only your own content.',
+        dict(SELECTION,sharing=LEVEL,view={'type':'string','enum':['sources','sessions'],'default':'sources'},
+             state={'type':'string','enum':['active','all'],'default':'active'},
+             limit={'type':'integer','minimum':1,'maximum':50},cursor={'type':'string','maxLength':200}),[]),
+    tool('forget_memories','Delete your own captured content from Vaelius memory: the current session ("forget '
+        'what we just did"), a session, chosen sources, this project, or a date range. Deletes the sources, '
+        'everything derived from them and their originals. Content under a legal hold is hidden and preserved '
+        'instead, and reported as held. '+TWO_STEP,
+        dict(SELECTION,confirm=CONFIRM),['confirm'],write=True,destructive=True),
+    tool('change_memory_sharing','Change who can read your own captured content: private (only you), team '
+        '(members of its project) or organization. Lowering applies on the next search. Raising is still capped '
+        'by your own setting, the project and tenant ceilings and the content\'s origin; the preview says '
+        'which. '+TWO_STEP,
+        dict(SELECTION,sharing=LEVEL,originals=dict(LEVEL,description='Level for the unredacted originals; '
+             'never above sharing.'),confirm=CONFIRM),['sharing','confirm'],write=True,destructive=True),
+    tool('share_memories','Share a session or chosen sources of yours with one person or with the members of '
+        'one project, like a "specific people" link. Passages only unless include_originals. Content restricted '
+        'by its origin is never shared beyond it. '+TWO_STEP,
+        dict({k:SELECTION[k] for k in ('session','source_ids')},**GRANTEE,
+             include_originals={'type':'boolean','default':False},confirm=CONFIRM),['confirm'],write=True),
+    tool('unshare_memories','Revoke a share you made with share_memories. Requires confirm=true.',
+        dict({k:SELECTION[k] for k in ('session','source_ids')},**GRANTEE,
+             confirm={'type':'boolean','const':True}),['confirm'],write=True,destructive=True),
+    tool('list_memory_shares','List the shares you made and the shares made with you.',
+        {'include_revoked':{'type':'boolean','default':False}},[]),
+])
+
 PROJECT_TOOLS={'search_memory','get_user_preferences','project_memory_history','fetch_memory_episode','correct_memory'}
 for item in TOOLS:
     if item['name'] in PROJECT_TOOLS:
         item['inputSchema']['properties']['project']={'type':'string','minLength':1,'maxLength':128,
             'description':'Project name enrolled with AgentHub. Required when the connection has no project header.'}
+    elif item['name'] in OWNER_TOOLS and item['name']!='list_memory_shares':
+        item['inputSchema']['properties']['project']={'type':'string','minLength':1,'maxLength':128,
+            'description':'Project to act in; defaults to the connection\'s project.'}
 
 
 def enterprise_tools():
@@ -231,7 +286,62 @@ class MemoryTools:
             external = 'mcp-correction-' + hashlib.sha256(args['request_key'].encode()).hexdigest()[:48]
             replacement = {'source': {'version': VERSION, 'external_id': external, 'session': self.session, 'turn': args['request_key'], 'project': self.project, 'kind': 'Stop', 'body': args['evidence'], 'occurred_at': 'unknown', 'visibility': visibility, 'speaker': 'user'}, 'title': args['title'], 'lesson': args['evidence'][:1200]}
             return backend.request('/enterprise/v1/lifecycle', {'version': VERSION, 'target_id': source_id, 'expected_revision': expected, 'idempotency_key': args['request_key'], 'reason': 'explicit owner MCP correction', 'operation': 'correct', 'replacement': replacement})
+        if name in OWNER_TOOLS:
+            return self.owner_call(name, args)
         raise ValueError('unknown_enterprise_tool')
+
+    def _selection(self, args):
+        selection = {key: args[key] for key in ('session', 'source_ids', 'since', 'until') if key in args}
+        if args.get('whole_project') or (self.project and not args.get('all_projects')):
+            if not self.project:
+                raise ValueError('project_required')
+            selection['project'] = self.project
+        if args.get('session') == 'current' and 'project' not in selection:
+            raise ValueError('current_session_requires_project')
+        return selection
+
+    def owner_call(self, name, args):
+        backend = self.backend
+        if name == 'list_my_memories':
+            request = dict(self._selection(args), limit=args.get('limit', 20))
+            for key in ('sharing', 'view', 'state', 'cursor'):
+                if key in args:
+                    request[key] = args[key]
+            result = backend.request('/enterprise/v3/my-data', request)
+            key = 'items' if 'items' in result else 'sessions'
+            while result.get(key) and len(json.dumps(result, ensure_ascii=True)) > 6000:
+                result[key].pop()
+                result['more'] = True
+            return result
+        if name == 'list_memory_shares':
+            result = backend.request('/enterprise/v3/my-data/grants', {'include_revoked': args.get('include_revoked', False)})
+            for key in ('issued', 'received'):
+                while result.get(key) and len(json.dumps(result, ensure_ascii=True)) > 6000:
+                    result[key].pop()
+            return result
+        confirm = args['confirm']
+        if name in ('forget_memories', 'change_memory_sharing'):
+            selection = self._selection(args)
+            if not any(key in selection for key in ('session', 'source_ids', 'since', 'until')) and not args.get('whole_project'):
+                raise ValueError('selection_required')
+            if name == 'forget_memories':
+                return backend.request('/enterprise/v3/my-data/forget', dict(selection, confirm=confirm))
+            request = dict(selection, sharing=args['sharing'], confirm=confirm)
+            if 'originals' in args:
+                request['originals'] = args['originals']
+            return backend.request('/enterprise/v3/my-data/sharing', request)
+        if ('session' in args) == ('source_ids' in args) or ('with_principal' in args) == ('with_project' in args):
+            raise ValueError('one_scope_and_one_grantee_required')
+        request = {'scope': 'session' if 'session' in args else 'source',
+                   'ids': [args['session']] if 'session' in args else args['source_ids'],
+                   'grantee_kind': 'principal' if 'with_principal' in args else 'project',
+                   'grantee': args.get('with_principal') or args.get('with_project')}
+        if self.project:
+            request['project'] = self.project
+        if name == 'share_memories':
+            return backend.request('/enterprise/v3/my-data/grant',
+                                   dict(request, originals=args.get('include_originals', False), confirm=confirm))
+        return backend.request('/enterprise/v3/my-data/revoke', dict(request, confirm=True))
 
     def call(self,name,args):
         if not isinstance(args,dict):raise ValueError('invalid_arguments')

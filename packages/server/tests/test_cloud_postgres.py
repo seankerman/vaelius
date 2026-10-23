@@ -26,6 +26,18 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(_bind("SELECT %s AS bound"), "SELECT %s AS bound")
 
 
+def share_at_visibility(store, contexts):
+    """Opt the given people into sharing up to their capture's visibility.
+
+    Since migration 047 a curated document is capped by the sharing level of every
+    source it depends on, and each person's own setting starts private. Tests of
+    the visibility rules of curated documents opt their authors in, so the stored
+    level of a legacy capture equals the visibility the test chose.
+    """
+    for ctx in contexts:
+        store.sharing_setting(ctx, {'max_sharing': 'organization'})
+
+
 class PostgresFixture:
     def postgres_setup(self, *, tenant_id="acme", bootstrap=True):
         from psycopg import sql
@@ -151,6 +163,7 @@ class CanonicalPostgresTests(PostgresFixture, unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT count(*) FROM knowledge_fts WHERE document_id=?',(document,)).fetchone()[0],0)
 
     def test_team_revocation_and_delegation_are_current(self):
+        share_at_visibility(self.store, (self.ctx,))
         source = self.ingest(visibility="team")["source_id"]; document = self.note(source)
         bob = self.store.authenticate(self.tokens["bob"])
         self.assertIsNotNone(self.store.detail(bob, document))

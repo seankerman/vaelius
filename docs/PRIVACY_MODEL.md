@@ -90,7 +90,8 @@ connection freshness.
 
 ```
 effective = min(person setting, scope-file request, project ceiling,
-                tenant ceiling, connection visibility, origin ceiling)
+                tenant ceiling, connection visibility, origin ceiling,
+                ceiling of every other project the content carries)
 ```
 
 | Term | Set by | Where | Default |
@@ -100,7 +101,8 @@ effective = min(person setting, scope-file request, project ceiling,
 | Project ceiling | the operator | `vaelius sharing-policy --project P --max-sharing LEVEL`; a project without its own value inherits the tenant default | tenant default |
 | Tenant ceiling | the operator | `vaelius sharing-policy --tenant-ceiling LEVEL`; caps every project and person | `organization` for new tenants |
 | Connection visibility | the connection owner, at enrollment | connection enrollment; can only be narrowed | chosen at enrollment |
-| Origin ceiling | the service | forthcoming (below); the most permissive level until then | `organization` (no effect) |
+| Origin ceiling | what the captured content touched | the client's origin label, stored per source as `origin_ceiling` ([below](#origin-labels-and-session-taint)) | `organization` (no effect) when the event only touched its own project |
+| Other projects' ceilings | each other project's operator | `origin_projects` on the source: the current ceiling of each project whose content it carries; an unknown or inactive one counts as `private` | none |
 
 The tenant default for projects (`vaelius sharing-policy --max-sharing LEVEL`
 without `--project`) is `organization` for tenants created after migration 045.
@@ -124,8 +126,10 @@ moment and stores it per source (`enterprise_sources.sharing` and
 (`sharing_request` / `capped_<level>`).
 
 **At every request**, the stored level is capped again by the current person
-setting, project ceiling (or tenant default), tenant ceiling, connection visibility
-and origin ceiling. The result decides who may read it.
+setting, project ceiling (or tenant default), tenant ceiling, connection visibility,
+origin ceiling and the current ceiling of every other project the source carries.
+The result decides who may read it; at `team` the reader must be an active member of
+the source project and of every one of those other projects.
 
 | Change | Effect |
 | --- | --- |
@@ -155,7 +159,10 @@ visibility, and only when every source it depends on is still visible to the
 reader under the ordinary source rules. The person setting, the scope-file request
 and the project and tenant ceilings above govern conversation passages and
 originals; they do not narrow curated documents, which exist only when an operator
-enables curation or an owner submits a reviewed note.
+enables curation or an owner submits a reviewed note. The one exception is the
+origin (below): a curated document never reaches anyone a source it depends on could
+not reach by its origin label, so a summary of a tainted passage stays as narrow as
+the passage.
 
 ## Enforcement
 
@@ -200,7 +207,9 @@ source type, original or derived wording) and `origin`, a machine-readable label
 ```
 
 `origin.sharing` is the item's current level (the lowest over the sources it
-depends on); `origin.project` is `null` when the sources span several projects.
+depends on); `origin.project` is `null` when the sources span several projects, and
+`origin.projects` (present only when there are any) lists every other project whose
+content the item carries, from spanning sources or their own origin labels.
 Against a current project each search item also has a `tier` (`project`,
 `other_project` or `organization`), and any item from outside the current project
 carries a human-readable line, for example
@@ -208,14 +217,50 @@ carries a human-readable line, for example
 tool output and the injected context. Provenance is read after authorization and
 never widens delivery. See [shared-memory governance](MEMORY_GOVERNANCE.md).
 
-## Origin labels and session taint (forthcoming)
+## Origin labels and session taint
 
-A later change will derive an **origin ceiling** from where content came from, for
-example a session that recalled restricted memory, so that anything derived from
-recalled memory inherits the original restriction. The hook already exists as a
-term of the minimum (`agenthub.project_sharing.origin_ceiling` and the policy key
-`origin_ceiling`); it is the most permissive level until that change supplies it,
-so today it has no effect.
+A scope file decides capture for a whole session, but a tool call can read content
+the repository's audience must not see: a document in the person's home folder, a
+credentials file, a mail or chat MCP server, another project's repository, or
+recalled memory with a narrower audience. The client labels every captured event
+with what it touched and keeps the most restrictive label for the rest of the
+session (session taint), because that content is now in the agent's context. The
+label carries:
+
+- an **origin ceiling**: `private` for personal folders, credentials, other volumes,
+  repositories without a scope file, MCP servers other than Vaelius, non-public web
+  addresses, private recalled memory and unknown tools; no restriction for the
+  project itself, temporary and tool folders, read-only system paths, the public web
+  and the scope file's allowlists;
+- **other projects** whose content it carries: another repository with its own scope
+  file, or recalled team memory from another project. Instead of making the session
+  private, the event is tagged with that project; it is shared no wider than every
+  tagged project allows, and at `team` only with people who are members of all of
+  them;
+- a **reason category** (`personal_content`, `mcp_server`, `other_project`, ...),
+  never the matched path, command or server name.
+
+The service validates the label, applies the ceiling and every tagged project's
+ceiling as terms of the minimum at capture and again at every request, and stores
+it per source (`origin_ceiling`, `origin_reason`, `origin_projects`). The origin also
+caps **curated and derived documents**: a document built from a tainted passage
+reaches a reader other than that passage's owner only as far as the passage's origin
+allows, whatever its connection's visibility. This is the only sharing term that
+applies to them; person, project and tenant ceilings still do not. The origin is
+fixed: a database trigger refuses any change to it, and because the query-time
+check reads the stored origin, no later change of a person setting, project or
+tenant ceiling, or even of the stored level itself, can widen it. Recalled items
+report the projects they carry in `origin.projects`, so a session that restates them
+inherits the same restriction.
+
+Only a new session (`/clear`, a new conversation) starts clean; compaction keeps the
+label because its summary is written from the restricted content. The person sees
+one line when a session becomes private or spans another project, for example
+`vaelius: this session read personal files (~/Documents/...) — capture is now private`.
+The full rules, the scope-file allowlists and the known limits (a program can read
+anything without naming a path; commands such as `aws` or `gh` that name no outside
+path are not restricted) are in
+[origin labels and session taint](DATA_BOUNDARIES.md#origin-labels-and-session-taint).
 
 ## Retention, erasure and legal hold
 
@@ -241,7 +286,12 @@ were capped.
 - The service operator is trusted. Database administrators can read stored content
   regardless of application policy.
 - Sharing levels govern reads through Vaelius. They do not recall copies a reader
-  already made, or text an agent produced from delivered content.
+  already made, or text an agent produced from delivered content outside a captured
+  session. Inside a captured session, origin labels carry a delivered item's
+  restriction into what the agent captures next.
+- Origin labels are a deterministic best effort from what a tool call names; they
+  are not a sandbox (see the limits in
+  [data boundaries](DATA_BOUNDARIES.md#known-limits)).
 - Redaction reduces exposure of credentials; it is not anonymization.
 
 ## Upgrading to migration 045
@@ -260,3 +310,12 @@ Migration 045 is additive and widens nothing:
 
 A client that requests `organization` or `originals` needs a service with this
 migration; an older service rejects those fields.
+
+## Upgrading to migration 046
+
+Migration 046 adds the origin columns, a trigger that keeps them fixed, and the
+origin terms in the policy functions. Existing sources have no origin, so their
+policy definitions and visibility are unchanged and no projection rebuild is needed.
+Clients that send `origin_label` need a service with this migration; an older service
+rejects the field and the client keeps such events queued, unshared, until the
+service is upgraded. Deploy the service first.

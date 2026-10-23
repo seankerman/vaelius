@@ -7,6 +7,15 @@ A scope file (default name `.vaelius`, TOML) at a repository root declares::
     sharing = "private"        # private | team | organization  (redacted passages)
     originals = "private"      # private | team | organization  (unredacted originals)
 
+`capture` may instead be a table that also lists origin exceptions
+(`agentclient.origin`): content read from these places is not restricted to
+private even though it comes from outside the repository::
+
+    [capture]
+    mode = "on"                               # on | read-only | off (default on)
+    allowed_paths = ["../shared-fixtures"]    # relative to this file, absolute or ~/
+    allowed_mcp_servers = ["docs"]            # MCP server names as the host registers them
+
 The file is a REQUEST made by whoever can edit the repository. It never grants
 anything: the service caps it by the person's own sharing setting, the operator's
 project and tenant ceilings and the connection visibility, and stores the
@@ -40,6 +49,8 @@ LEGACY_MODES = {'default': 'on', 'read-only': 'read-only', 'readonly': 'read-onl
                 'disabled': 'off', 'off': 'off', 'on': 'on'}
 PROJECT = re.compile(r'[A-Za-z0-9_-]{1,120}')
 MAX_BYTES = 64 * 1024
+MAX_EXCEPTIONS = 64
+MCP_SERVER = re.compile(r'[A-Za-z0-9_.-]{1,128}')
 MAX_DEPTH = 64
 
 
@@ -101,6 +112,19 @@ def parse(path):
             raise ScopeFileError('scope_file_invalid_toml') from None
         values = _lenient(text)
     capture = values.get('capture')
+    allowed_paths, allowed_mcp = [], []
+    if isinstance(capture, dict):
+        if set(capture) - {'mode', 'allowed_paths', 'allowed_mcp_servers'}:
+            raise ScopeFileError('scope_file_invalid_capture')
+        allowed_paths = capture.get('allowed_paths', [])
+        allowed_mcp = capture.get('allowed_mcp_servers', [])
+        if (not isinstance(allowed_paths, list) or len(allowed_paths) > MAX_EXCEPTIONS
+                or any(not isinstance(x, str) or not 0 < len(x) <= 1024 or '\x00' in x for x in allowed_paths)):
+            raise ScopeFileError('scope_file_invalid_allowed_paths')
+        if (not isinstance(allowed_mcp, list) or len(allowed_mcp) > MAX_EXCEPTIONS
+                or any(not isinstance(x, str) or not MCP_SERVER.fullmatch(x) for x in allowed_mcp)):
+            raise ScopeFileError('scope_file_invalid_allowed_mcp_servers')
+        capture = capture.get('mode')
     if capture is None and 'mode' in values:
         capture = LEGACY_MODES.get(str(values['mode']).strip().lower(), 'invalid')
     capture = 'on' if capture is None else capture
@@ -115,7 +139,8 @@ def parse(path):
     project = values.get('project')
     if project is not None and (not isinstance(project, str) or not PROJECT.fullmatch(project)):
         raise ScopeFileError('scope_file_invalid_project')
-    return {'project': project, 'capture': capture, 'sharing': sharing, 'originals': originals, 'path': str(path)}
+    return {'project': project, 'capture': capture, 'sharing': sharing, 'originals': originals, 'path': str(path),
+            'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp}
 
 
 def _walk(start, names, stop=None):

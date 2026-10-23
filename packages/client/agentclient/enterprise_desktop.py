@@ -7,7 +7,9 @@ from pathlib import Path
 from agentclient.enterprise_capture import normalize_capture
 
 
-def convert(record, session, project, connection, *, turn='', order=None, sharing='private', originals='private'):
+def convert(record, session, project, connection, *, turn='', order=None, sharing='private', originals='private',
+            origin=None):
+    """One rollout record as a typed event. `origin(event)` returns its wire origin label."""
     payload=record.get('payload', {})
     if not isinstance(payload, dict): return None
     typ=record.get('type');event={'session_id':session, 'turn_id':payload.get('turn_id',turn),
@@ -26,6 +28,8 @@ def convert(record, session, project, connection, *, turn='', order=None, sharin
                 tool_use_id=str(payload.get('call_id',ident)),
                 tool_input={} if is_output else payload.get('arguments',payload.get('input',{})),
                 tool_response=payload.get('output',{}) if is_output else {})
+            # A call and its output are separate records; the output inherits the call's label.
+            event['_call_output' if is_output else '_call_input']=True
         elif kind in {'web_search_call','tool_search_call','tool_search_output'}:
             # Keep the historical protocol identity stable so a corrected
             # adapter can replace an unsupported source with an explicit revision.
@@ -64,14 +68,15 @@ def convert(record, session, project, connection, *, turn='', order=None, sharin
                     tool_response={key:item[key] for key in ('aggregated_output','stdout','stderr','status','exit_code','duration') if key in item})
             elif kind == 'McpToolCall':
                 event.update(hook_event_name='PostToolUse',tool_name=item.get('tool',''),tool_use_id=item['id'],
-                    tool_input=item.get('arguments',{}),tool_response={key:item[key] for key in ('result','status','duration') if key in item})
+                    tool_input=item.get('arguments',{}),tool_response={key:item[key] for key in ('result','status','duration') if key in item},
+                    mcp_server=str(item.get('server') or 'unknown').replace('-','_').lower())
             elif kind == 'FileChange':
                 event.update(hook_event_name='PostToolUse',tool_name=kind,tool_use_id=item['id'],
                     tool_input={'changes':item.get('changes',[])},
                     tool_response={key:item[key] for key in ('status','stdout','stderr') if key in item})
             elif kind == 'FunctionCallOutput':
                 event.update(hook_event_name='PostToolUse',tool_name=item.get('name',''),tool_use_id=item['id'],
-                    tool_response=item.get('output',{}))
+                    tool_response=item.get('output',{}),_call_output=True)
             elif kind == 'ContextCompaction':
                 event.update(hook_event_name='PostCompact',trigger='host_item',event_id=item['id'])
             elif kind == 'Plan':
@@ -99,7 +104,26 @@ def convert(record, session, project, connection, *, turn='', order=None, sharin
             else: event.update(hook_event_name='UnsupportedHostItem')
         else: return None
     else: return None
-    return normalize_capture(event,project,connection,origin='desktop_rollout',sharing=sharing,originals=originals)
+    return normalize_capture(event,project,connection,origin='desktop_rollout',sharing=sharing,originals=originals,
+                             origin_label=origin(event) if origin else None)
+
+
+def origin_labeller(home, config, scope, cwd, session):
+    """`origin` callback for `convert`: classify, then apply the session's sticky ceiling."""
+    from agentclient import origin as origin_labels
+    taint=origin_labels.SessionOrigins(home)
+    try:context=origin_labels.Context(scope,cwd,config)
+    except Exception:context=None
+
+    def label(event):
+        try:
+            own=origin_labels.classify(event,context)
+            output=bool(event.get('_call_output'))
+            call=str(event.get('tool_use_id') or '') if output or event.get('_call_input') else None
+            return origin_labels.wire(taint.apply(session,own,project=(scope or {}).get('project'),call_id=call or None,call_output=output),(scope or {}).get('project'))
+        except Exception:
+            return {'ceiling':'private','kinds':['unknown_tool'],'reason':'unknown_tool','projects':[],'inherited':False}
+    return label
 
 
 def poll(home, config, allowed_root=None):
@@ -145,6 +169,7 @@ def poll(home, config, allowed_root=None):
                 reason='paused_capture' if config.get('paused') or project in config.get('capture_disabled_projects',[]) else 'scope_file_capture_'+scope['capture']
                 if stat.st_size>cursor['offset']: gap_event(session,project,cursor,reason,identity)
                 cursor['status']='paused_gap';cursor['offset']=stat.st_size;save();gaps+=1;continue
+            labeller=origin_labeller(home,config,scope,session_cwd(source),session)
             with source.open('rb') as stream:
                 stream.seek(cursor['offset']);count=0
                 while count<64:
@@ -156,7 +181,8 @@ def poll(home, config, allowed_root=None):
                     try:
                         record=json.loads(line);payload=record.get('payload',{})
                         if isinstance(payload,dict) and payload.get('turn_id'): cursor['turn']=payload['turn_id']
-                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before,sharing=scope['sharing'],originals=scope.get('originals','private'))
+                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before,
+                                      sharing=scope['sharing'],originals=scope.get('originals','private'),origin=labeller)
                     except (ValueError,TypeError,KeyError):
                         event=normalize_capture({'hook_event_name':'gap','session_id':session,
                             'turn_id':cursor.get('turn',''),'event_id':'parse-gap:'+str(before)},project,capture_connection(config,project))

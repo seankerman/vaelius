@@ -94,6 +94,13 @@ class Profile(unittest.TestCase):
                            'url': 'http://127.0.0.1:65530', 'credential_file': str(self.token),
                            'connection_id': 'claude-code-synthetic'}}
         self.save()
+        # The SessionStart guardrail check reads Claude Code settings files: never the real ones.
+        self.claude_home = base / 'claude-home'
+        isolation = [patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(self.claude_home)}),
+                     patch('agentclient.claude_guardrails.MANAGED_DIRS', {})]
+        for item in isolation:
+            item.start();self.addCleanup(item.stop)
+        os.environ.pop('CLAUDE_PROJECT_DIR', None)
 
     def tearDown(self):
         self.tmp.cleanup()

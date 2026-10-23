@@ -101,6 +101,11 @@ enrolling another project or upgrading Python; it is idempotent. An existing
 `mcp__vaelius__<tool>`. Run it while Claude Code is closed, since Claude Code
 rewrites `~/.claude.json` while it runs, then start Claude Code again.
 
+The same command also writes the `standard` guardrail profile into that settings
+file unless one is already installed there; see
+[least privilege for agents](#least-privilege-for-agents). Pass `--guardrails strict`
+for the repository-only profile or `--guardrails none` to leave guardrails out.
+
 ### What is captured
 
 The hooks handle `SessionStart`, `UserPromptSubmit`, `PostToolUse`,
@@ -127,15 +132,150 @@ claude plugin uninstall vaelius@vaelius
 vaelius-client --home /absolute/private/client-profile uninstall --claude-code
 ```
 
-`uninstall --claude-code` removes only this profile's Claude Code entries (add
-`--scope user` or `--scope project` to remove one of them) and leaves capture for
-other hosts running. `uninstall` without it removes every host installation and
+`uninstall --claude-code` removes only this profile's Claude Code entries, guardrails
+included (add `--scope user` or `--scope project` to remove one of them; `uninstall
+--guardrails-only` removes just the guardrails) and leaves capture for other hosts
+running. `uninstall` without it removes every host installation and
 pauses capture. Neither deletes server records.
 
 Capture of unenrolled folders is opt-in with `capture_all_sessions: true` in the
 profile's `config.json`, which names projects `Repo:<name>:<id>` and `Chat:<id>`.
 Profiles that still use the earlier `capture_all_codex_sessions` key keep working
 and keep their existing `CodexRepo:`/`CodexChat:` project names.
+
+### Least privilege for agents
+
+Capture can only redact what an agent sees. The guardrails stop the agent in a
+captured project from reading the person's own files in the first place, so
+nothing from them reaches a transcript or shared memory. They are Claude Code
+settings: plugins cannot ship permission or sandbox settings (a plugin's
+`settings.json` applies only `agent` and `subagentStatusLine`), so the client
+writes them into a settings file. Capture-side origin labelling is a separate,
+later layer; it does not depend on these settings.
+
+```sh
+# standard (the default): plugin users add --guardrails-only to skip the hooks
+vaelius-client --home /absolute/private/client-profile install --claude-code --guardrails-only
+# strict, for one project
+vaelius-client --home /absolute/private/client-profile install --claude-code --guardrails-only \
+  --guardrails strict --scope project --project-root /absolute/project
+# remove
+vaelius-client --home /absolute/private/client-profile uninstall --guardrails-only
+```
+
+The installer follows the rules of the settings installation above: it adds or
+changes only the entries it owns, merges with existing rules instead of replacing
+them, backs up the file before its first change, records each entry and each value
+it changed in `claude-code-installation.json`, and restores the earlier value on
+removal unless someone has changed it since. Running it twice gives identical files.
+Switching profiles takes out the entries the old profile owned. The profiles as
+written are in [`integrations/claude-code/guardrails`](../integrations/claude-code/guardrails).
+
+| | `standard` (default) | `strict` (opt-in) |
+| --- | --- | --- |
+| Intent | Normal engineering work is not hindered | The agent works inside the repository only |
+| Claude's file tools (Read, Grep, Glob, LSP, Edit, Write, NotebookEdit) | Refused in personal folders and on credential files | Refused everywhere outside the working directories (`permissions.blockReadsOutsideWorkingDirectories`), plus the `standard` refusals |
+| Bash | Refused when the command names a personal folder or searches the home folder; Claude Code refuses its recognized file commands on credential files | Runs in the OS sandbox: no reads of the home folder or other user-file roots except the working directories, package caches and git configuration; writes only in the project, the session temp folder and the caches; no unsandboxed fallback or retry |
+| Edits outside the project | Normal Claude Code prompts | Refused |
+| `aws`, `gh`, `git` over SSH, `cdk`, package managers | Work as before; they read their own configuration | Commands that read configuration under the home folder fail (for example `aws configure get region`, git over SSH on macOS) |
+| MCP servers | Not restricted | Not restricted |
+
+Personal folders are `~/Documents`, `~/Desktop`, `~/Downloads`, `~/Pictures`,
+`~/Movies`, `~/Music`, `~/Videos`, `~/Library/Mobile Documents` (iCloud Drive),
+`~/Library/CloudStorage`, `~/Library/Mail` and `~/Library/Messages`. A project that
+lives inside one of them, such as `~/Documents/work/repo`, stays fully usable; its
+sibling folders do not. Credential files are `~/.aws/credentials`, the AWS SSO and
+CLI caches, `~/.ssh/id_*`, `~/.netrc`, `~/.git-credentials`,
+`~/.config/gh/hosts.yml`, `~/.docker/config.json`, `~/.npmrc`, `~/.pypirc` and
+`~/.kube/config`. Configuration such as `~/.aws/config`, `~/.ssh/config` and
+`~/.gitconfig` stays readable.
+
+**How `standard` is built, and why.** Credential files get `Read` and `Edit` deny
+rules. Claude Code applies those to its file tools and to the file commands it
+recognizes in Bash (`cat`, `head`, `tail`, `sed`, `tee` and redirections), but not
+to programs that open files themselves, which is what lets `aws` keep reading
+`~/.aws/credentials` while `cat ~/.aws/credentials` is refused. Personal folders
+cannot use deny rules: a deny rule always wins, so `Read(~/Documents/**)` would also
+lock out a project inside `~/Documents`, and a `!` exception cannot reopen part of a
+`~/` rule. A `PreToolUse` hook (`vaelius-client guardrail-check`, matched on those
+tool names) decides them instead, with the project as the exception. `standard`
+does not turn on the Bash sandbox. Its network isolation breaks git over SSH on
+macOS, database clients and connections to local servers, and its read limits apply
+to every child process of a command. So the sandbox cannot tell `cat
+~/.aws/credentials` from `aws s3 ls` reading the same file, and Claude Code also
+copies `Read` deny rules into the sandbox's read denylist.
+
+**What `standard` does not cover.** It is a denylist, so anything outside the lists
+stays readable, for example `~/notes` or `/Volumes`. Its Bash check reads the
+command text: it finds paths given as arguments, inside quoted code, after `cd`,
+with `~`, `$HOME` or a glob, and searches that start at the home folder. A program
+that opens a personal file without naming it on the command line still can,
+for example a script in the repository (checked live: `python3 read_probe.py`
+printed a `~/Documents` canary), and so can a path assembled at run time. For
+credential files, Bash coverage is only Claude Code's recognized commands. `python3
+-c "open('…/.aws/credentials')"` or `cp ~/.aws/credentials .` can still read them,
+by design, because the tools that need those files must keep working. A command
+that only mentions a personal path in text, such as a commit message, is refused.
+If the check itself fails, `standard` reports the failure and lets the call run.
+
+**`strict` notes.** It needs Claude Code 2.1.257 or later. It turns the sandbox on
+with `failIfUnavailable`, so Claude Code does not start where the sandbox can't run:
+native Windows, or Linux without `bubblewrap` and `socat`. Sandboxed commands can
+still read system locations outside the user-file roots, such as `/tmp`, `/etc` and
+`/opt`. Network access is Claude Code's sandbox default: new hosts prompt in Manual
+mode and are allowed in `bypassPermissions` mode. Hooks, MCP servers and commands
+you type at the `!` prompt run outside the sandbox. The deny rules also cover the
+settings file that holds the profile and the project's `.claude/settings*.json`, so
+the agent cannot switch it off mid-session. A repository's `.claude/settings.json`
+outranks your user settings, so it could set `sandbox.enabled: false` against a
+user-scope `strict`. Install `strict` at project scope (the local file outranks the
+repository's) or deploy it as managed settings.
+
+Both profiles hold in every permission mode, `bypassPermissions` included: Claude
+Code applies deny rules and `PreToolUse` hook denials in all modes. To let Claude
+read a personal folder for one session, start Claude Code with
+`VAELIUS_GUARDRAIL_ALLOW=/absolute/folder` (several folders separated by `:`). This
+never opens credential files. The agent cannot set it, because hooks get Claude
+Code's environment, not the environment of the commands it runs.
+
+At session start, the status line (shown to the person, never to the model) adds
+one line when capture is on in a project and no guardrails are found. The check
+looks for the guardrail hook, or for both the read fence and the sandbox, in the
+managed settings files, your user settings and the project's settings files. Policy
+delivered only by an MDM profile or server-managed settings is invisible to that
+check; set `"claude_code_guardrail_notice": false` in the client profile's
+`config.json` to silence it.
+
+#### Enforce for an organisation
+
+An administrator can deploy the profile as managed settings, which users and
+repositories cannot override. Deny rules and hooks from managed settings always
+apply. Two templates are provided: [`managed-settings.json`](../integrations/claude-code/guardrails/managed-settings.json)
+(`standard`) and [`managed-settings-strict.json`](../integrations/claude-code/guardrails/managed-settings-strict.json),
+which also sets `disableBypassPermissionsMode`. The installer never writes them,
+because that needs administrator rights. Deploy one as a drop-in next to any
+existing policy, for example
+`/Library/Application Support/ClaudeCode/managed-settings.d/50-vaelius-guardrails.json`
+on macOS or `/etc/claude-code/managed-settings.d/50-vaelius-guardrails.json` on Linux
+and WSL. On Windows, use `C:\Program Files\ClaudeCode\managed-settings.d\`. An MDM
+configuration profile for the `com.anthropic.claudecode` domain, or server-managed
+settings, works the same way. The hook command expects `vaelius-client` on the
+`PATH` of every user. Without it, the hook fails and Claude Code continues, so the
+deny rules (and under `strict`, the read fence and sandbox) still apply, but the
+personal-folder check does not. Do not add `sandbox.filesystem.allowManagedReadPathsOnly`
+to the strict template: with it, the read fence no longer reaches sandboxed commands.
+Users can still add `allowRead` paths for sandboxed commands in their own settings,
+but Claude's file tools keep refusing those paths.
+
+Sources (Claude Code documentation, checked 2026-10-23):
+[permissions](https://code.claude.com/docs/en/permissions),
+[settings reference](https://code.claude.com/docs/en/settings-reference),
+[settings precedence](https://code.claude.com/docs/en/settings),
+[sandboxing](https://code.claude.com/docs/en/sandboxing),
+[permission modes](https://code.claude.com/docs/en/permission-modes),
+[hooks](https://code.claude.com/docs/en/hooks),
+[managed settings](https://code.claude.com/docs/en/managed-settings),
+[plugins reference](https://code.claude.com/docs/en/plugins-reference).
 
 ## Credentials
 

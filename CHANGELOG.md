@@ -8,6 +8,11 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Security
 
+- Installed hook and MCP header-helper commands run Python with `-P`, so a project
+  folder's own `agentclient` package can no longer run in place of the client.
+  Installations made by 0.3.0 must re-run `install` (Codex) or
+  `install --claude-code` (settings installation); older hooks say so at session
+  start. See [the client guide](docs/CLIENT.md#hook-commands-and-the-project-folder).
 - Hash-locked dependencies: `requirements-runtime.txt`, `requirements-build.txt`
   and `requirements-dev.txt` (pip-compile with `--generate-hashes`) replace
   `requirements-runtime.lock`. The image and CI install them with `--require-hashes`

@@ -69,8 +69,8 @@ class InstallUpgrade(unittest.TestCase):
             codex=Path(td)/'codex';codex.mkdir()
             unrelated={'type':'command','command':'unrelated-hook','timeout':9}
             (codex/'hooks.json').write_text(json.dumps({'hooks':{'Stop':[{'hooks':[unrelated]}]}}))
-            with patch('agentclient.install.sys.executable','/old/python'):install(home,codex,{},{})
-            with patch('agentclient.install.sys.executable','/new/python'):install(home,codex,{},{})
+            with patch('agentclient.host_command.sys.executable','/old/python'):install(home,codex,{},{})
+            with patch('agentclient.host_command.sys.executable','/new/python'):install(home,codex,{},{})
             hooks=json.loads((codex/'hooks.json').read_text())['hooks']
             self.assertIn(unrelated,hooks['Stop'][0]['hooks'])
             for groups in hooks.values():

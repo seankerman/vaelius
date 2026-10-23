@@ -180,7 +180,7 @@ def service_status(config, problem, pending):
     if problem=='signed_out':
         aws=config.get('knowledge_backend',{}).get('aws_sts') or {}
         how=('`aws sso login'+(' --profile '+aws['profile'] if aws.get('profile') else '')+'`') if aws else \
-            'the sign-in command for your profile (`python -m agentclient.cloud_enroll --reauthenticate`)'
+            'the sign-in command for your profile (`python -P -m agentclient.cloud_enroll --reauthenticate`)'
         return 'Vaelius signed out: memory recall and delivery are off. '+queued+' and are sent after you sign in again with '+how+'.'
     if problem=='unreachable':
         return 'Vaelius service unreachable: memory recall is off. '+queued+' and are sent when the service is reachable.'

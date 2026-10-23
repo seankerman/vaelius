@@ -21,12 +21,18 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     remove=sub.add_parser('uninstall',help='remove installed hooks and MCP entries (all hosts unless one is named)')
     remove.add_argument('--claude-code',action='store_true',help='remove only Claude Code installations; capture is not paused')
     remove.add_argument('--scope',choices=('user','project'))
+    remove.add_argument('--guardrails-only',action='store_true',help='Claude Code: remove only the guardrail profile')
     drain=sub.add_parser('outbox-drain');drain.add_argument('--max-events',type=int,default=32);drain.add_argument('--max-seconds',type=float,default=5)
     install=sub.add_parser('install');install.add_argument('--codex-home',default=str(Path.home()/'.codex'))
     install.add_argument('--claude-code',action='store_true',help='install into Claude Code settings instead of Codex')
     install.add_argument('--scope',choices=('user','project'),default='user',help='Claude Code: all folders, or one project')
     install.add_argument('--project-root',help='Claude Code project scope: enrolled project root (default: current folder)')
     install.add_argument('--claude-config-dir',help='Claude Code configuration folder (default: CLAUDE_CONFIG_DIR or ~/.claude)')
+    install.add_argument('--guardrails',choices=('standard','strict','none'),
+        help='Claude Code least-privilege profile (default: the one installed, else standard; none removes it)')
+    install.add_argument('--guardrails-only',action='store_true',help='Claude Code: write only the guardrail profile (plugin users)')
+    guard=sub.add_parser('guardrail-check',help='Claude Code PreToolUse guardrail check; reads one event from stdin')
+    guard.add_argument('--profile',choices=('standard','strict'),required=True)
     renewal=sub.add_parser('credential-renew');renewal.add_argument('--force',action='store_true')
     sub.add_parser('credential-status',help='local sign-in status; contacts neither AWS nor the service')
     for command in ('logout','credential-revoke'):
@@ -37,11 +43,26 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     scope.add_argument('--cwd',default=os.getcwd())
     notice=sub.add_parser('notice',help='show what is captured for a project, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
-    args=parser.parse_args(argv);home=private_dir(args.home)
+    args=parser.parse_args(argv)
+    if args.command=='guardrail-check':
+        # Needs no profile: runs on every file-tool and Bash call, and must not create folders.
+        from agentclient.claude_guardrails import check
+        try:
+            raw=sys.stdin.buffer.read(32*1024*1024+1)
+            if len(raw)>32*1024*1024:raise ValueError('hook_payload_bound')
+            result=check(json.loads(raw),args.profile)
+        except Exception as exc:
+            # strict fails closed (exit 2 blocks the call); standard must never stop normal
+            # work, so it reports the failure (exit 1, shown to the person) and lets the call run.
+            print('Vaelius '+args.profile+' guardrails could not check this call ('+type(exc).__name__+')'
+                  +('; blocked.' if args.profile=='strict' else '.'),file=sys.stderr)
+            raise SystemExit(2 if args.profile=='strict' else 1) from None
+        print(json.dumps(result));return
+    home=private_dir(args.home)
     if args.command=='uninstall':
         from agentclient import claude_code
-        if args.claude_code:
-            print(json.dumps({'removed':claude_code.uninstall(home,scope=args.scope)},indent=2));return
+        if args.claude_code or args.guardrails_only:
+            print(json.dumps({'removed':claude_code.uninstall(home,scope=args.scope,guardrails_only=args.guardrails_only)},indent=2));return
         from agentclient.install import uninstall
         claude_code.uninstall(home)
         uninstall(home);return
@@ -105,9 +126,10 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 'notice_version':value.get('notice_version'),'source':value.get('source'),
                 'capture':'paused' if config.get('paused') else ('disabled' if args.project in config.get('capture_disabled_projects',[]) else 'on')}
             if args.acknowledge:result['acknowledgement']=capture_notice.record(home,args.project,value,'cli')
-        elif args.command=='install' and args.claude_code:
+        elif args.command=='install' and (args.claude_code or args.guardrails or args.guardrails_only):
             from agentclient.claude_code import install
-            result=install(home,scope=args.scope,claude_config_dir=args.claude_config_dir,project_root=args.project_root)
+            result=install(home,scope=args.scope,claude_config_dir=args.claude_config_dir,project_root=args.project_root,
+                           guardrails=args.guardrails or 'default',guardrails_only=args.guardrails_only)
         elif args.command=='install':
             from agentclient.install import install
             result=install(home,args.codex_home,{}, {})

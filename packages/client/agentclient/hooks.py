@@ -308,6 +308,15 @@ def _notices(home, config, kind, scope):
     return '\n'.join(lines)
 
 
+def _guardrail_line(config, event):
+    """SessionStart line (person only) when a captured project runs without guardrails."""
+    from agentclient.claude_guardrails import NOTICE_KEY, status_line
+    if config.get(NOTICE_KEY) is False:return None
+    try:cwd=local_cwd(event.get('cwd'))
+    except (ValueError,OSError):return None
+    return status_line(cwd) if cwd else None
+
+
 def handle(home, event, *, host='codex', via='settings'):
     from agentclient.enterprise_capture import turn_of
     config_path = Path(home) / 'config.json'
@@ -351,6 +360,8 @@ def handle(home, event, *, host='codex', via='settings'):
     if kind in ('SessionStart','UserPromptSubmit'):
         try:message=_notices(Path(home),config,kind,scope)
         except Exception:message=None
+        if host=='claude-code' and kind=='SessionStart' and scope['capture']=='on':
+            message='\n'.join(x for x in (message,_guardrail_line(config,event)) if x)
         if message:
             # Capture status first, then any signed-out or unreachable warning.
             result=dict(result,systemMessage='\n'.join(x for x in (message,result.get('systemMessage')) if x))

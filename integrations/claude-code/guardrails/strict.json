@@ -1,0 +1,95 @@
+{
+  "permissions": {
+    "blockReadsOutsideWorkingDirectories": true,
+    "deny": [
+      "Read(~/.aws/credentials)",
+      "Edit(~/.aws/credentials)",
+      "Read(~/.aws/sso/cache/**)",
+      "Edit(~/.aws/sso/cache/**)",
+      "Read(~/.aws/cli/cache/**)",
+      "Edit(~/.aws/cli/cache/**)",
+      "Read(~/.ssh/id_*)",
+      "Edit(~/.ssh/id_*)",
+      "Read(~/.netrc)",
+      "Edit(~/.netrc)",
+      "Read(~/.git-credentials)",
+      "Edit(~/.git-credentials)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Edit(~/.config/gh/hosts.yml)",
+      "Read(~/.docker/config.json)",
+      "Edit(~/.docker/config.json)",
+      "Read(~/.npmrc)",
+      "Edit(~/.npmrc)",
+      "Read(~/.pypirc)",
+      "Edit(~/.pypirc)",
+      "Read(~/.kube/config)",
+      "Edit(~/.kube/config)",
+      "Edit(//path/to/project/.claude/settings.local.json)",
+      "Edit(./.claude/settings.json)",
+      "Edit(./.claude/settings.local.json)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "allowRead": [
+        "~/.cache/uv",
+        "~/.cache/pip",
+        "~/.cache/pre-commit",
+        "~/.cache/go-build",
+        "~/Library/Caches/pip",
+        "~/Library/Caches/go-build",
+        "~/.npm",
+        "~/.yarn/berry/cache",
+        "~/.local/share/pnpm/store",
+        "~/Library/pnpm/store",
+        "~/.cargo/registry",
+        "~/.cargo/git",
+        "~/go/pkg/mod",
+        "~/.gradle/caches",
+        "~/.m2/repository",
+        "~/.local/share/uv/python",
+        "~/.local/bin",
+        "~/.cargo/bin",
+        "~/.rustup",
+        "~/.nvm",
+        "~/.pyenv",
+        "~/.volta",
+        "~/go/bin"
+      ],
+      "allowWrite": [
+        "~/.cache/uv",
+        "~/.cache/pip",
+        "~/.cache/pre-commit",
+        "~/.cache/go-build",
+        "~/Library/Caches/pip",
+        "~/Library/Caches/go-build",
+        "~/.npm",
+        "~/.yarn/berry/cache",
+        "~/.local/share/pnpm/store",
+        "~/Library/pnpm/store",
+        "~/.cargo/registry",
+        "~/.cargo/git",
+        "~/go/pkg/mod",
+        "~/.gradle/caches",
+        "~/.m2/repository"
+      ]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob|LSP|Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "vaelius-client guardrail-check --profile strict",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

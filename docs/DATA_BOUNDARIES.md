@@ -239,6 +239,19 @@ documents and v1 sources are immutable here and need a lifecycle decision.
 See [object storage hardening](../packages/server/docs/CLOUD_SOURCE_OBJECTS.md#hardening)
 for SSE-KMS, TLS, file permissions and example least-privilege bucket and key policies.
 
+## Agent access on the capturing machine
+
+Client redaction only sees what the agent read. Before capture, the Claude Code
+guardrail profiles limit what an agent working in a captured project can read on the
+person's computer. The default `standard` profile refuses personal folders
+(Documents, Desktop, Downloads, Mail, iCloud Drive ...) and credential files, and
+leaves the tools that read their own configuration working. The opt-in `strict`
+profile confines file tools and the Bash sandbox to the repository. Both are
+best-effort settings that the person controls unless an organisation deploys them
+as managed settings. `standard` is a denylist, and it does not stop a program that
+opens a file without naming it. The exact coverage and gaps are in
+[least privilege for agents](CLIENT.md#least-privilege-for-agents).
+
 ## Trust boundaries
 
 Raw agent originals require owner/source access. Raw source passages require

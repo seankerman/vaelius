@@ -25,6 +25,9 @@ live in the linked documents.
   unless the caller explicitly asks for every project it may read.
 - Every delivered item says where it came from (project, author, capture time) and
   carries a machine-readable origin label (project and current sharing level).
+- Every person can find, delete, re-share and share what they created themselves,
+  without an operator (see [owner controls](#owner-controls)). Curated and derived
+  documents registered after migration 047 follow the same levels as passages.
 
 ## Identity
 
@@ -138,6 +141,7 @@ the source project and of every one of those other projects.
 | Connection owner narrows a connection | The same, permanently; passages are re-indexed |
 | Membership revoked, principal deactivated or quarantined | That principal loses the content on the next request |
 | Any ceiling raised | Only content stored at the higher level becomes visible again. Content captured while a term was lower stays at the level it was stored with |
+| Author changes the stored level of their own sources | Lowering hides them on the next request. Raising stores the new level, never above the origin ceiling, and every current ceiling still applies ([owner controls](#owner-controls)) |
 
 So raising a setting applies to what is captured from then on, and lowering one is
 a revocation that takes effect immediately.
@@ -154,15 +158,28 @@ explicitly ([raw-access policy](DATA_BOUNDARIES.md#raw-access-policy)).
 
 ## Curated and derived documents
 
-A curated or derived document is visible at the level of its capture connection's
-visibility, and only when every source it depends on is still visible to the
-reader under the ordinary source rules. The person setting, the scope-file request
-and the project and tenant ceilings above govern conversation passages and
-originals; they do not narrow curated documents, which exist only when an operator
-enables curation or an owner submits a reviewed note. The one exception is the
-origin (below): a curated document never reaches anyone a source it depends on could
-not reach by its origin label, so a summary of a tainted passage stays as narrow as
-the passage.
+A curated or derived document (a reviewed note, model-curated knowledge, a native
+document section) registered after migration 047 is capped like a passage: a reader
+needs, for **every** source it depends on, to be that source's author or to be
+reached by that source's current level (the same minimum of every term, evaluated
+on every request). So a person whose own setting is `private` never has derived
+documents readable by others, whatever the capture connection's visibility, and a
+document drawn from a `team` source and an `organization` source is `team`. Every
+ordinary source rule, including the connection's visibility and the origin (below),
+still applies on top: a curated document never reaches anyone a source it depends
+on could not reach by its origin label, so a summary of a tainted passage stays as
+narrow as the passage.
+
+Documents registered before migration 047 keep the earlier rule (the capture
+connection's visibility, with every source still visible to the reader, and the
+origin), so upgrading hides nothing. When an author changes the stored level of a source
+([owner controls](#owner-controls)), every document depending on it moves to the
+capped rule; that can only narrow it.
+
+A legacy capture (`POST /enterprise/v1/sources`) has no scope file: its visibility
+is its sharing request. A native document upload or a document or record connector
+item asks to share at its connection's visibility unless the upload names a lower
+`sharing`. The author's own setting and every ceiling still cap all of them.
 
 ## Enforcement
 
@@ -175,6 +192,13 @@ One rule, three implementations that a regression test keeps in agreement:
    database role to every ranking query, so a denied row never leaves the database;
 3. the Python oracle (`_visible_source`, `_document_allowed` and
    `agenthub.raw_access`) used for originals, evidence and explicit releases.
+
+Grants and the cap on derived documents (migration 047) are enforced in the same
+three places: `search_permissions.DOCUMENT_GRANTED`/`SOURCE_GRANTED` and the
+derived-document clause of `predicate`, the row-level security functions
+`search_document_allowed` and `search_passage_granted`, and
+`EnterpriseStore._document_allowed` with `ProjectSharingMixin._passage_granted`;
+`test_owner_controls.py` keeps them in agreement.
 
 Ceilings are read from their tables inside each check; nothing about sharing is
 cached between requests. The stored level of a passage's own source is also copied
@@ -262,6 +286,77 @@ anything without naming a path; commands such as `aws` or `gh` that name no outs
 path are not restricted) are in
 [origin labels and session taint](DATA_BOUNDARIES.md#origin-labels-and-session-taint).
 
+## Owner controls
+
+Every person manages the content they created (`enterprise_sources.owner`: the
+author, or the represented person for delegated capture) themselves, from the
+client (`vaelius-client mine | forget | sharing | share | unshare`, see
+[client](CLIENT.md)), the agent (MCP tools) or HTTP (`/enterprise/v3/my-data/*`,
+see [route actions](ENTERPRISE_AUTH.md#actions-and-route-authorization)). Nothing
+here acts on anyone else's content.
+
+| Control | Needs | Rule |
+| --- | --- | --- |
+| Find | `read` | The caller's sources or sessions, filterable by project, session, capture time and current level. Each source reports its current effective level and which terms of the minimum hold it there (`source`, `person`, `project`, `tenant`, `connection`, `origin`) |
+| Delete | `withdraw` | One or more sources, a session, a project or a date range, through the service's single purge and deletion journal ([data lifecycle](DATA_LIFECYCLE.md)). A legal hold wins: held sources are hidden and preserved, and reported as held |
+| Lower a stored level | `withdraw` or `share` | Applies on the next request |
+| Raise a stored level | `share`, not delegated, tenant allows owner sharing | Stored at most at the origin ceiling; capped at every request by the person, project, tenant, connection and origin terms; the response says which term caps it |
+| Grant | `share` (or the operator `policy` action), not delegated, tenant allows owner sharing | Names one principal or the active members of one project for a source, a capture session (including later captures in it) or a connection; passages, and optionally originals |
+| Revoke, list grants | `share`, `withdraw` or `policy`; listing needs `read` | Takes effect on the next request |
+
+Bulk, destructive and widening operations are two-step: the first call is a preview
+with a `confirm_token` bound to the exact selection, the second applies it. MCP
+tools require the `confirm` argument (`false` or the token), and they are served by
+the Vaelius MCP server, so client capture never records them.
+
+Every change is recorded: stored-level changes in `enterprise_sharing_changes`
+(who, which source, passages or originals, from, to, what was asked for, which term
+capped it) and the audit log (`source_sharing`, `source_originals_sharing`);
+deletions as `owner_delete` audit rows and journal entries; grants in
+`raw_source_grants` (issuer, scope, grantee, tiers, created, revoked, revoked by) and
+`owner_grant` audit rows.
+
+### Grants
+
+A grant is an explicit list of readers rather than a level. It stands in for the
+visibility and level checks of the sources it covers and for the reader's project
+scope, so a granted passage reaches its reader in any project they search. Every
+other rule still applies: tenant, withdrawal and deletion, delegation limits,
+connection reader lists and freshness, the author's operator quarantine, and
+membership of the named project at the moment of reading. A quarantined reader
+receives nothing through a grant. Originals additionally need the reader's
+`source_read` action, as before.
+
+Grants are governed by the tenant's `owner_sharing` setting rather than by the
+level ceilings: `allowed` (default) or `lower_only`, under which owners can still
+lower, delete and revoke but cannot raise or grant, and grants that owners issued
+stop applying at once. Grants issued with the operator `policy` action are not
+affected.
+
+**Origin.** A grant never carries content beyond its origin: a source whose origin
+is `private` (for example a session that recalled another person's private memory)
+is never readable through a grant, and a `team` origin only by readers who are
+members of the source project and of every project the source carries. The
+preview counts covered sources the origin keeps from the grantee.
+
+There is deliberately **no override**, not even with a confirmation. The origin
+ceiling protects someone other than the author: the people whose restricted
+content was recalled into the session. The author cannot consent for them, and an
+override would let anyone launder restricted content by recalling it and granting
+it. An author who owns the original content can share that content itself.
+
+### Project moderation
+
+A project member whose credential has the `moderate` action can withdraw (hide)
+anyone's sources in that project, together with everything derived from them
+(`POST /enterprise/v3/moderation/withdraw`, preview and confirm as above, with a
+short reason). Moderation never deletes and never reads originals; the author still
+sees the source as hidden by a moderator (who, when, why) and can still delete it.
+Each withdrawal is journaled and audited (`moderate_withdraw`). `moderate` is never
+part of default enrollment or default provider scopes, cannot be delegated, and is
+reported as privileged in access reviews. It is the hook for per-project roles: a
+later change can grant it per project instead of per credential.
+
 ## Retention, erasure and legal hold
 
 Withdrawal blocks a source and everything derived from it; deletion purges source,
@@ -307,6 +402,17 @@ Migration 045 is additive and widens nothing:
 - existing originals are `private`;
 - policy definitions of existing sources are unchanged, so the search projection
   needs no rebuild.
+
+## Upgrading to migration 047
+
+Migration 047 is additive and widens nothing: curated and derived documents that
+already exist keep the connection-visibility rule (`level_capped = 0`) until their
+author changes a source they depend on; new ones are capped. Existing grants were
+originals-only and stay so. Tenants allow owner sharing (`owner_sharing =
+'allowed'`); an operator who wants lowering only sets `lower_only`. Interactive
+enrollment now also grants `share`, and credentials issued before the migration
+that hold `withdraw` also hold `share` (their stored action lists are not
+rewritten; delegations never receive it).
 
 A client that requests `organization` or `originals` needs a service with this
 migration; an older service rejects those fields.

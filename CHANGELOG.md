@@ -56,6 +56,17 @@ The release workflow publishes the section whose heading matches the tag.
   request. Retrieval is project-scoped, with other projects' organization-shared
   content as a labelled later tier and an explicit `scope = "all"`. Migration 045;
   see [the privacy model](docs/PRIVACY_MODEL.md).
+- Owner self-service: every person can list (`vaelius-client mine`), delete
+  (`forget`, including "forget this session"), re-share (`sharing --set` with a
+  selection) and share with named people or projects (`share`, `unshare`) the
+  content they created, without an operator; also as MCP tools that need an
+  explicit `confirm` and HTTP routes under `/enterprise/v3/my-data`. Deletion uses
+  the canonical purge and reports legal holds; raises are capped by every ceiling
+  and never exceed the origin ceiling; every change and grant is audited. New
+  `share` action (default enrollment) and `moderate` action (project members hide
+  others' content). Curated and derived documents registered after migration 047
+  follow the sharing levels like passages. See
+  [owner controls](docs/PRIVACY_MODEL.md#owner-controls).
 
 ## [0.3.0] - 2026-10-09
 

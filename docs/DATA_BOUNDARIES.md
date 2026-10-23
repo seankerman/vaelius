@@ -97,8 +97,12 @@ python -m agenthub.raw_access revoke ...   # same arguments; the row is kept for
 python -m agenthub.raw_access list --profile ... --tenant acme --token-file ...
 ```
 
-A grant names one source or one connection, and either a principal or a project
-(members of that project, which is how directory groups map into Vaelius).
+A grant names one source, one capture session or one connection, and either a
+principal or a project (members of that project, which is how directory groups map
+into Vaelius). These operator-style commands grant originals only. Owners grant
+passages, and optionally originals, themselves with `vaelius-client share` or the
+MCP `share_memories` tool and the `share` action; no grant carries a source beyond
+its origin ([owner controls](PRIVACY_MODEL.md#owner-controls)).
 
 ### Upgrade and migration
 

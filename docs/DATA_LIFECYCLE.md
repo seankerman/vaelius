@@ -13,6 +13,8 @@ decision; the object store holds original bytes only.
 | Correct | Source owner (`correct`) | Replaces the source with a corrected revision; the old revision is hidden but kept. |
 | Delete | Source owner (`withdraw`) | Purges the source and its derived content from every store listed below, then journals the deletion. |
 | Owner retention | Source owner (`withdraw`) | `enterprise.retention(ctx, project, before)`: deletes the caller's own sources in one project captured before a cutoff. Dry-run by default. |
+| Forget (owner self-service) | Source owner (`withdraw`) | `vaelius-client forget`, MCP `forget_memories`, `POST /enterprise/v3/my-data/forget`: deletes chosen sources, a session ("forget this session"), everything in a project or a date range. Preview first; applies only with the preview's token. Same purge. |
+| Moderation | Project member (`moderate`) | `POST /enterprise/v3/moderation/withdraw`: withdraws (hides) anyone's sources in that project. Never deletes. |
 | Scheduled retention | Operator | `cloud_maintenance retention-run`: applies tenant retention policies to every principal's sources. Dry-run unless `--apply`. |
 | Subject erasure | Operator | `cloud_maintenance subject-erase`: deletes everything one principal owns and returns a verification report. Dry-run unless `--apply`. |
 | Legal hold | Holds administrator (`legal_hold`) | Preserves covered content from deletion, retention and erasure. |
@@ -54,6 +56,34 @@ withdrawal semantics: Vaelius does not automatically re-derive a curated documen
 from its remaining sources, and it never calls a model during deletion. If an
 operator runs curation again, documents are rebuilt only from sources that are
 still active.
+
+## Owner self-service deletion
+
+A person deletes what they created without an operator
+([privacy model](PRIVACY_MODEL.md#owner-controls), [client](CLIENT.md)):
+
+- **Selection**: `source_ids` (up to 200), `session` (`current` for the session the
+  caller captured most recently in the given project, a session handle from
+  `mine`, or a host conversation ID), `project`, `since`, `until`. At least one is
+  required. Only the caller's own sources are ever selected, including withdrawn
+  ones; already purged sources are not selected again. One call handles at most 200
+  sources (`more: true` means run it again).
+- **Preview first**: without `confirm` the call changes nothing and returns counts
+  (sources, active, held, sessions, projects, capture range) and a `confirm_token`
+  bound to the exact selection. With `confirm` set to that token the selection is
+  deleted; if it changed meanwhile, the call returns a fresh preview with
+  `status: selection_changed` instead.
+- **Same purge**: each source goes through `_expire_source_tx`, the path retention
+  and erasure use, under the policy lock: the stores in the table above, the
+  deletion journal (`delete`, or `withdraw` + `delete_held` under a hold), queued
+  original objects, and an `owner_delete` audit row. Journal replay on a restored
+  copy therefore repeats owner deletions too.
+- **Legal holds win** and are reported as `held` (see above).
+
+Moderation (`moderate`) is a withdrawal, not a deletion: the source and its derived
+documents are hidden, a `withdraw` journal entry and a `moderate_withdraw` audit
+row are written, and `enterprise_sources.moderated_by/at/reason` record who, when
+and why. The author can still delete it.
 
 ## Scheduled retention
 
@@ -127,9 +157,13 @@ While a hold covers a source:
 
 - Retention skips the source, and it stays searchable.
 - An owner's deletion hides the source like a withdrawal. The deletion journal
-  records both `withdraw` and `delete_held`. The response shape the owner gets
-  back is unchanged, so the hold is not disclosed to the owner. Content and
-  originals are preserved.
+  records both `withdraw` and `delete_held`. Content and originals are preserved.
+  The single-source lifecycle response (`POST /enterprise/v1/lifecycle`) keeps its
+  strict wire shape and does not mention the hold. Owner self-service (`forget`,
+  `mine`) does report it: the preview and the result count held sources as
+  `held`, and `mine --all` shows them as `deletion_held`. It names no hold, matter
+  or reason, but it does tell the owner that some of their content is held, so
+  legal teams should expect custodians to learn that a hold exists.
 - Subject erasure also hides the source and defers the purge. The report counts
   it under `held`.
 - Withdrawal and correction work as usual.

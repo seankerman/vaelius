@@ -30,13 +30,20 @@ def _digest(value):
 # to report outcome feedback and 'correct' to submit curation. Grants that existed
 # before the change carry legacy_actions=1 (migration 043) and keep those abilities;
 # new grants state them explicitly. Stored action lists are not rewritten.
+# legacy_actions is a bit set: 1 = issued before migration 043 (the implications
+# above); 2 = issued before migration 047, when 'withdraw' was every owner's
+# self-service action, so it also allows 'share' (owner_controls). Default
+# enrollment now lists 'share' explicitly.
 LEGACY_IMPLIED_ACTIONS=(('read','feedback'),('correct','curate'))
+PRE_047_IMPLIED_ACTIONS=(('withdraw','share'),)
 
 
 def effective_actions(actions, legacy=False):
     """Actions a stored grant allows; legacy grants also allow their implied actions."""
     granted=set(json.loads(actions) if isinstance(actions,str) else actions)
-    if legacy:granted|={implied for source,implied in LEGACY_IMPLIED_ACTIONS if source in granted}
+    legacy=int(legacy or 0)
+    implied=(LEGACY_IMPLIED_ACTIONS if legacy&1 else ())+(PRE_047_IMPLIED_ACTIONS if legacy&2 else ())
+    granted|={target for source,target in implied if source in granted}
     return granted
 
 

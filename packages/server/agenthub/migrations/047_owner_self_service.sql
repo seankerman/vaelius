@@ -20,6 +20,12 @@
 -- * enterprise_sharing_changes: who changed which source's stored level, from
 --   what, to what, what was asked for and which ceiling capped it.
 -- * enterprise_sources.moderated_*: a project maintainer's withdrawal (hide).
+-- * legacy_actions bit 2: credentials and refresh families issued before this
+--   migration that hold `withdraw` (every owner's self-service action) also hold
+--   `share`. Stored action lists are not rewritten; delegations never get it.
+
+UPDATE enterprise_credentials SET legacy_actions=legacy_actions|2 WHERE actions::jsonb ? 'withdraw';
+UPDATE enterprise_credential_families SET legacy_actions=legacy_actions|2 WHERE actions::jsonb ? 'withdraw';
 
 ALTER TABLE enterprise_organizations ADD COLUMN IF NOT EXISTS owner_sharing TEXT NOT NULL DEFAULT 'allowed'
     CONSTRAINT enterprise_organizations_owner_sharing CHECK (owner_sharing IN ('allowed','lower_only'));

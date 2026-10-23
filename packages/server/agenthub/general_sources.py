@@ -220,16 +220,24 @@ class GeneralSourcesMixin:
             # and tenant ceilings and the connection visibility now; query time
             # applies every current ceiling again (agenthub.project_sharing).
             requested,sharing,originals_requested,originals=self._ingest_sharing(db,ctx,connection,value)
+            # The origin label (agentclient.origin) is stored as sent and never changes:
+            # the ceiling and the other projects keep applying at query time.
+            label=value.get('origin_label')
+            origin_projects=sorted(set(label['projects'])-{value['project']}) if label else []
             db.execute('''INSERT INTO enterprise_sources
                 (id,tenant,owner,external_project,internal_project,external_id,enrollment,payload_hash,
                  visibility,raw_visibility,occurred_at,created,occurred_precision,occurred_timezone,
-                 sharing,sharing_requested,originals_sharing,originals_requested)
-                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?,?,?,?,?)''',
+                 sharing,sharing_requested,originals_sharing,originals_requested,
+                 origin_ceiling,origin_reason,origin_projects)
+                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?,?,?,?,?,?,?,?)''',
                 (source_id,ctx['tenant'],ctx['actor'],value['project'],project,
                  value['connection']+':'+value['external_id']+':'+value['revision'],ctx['enrollment'],hashed,
                  connection['visibility'],str(value['occurred_at']),now,
                  'instant' if value['occurred_at']!='unknown' else 'unknown',None,sharing,requested,
-                 originals,originals_requested))
+                 originals,originals_requested,label['ceiling'] if label else None,
+                 (label['reason'] or None) if label else None,json.dumps(origin_projects)))
+            if label and (label['ceiling']!='organization' or origin_projects):
+                self._audit(db,ctx,'origin_label',label['ceiling'],source_id,connection['policy_version'])
             if requested!=sharing:self._audit(db,ctx,'sharing_request','capped_'+sharing,source_id,connection['policy_version'])
             if originals_requested!=originals:
                 self._audit(db,ctx,'originals_request','capped_'+originals,source_id,connection['policy_version'])

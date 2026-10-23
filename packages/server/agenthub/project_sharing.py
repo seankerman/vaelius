@@ -15,8 +15,12 @@ Who controls each term of the minimum:
   the tenant default `default_max_sharing` for a project without one) and the
   tenant ceiling (`enterprise_organizations.max_sharing`);
 * the **connection owner**: the capture connection's visibility;
-* the **origin ceiling**: `origin_ceiling()`, a hook for origin labels and
-  session taint. It is the most permissive level until that layer supplies it.
+* the **origin**: what the captured content came from (`agentclient.origin`,
+  stored per source as `origin_ceiling`, `origin_reason`, `origin_projects`). The
+  origin ceiling caps the level; every other project whose content the source
+  carries adds that project's current ceiling to the minimum, and a `team`
+  reader must be an active member of the source project AND of every one of
+  them. The origin is fixed at ingest: no later policy change widens it.
 
 At ingest the effective level of a source is the minimum of all of them, stored
 per source (`enterprise_sources.sharing`, `originals_sharing`) next to the request
@@ -48,16 +52,36 @@ def lowest(*levels):
     return SHARING[min(RANK.get(level, 0) for level in levels)] if levels else 'private'
 
 
+def _origin(item):
+    """(ceiling, reason, projects) of a v2 event (`origin_label`) or a stored source row."""
+    import json
+    if not isinstance(item, dict):
+        return 'organization', None, ()
+    label = item.get('origin_label')
+    if isinstance(label, dict):
+        return label.get('ceiling'), label.get('reason') or None, tuple(label.get('projects') or ())
+    projects = item.get('origin_projects') or ()
+    if isinstance(projects, str):
+        projects = json.loads(projects)
+    return item.get('origin_ceiling') or 'organization', item.get('origin_reason'), tuple(projects)
+
+
 def origin_ceiling(item=None):
     """Ceiling from the content's origin (origin labels and session taint).
 
-    Forthcoming: a later change derives it from where the content came from, for
-    example a session that recalled restricted memory. Until then it is the most
-    permissive level, so this term of the minimum changes nothing. The SQL
-    mirror reads the policy-definition key `origin_ceiling` (absent = organization).
+    Read from an event's `origin_label` at ingest, or from the stored source
+    (`enterprise_sources.origin_ceiling`) at query time. Absent means organization:
+    content that only touched its own project is not restricted by its origin.
+    Anything unrecognised is private. The SQL mirror reads the policy-definition
+    key `origin_ceiling`.
     """
-    value = item.get('origin_ceiling') if isinstance(item, dict) else None
-    return value if value in SHARING else 'organization'
+    value = _origin(item)[0]
+    return value if value in SHARING else 'private'
+
+
+def origin_projects(item=None):
+    """Other projects whose content an event or source carries (`origin_projects`)."""
+    return _origin(item)[2]
 
 
 def effective_sharing(requested, *ceilings):
@@ -92,7 +116,12 @@ class ProjectSharingMixin:
         if not ceilings:
             return 'private'
         return effective_sharing(source.get(key) or 'private', ceilings['person'], ceilings['project'],
-                                 ceilings['tenant'], source['visibility'], origin_ceiling(source))
+                                 ceilings['tenant'], source['visibility'], origin_ceiling(source),
+                                 *self._origin_ceilings(db, source['tenant'], origin_projects(source)))
+
+    def _origin_ceilings(self, db, tenant, projects):
+        """Current ceiling of each other project a source carries; unknown or inactive ones are private."""
+        return [self._sharing_ceiling(db, tenant, project) for project in projects]
 
     # Ingest ------------------------------------------------------------------
 
@@ -108,7 +137,8 @@ class ProjectSharingMixin:
         ceilings = self._ceilings(db, ctx['tenant'], value['project'], ctx['actor']) or {
             'person': 'private', 'project': 'private', 'tenant': 'private'}
         effective = effective_sharing(requested, ceilings['person'], ceilings['project'], ceilings['tenant'],
-                                      connection['visibility'], origin_ceiling(value))
+                                      connection['visibility'], origin_ceiling(value),
+                                      *self._origin_ceilings(db, ctx['tenant'], origin_projects(value)))
         # Unredacted originals are never shared more widely than their redacted passages.
         originals_effective = effective_sharing(originals, effective)
         return requested, effective, originals, originals_effective
@@ -122,23 +152,61 @@ class ProjectSharingMixin:
                 WHERE held.tenant=who.tenant AND held.principal=who.id)''', (ctx['tenant'], ctx['actor'])).fetchone()
         return bool(row)
 
-    def _level_reaches(self, db, ctx, project, level):
+    def _level_reaches(self, db, ctx, project, level, others=()):
+        """The level reaches the reader: organization, or team as a member of the project
+        and of every other project whose content the source carries."""
         if level == 'organization' and self._organization_reader(db, ctx):
             return True
-        return RANK.get(level, 0) >= RANK['team'] and self._project_member(db, ctx, project)
+        return (RANK.get(level, 0) >= RANK['team'] and self._project_member(db, ctx, project)
+                and all(db.execute('''SELECT 1 FROM enterprise_memberships m WHERE m.tenant=? AND m.project=?
+                    AND m.principal=? AND m.active=1''', (ctx['tenant'], name, ctx['actor'])).fetchone()
+                        for name in others))
+
+    def _origin_reaches(self, db, ctx, source):
+        """Python mirror of search_permissions.ORIGIN_REACHES for one source row and a non-owner.
+
+        Applies to every document, curated and derived ones included: the stored
+        origin ceiling and the current ceiling of every other project the source
+        carries (unknown or inactive = private) give a level; organization changes
+        nothing, team needs an active member of the source project and of every
+        other project, private reaches nobody but the owner."""
+        ceiling, _, others = _origin(source)
+        if source.get('origin_ceiling') is None and not others:
+            return True
+        project = db.execute('''SELECT p.id,o.default_max_sharing FROM enterprise_projects p
+            JOIN enterprise_organizations o ON o.id=p.tenant
+            WHERE p.tenant=? AND p.id=? AND p.active=1''', (source['tenant'], source['external_project'])).fetchone()
+        if not project:
+            return False
+        levels = [origin_ceiling(source)]
+        for name in others:
+            row = db.execute('''SELECT coalesce(p.max_sharing,o.default_max_sharing) level FROM enterprise_projects p
+                JOIN enterprise_organizations o ON o.id=p.tenant WHERE p.tenant=? AND p.id=? AND p.active=1''',
+                (source['tenant'], name)).fetchone()
+            levels.append(row['level'] if row else 'private')
+        level = lowest(*levels)
+        if level == 'organization':
+            return True
+        if level != 'team':
+            return False
+        return all(db.execute('''SELECT 1 FROM enterprise_memberships m WHERE m.tenant=? AND m.project=?
+            AND m.principal=? AND m.active=1''', (source['tenant'], name, ctx['actor'])).fetchone()
+                   for name in (source['external_project'], *others))
 
     def _passage_shared(self, db, ctx, source):
         """Python mirror of search_permissions.SHARE for one source row (reader is not the owner)."""
         if source.get('sharing') not in ('team', 'organization'):
             return False
-        return self._level_reaches(db, ctx, source['external_project'], self._current_level(db, source))
+        return self._level_reaches(db, ctx, source['external_project'], self._current_level(db, source),
+                                   origin_projects(source))
 
     def _originals_shared(self, db, ctx, source):
         """A retained original reaches a non-owner through its own level and every ordinary rule."""
         if source.get('originals_sharing') not in ('team', 'organization'):
             return False
         level = lowest(self._current_level(db, source, 'originals_sharing'), self._current_level(db, source))
-        return self._level_reaches(db, ctx, source['external_project'], level) and self._visible_source(db, ctx, source)
+        return (self._level_reaches(db, ctx, source['external_project'], level, origin_projects(source))
+                and self._visible_source(db, ctx, source))
 
     def _passage_readers(self, db, source):
         """Principals whose redacted-passage tier covers this source under current policy.
@@ -153,11 +221,14 @@ class ProjectSharingMixin:
         readers = {source['owner']}
         level = self._current_level(db, source) if source.get('sharing') in ('team', 'organization') else 'private'
         if level != 'private' and not source.get('principal_quarantine'):
-            members = {row['principal'] for row in db.execute('''SELECT m.principal FROM enterprise_memberships m
-                JOIN enterprise_projects p ON p.tenant=m.tenant AND p.id=m.project
-                JOIN enterprise_principals who ON who.tenant=m.tenant AND who.id=m.principal
-                WHERE m.tenant=? AND m.project=? AND m.active=1 AND p.active=1 AND who.active=1''',
-                (source['tenant'], source['external_project']))}
+            members = None
+            for name in (source['external_project'], *origin_projects(source)):
+                these = {row['principal'] for row in db.execute('''SELECT m.principal FROM enterprise_memberships m
+                    JOIN enterprise_projects p ON p.tenant=m.tenant AND p.id=m.project
+                    JOIN enterprise_principals who ON who.tenant=m.tenant AND who.id=m.principal
+                    WHERE m.tenant=? AND m.project=? AND m.active=1 AND p.active=1 AND who.active=1''',
+                    (source['tenant'], name))}
+                members = these if members is None else members & these
             if level == 'organization':
                 members |= {row['id'] for row in db.execute('''SELECT who.id FROM enterprise_principals who
                     WHERE who.tenant=? AND who.active=1 AND NOT EXISTS(SELECT 1 FROM enterprise_principal_quarantine held

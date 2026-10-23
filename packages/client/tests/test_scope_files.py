@@ -121,7 +121,7 @@ class Backend:
         if path.endswith('search'):
             return {'answerable': True, 'support': 'complete', 'results': [
                 {'id': 'doc-1', 'revision': 'rev-1', 'title': 'Synthetic', 'lesson': 'Synthetic lesson.',
-                 'evidence_status': 'discovery_only'}]}
+                 'evidence_status': 'discovery_only', 'origin': {'project': 'shared-docs', 'sharing': 'organization'}}]}
         return {'status': 'recorded'}
 
 

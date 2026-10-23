@@ -40,9 +40,21 @@ def inspect_projection(db):
 # ingest (min of the person setting, scope-file request, project and tenant
 # ceilings and connection visibility then), capped again by today's person
 # setting (`author`), project ceiling (or tenant default), tenant ceiling,
-# connection visibility and origin ceiling. 0 private, 1 team, 2 organization.
-# `origin_ceiling` is supplied by origin labels / session taint (forthcoming);
-# absent, it is organization and changes nothing.
+# connection visibility, origin ceiling, and the current ceiling of every other
+# project whose content the source carries (`origin_projects`; an unknown or
+# inactive one counts as private). 0 private, 1 team, 2 organization. Absent
+# origin keys change nothing (agenthub.project_sharing, agentclient.origin).
+# The origin terms of a policy row (agentclient.origin, migration 046): the stored
+# origin ceiling and the current ceiling of every other project the source carries
+# (an unknown or inactive one counts as private). Needs aliases `project` and
+# `organization` for the source project.
+ORIGIN_TERMS = """coalesce(array_position(ARRAY['team','organization'],
+                            coalesce(policy.definition->>'origin_ceiling','organization')),0),
+                        coalesce((SELECT min(CASE WHEN other.id IS NULL THEN 0 ELSE coalesce(array_position(
+                                ARRAY['team','organization'],coalesce(other.max_sharing,organization.default_max_sharing)),0) END)
+                            FROM jsonb_array_elements_text(coalesce(policy.definition->'origin_projects','[]'::jsonb)) named(id)
+                            LEFT JOIN enterprise_projects other ON other.tenant=project.tenant AND other.id=named.id
+                                AND other.active=1),2)"""
 LEVEL = """least(
                         coalesce(array_position(ARRAY['team','organization'],policy.definition->>'sharing'),0),
                         coalesce(array_position(ARRAY['team','organization'],policy.definition->>'visibility'),0),
@@ -50,8 +62,30 @@ LEVEL = """least(
                         coalesce(array_position(ARRAY['team','organization'],
                             coalesce(project.max_sharing,organization.default_max_sharing)),0),
                         coalesce(array_position(ARRAY['team','organization'],organization.max_sharing),0),
-                        coalesce(array_position(ARRAY['team','organization'],
-                            coalesce(policy.definition->>'origin_ceiling','organization')),0))"""
+                        """ + ORIGIN_TERMS + """)"""
+# A member of the source project must also be an active member of every other
+# project whose content the source carries (`origin_projects`).
+ORIGIN_MEMBERS = """NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(
+                                coalesce(policy.definition->'origin_projects','[]'::jsonb)) named(id)
+                            WHERE NOT EXISTS(SELECT 1 FROM enterprise_memberships carried
+                                WHERE carried.tenant=membership.tenant AND carried.project=named.id
+                                AND carried.principal=membership.principal AND carried.active=1))"""
+# Every document, curated and derived ones included, reaches a reader other than
+# the source's owner only as far as the source's origin allows: organization
+# changes nothing, team needs an active member of the source project and of every
+# other project it carries, private reaches nobody else. Sources without an origin
+# take the first branch, so their authorization is exactly as before. Mirrored by
+# ProjectSharingMixin._origin_reaches and search_origin_reaches (migration 046).
+ORIGIN_REACHES = """((policy.definition->>'origin_ceiling' IS NULL AND policy.definition->'origin_projects' IS NULL)
+                        OR EXISTS(SELECT 1 FROM enterprise_projects project
+                            JOIN enterprise_organizations organization ON organization.id=project.tenant
+                            WHERE project.tenant=policy.definition->>'tenant' AND project.id=policy.definition->>'project'
+                            AND project.active=1 AND CASE least(""" + ORIGIN_TERMS + """)
+                            WHEN 2 THEN true
+                            WHEN 1 THEN EXISTS(SELECT 1 FROM enterprise_memberships membership
+                                WHERE membership.tenant=project.tenant AND membership.project=project.id
+                                AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
+                            ELSE false END))"""
 CEILINGS = """SELECT 1 FROM enterprise_projects project
                     JOIN enterprise_organizations organization ON organization.id=project.tenant
                     JOIN enterprise_principals author ON author.tenant=project.tenant
@@ -73,10 +107,10 @@ SHARE = """(policy.definition->>'sharing' IN ('team','organization') AND EXISTS(
                                 WHERE held.tenant=reader.tenant AND held.principal=reader.id))
                         OR EXISTS(SELECT 1 FROM enterprise_memberships membership
                             WHERE membership.tenant=? AND membership.project=project.id
-                            AND membership.principal=? AND membership.active=1)
+                            AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
                     WHEN 1 THEN EXISTS(SELECT 1 FROM enterprise_memberships membership
                             WHERE membership.tenant=? AND membership.project=project.id
-                            AND membership.principal=? AND membership.active=1)
+                            AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
                     ELSE false END))"""
 
 
@@ -119,8 +153,9 @@ def policy_condition(ctx, *, raw=False):
                             WHERE membership.tenant=? AND membership.project=policy.definition->>'project'
                                 AND membership.principal=? AND membership.active=1 AND project.active=1)))
                     AND (coalesce((policy.definition->>'quarantined')::boolean,false)=false
-                        OR policy.definition->>'owner'=?)"""
-    readers_args = (ctx['actor'], ctx['tenant'], ctx['actor'], ctx['actor'])
+                        OR policy.definition->>'owner'=?)
+                    AND (policy.definition->>'owner'=? OR """ + ORIGIN_REACHES + """)"""
+    readers_args = (ctx['actor'], ctx['tenant'], ctx['actor'], ctx['actor'], ctx['actor'], ctx['actor'])
     if not raw:
         return '(' + common + """
                     AND """ + readers + """

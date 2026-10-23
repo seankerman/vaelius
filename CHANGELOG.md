@@ -29,6 +29,13 @@ The release workflow publishes the section whose heading matches the tag.
 ### Added
 
 - Docker `HEALTHCHECK` against the unauthenticated `/health` endpoint.
+- One sharing ladder, `private` < `team` < `organization`, for conversation passages
+  and, separately, for originals. Effective sharing is the minimum of the author's own
+  setting (`vaelius-client sharing`, default private), the scope-file request, the
+  project and tenant ceilings and the connection visibility, re-applied on every
+  request. Retrieval is project-scoped, with other projects' organization-shared
+  content as a labelled later tier and an explicit `scope = "all"`. Migration 045;
+  see [the privacy model](docs/PRIVACY_MODEL.md).
 
 ## [0.3.0] - 2026-10-09
 

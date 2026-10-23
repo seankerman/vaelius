@@ -76,6 +76,12 @@ def validate_response(path,value):
         elif route.endswith('list'):
             if not isinstance(value.get('documents'),list):raise ValueError('invalid_source_list')
         else:raise ValueError('unsupported_cloud_source_response')
+    elif route=='sharing':
+        levels={'private','team','organization'}
+        if (not {'principal','max_sharing'}<=set(value) or set(value)-{'principal','max_sharing','tenant_ceiling','changed'}
+                or value['max_sharing'] not in levels or value.get('tenant_ceiling','private') not in levels
+                or type(value.get('changed',False)) is not bool):
+            raise ValueError('invalid_sharing_response')
     elif route=='feedback':
         if (set(value)!={'status','id','classification','independently_verified'} or value['status']!='recorded' or value['classification']!='agent_self_report' or value['independently_verified'] is not False):raise ValueError('invalid_feedback_response')
     elif route=='preferences':

@@ -41,6 +41,9 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     enroll=sub.add_parser('enroll-project');enroll.add_argument('--root',required=True);enroll.add_argument('--name',required=True)
     scope=sub.add_parser('scope-status',help='show the project, capture mode and sharing request for a folder')
     scope.add_argument('--cwd',default=os.getcwd())
+    sharing=sub.add_parser('sharing',help='show or change your own sharing setting (the most any of your content is shared)')
+    sharing.add_argument('--set',dest='level',choices=('private','team','organization'),
+        help='private: only you; team: members of the project; organization: everyone in your organization')
     notice=sub.add_parser('notice',help='show what is captured for a project, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     args=parser.parse_args(argv)
@@ -118,7 +121,20 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             result={'cwd':str(Path(args.cwd).expanduser().resolve()),'scope':value,
                 'paused':bool(config.get('paused')),'scope_files':config.get('scope_files',['.vaelius']),
                 'scope_enrollments':enrollments(home),
-                'note':'sharing is a request; the service applies project policy and membership'}
+                'note':'sharing and originals are requests; the service applies your own sharing setting, '
+                       'project and tenant policy and membership'}
+        elif args.command=='sharing':
+            # Your own ceiling. Lowering hides already shared content on the next
+            # search; raising applies to what is captured from now on.
+            from agentclient import capture_notice
+            request={} if args.level is None else {'max_sharing':args.level}
+            value=enterprise_client(config,timeout=5).request('/enterprise/v3/sharing',request)
+            try:capture_notice.remember_personal_sharing(home,value['max_sharing'])
+            except (OSError,ValueError):pass
+            result={'max_sharing':value['max_sharing'],'changed':value.get('changed',False),
+                'tenant_ceiling':value.get('tenant_ceiling'),
+                'note':'your setting caps every project and repository request; lowering applies at once, '
+                       'raising applies to new captures only'}
         elif args.command=='notice':
             from agentclient import capture_notice
             value=capture_notice.fetch(config,args.project,timeout=5)

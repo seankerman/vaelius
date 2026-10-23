@@ -1,0 +1,262 @@
+# Privacy model
+
+This is the single description of who can read what in a Vaelius service, written
+for security reviewers. It states the rules the service enforces, who controls each
+of them, when they are evaluated and what they do not cover. Details and commands
+live in the linked documents.
+
+## Summary
+
+- Every request is made by an authenticated **principal** in one **tenant**.
+  Nothing crosses tenants.
+- Captured content has one sharing **level** on a single ladder:
+  `private` < `team` < `organization`.
+- A source's level is the **minimum** of the author's own setting, the
+  repository's request, the operator's project and tenant ceilings, the capture
+  connection's visibility and an origin ceiling. Any one of them can keep content
+  private; none of them alone can share it.
+- The level is stored when the source is captured, and every ceiling is applied
+  again on **every** request. Lowering any ceiling hides content on the next
+  request; raising one never exposes content stored at a lower level.
+- Unredacted **originals** have their own level, private by default and never
+  above the level of their redacted passages.
+- Retrieval returns the **current project** first. Other projects' content arrives
+  only when it is shared with the whole organization, as a separate, labelled tier,
+  unless the caller explicitly asks for every project it may read.
+- Every delivered item says where it came from (project, author, capture time) and
+  carries a machine-readable origin label (project and current sharing level).
+
+## Identity
+
+A principal is a person (or, for delegation, a service acting for a person)
+registered in a tenant. Principals authenticate with credentials issued after an
+identity-provider login (OAuth 2.0 with PKCE and token introspection) or an
+operator enrollment. A credential carries **actions**, such as `read`, `ingest`,
+`source_read`, `correct`, `withdraw` and `policy`; every route needs a specific
+action, and a route that is not classified is refused. Identity, credential state
+and delegation are checked again at the final delivery checkpoint, so a revoked
+credential or a deactivated principal stops receiving content immediately.
+
+A **delegation** lets one principal act for another with a subset of that person's
+actions and only inside named projects. Delegated credentials never receive
+organization-wide content (see below).
+
+See [enterprise identity and authorization](ENTERPRISE_AUTH.md).
+
+## Tenants, projects and membership
+
+- A **tenant** is an organization. Every table and every policy check is tenant
+  scoped.
+- A **project** usually corresponds to a repository or a body of work. A principal
+  is a **member** of a project through an explicit operator grant or a directory
+  group mapped to the project. Membership can be revoked at any time; it is checked
+  on every request, never cached.
+- A **capture connection** is owned by one principal, belongs to one project and
+  has a visibility (`private`, `team` or `organization`) chosen when it is enrolled.
+  Its owner can narrow it and restrict it to listed readers; it cannot be widened.
+
+## What is stored
+
+| Content | What it is | Read with |
+| --- | --- | --- |
+| Conversation passages | Exact spans of a captured source after deterministic credential redaction: search results, cited evidence, surrounding conversation context | `read` |
+| Curated and derived documents | Reviewed notes, optional model-curated knowledge, native document sections | `read` |
+| Retained originals | The complete canonical source and uploaded original documents, unaltered by passage indexing | `read` and `source_read` |
+
+Redaction is pattern based and not universal; see
+[data and security boundaries](DATA_BOUNDARIES.md).
+
+## The sharing ladder
+
+| Level | Who can read, besides the author |
+| --- | --- |
+| `private` | nobody |
+| `team` | active members of the source's project |
+| `organization` | every active principal of the tenant, except principals under an operator quarantine; members of the project as for `team` |
+
+"Organization" excludes deactivated principals (refused at authentication and
+again by the policy itself), quarantined principals, credentials without `read`
+(capture-only or backend credentials) and delegated credentials, which stay inside
+their delegated projects and never receive the organization scope. No further
+condition applies to `organization` beyond those of `team`: there is no waiting
+period and no requirement on how the content was captured.
+
+Every ordinary source rule applies on top of the level: tenant isolation,
+withdrawal and deletion, legal holds, operator quarantine of the author (held
+content stays with its author), delegation limits, connection reader lists and
+connection freshness.
+
+## Effective sharing: the minimum of every term
+
+```
+effective = min(person setting, scope-file request, project ceiling,
+                tenant ceiling, connection visibility, origin ceiling)
+```
+
+| Term | Set by | Where | Default |
+| --- | --- | --- | --- |
+| Person setting | the author, for all of their own content | `vaelius-client sharing --set LEVEL` (`POST /enterprise/v3/sharing`); stored as `enterprise_principals.max_sharing` | `private` |
+| Scope-file request | whoever can edit the repository | `.vaelius`: `sharing` (passages) and `originals`; sent with each captured event ([client](CLIENT.md#repository-scope-files)) | `private` |
+| Project ceiling | the operator | `vaelius sharing-policy --project P --max-sharing LEVEL`; a project without its own value inherits the tenant default | tenant default |
+| Tenant ceiling | the operator | `vaelius sharing-policy --tenant-ceiling LEVEL`; caps every project and person | `organization` for new tenants |
+| Connection visibility | the connection owner, at enrollment | connection enrollment; can only be narrowed | chosen at enrollment |
+| Origin ceiling | the service | forthcoming (below); the most permissive level until then | `organization` (no effect) |
+
+The tenant default for projects (`vaelius sharing-policy --max-sharing LEVEL`
+without `--project`) is `organization` for tenants created after migration 045.
+
+A scope file is a request, never a grant: anyone who can edit a repository can edit
+its scope file, and the minimum means the file can only lower what the person and
+the operator allow. The person's own setting defaults to `private`, so nobody's
+content is shared until that person chooses to share it, whatever a repository or
+an operator configures.
+
+Changing one's own setting requires a credential of that person with the `ingest`
+or `policy` action; a delegated credential can read the setting but never change
+it. Every change is audited.
+
+## When it is evaluated
+
+**At capture**, the service computes the effective level from the terms at that
+moment and stores it per source (`enterprise_sources.sharing` and
+`originals_sharing`), next to what was requested (`sharing_requested`,
+`originals_requested`). A request above the effective level is audited
+(`sharing_request` / `capped_<level>`).
+
+**At every request**, the stored level is capped again by the current person
+setting, project ceiling (or tenant default), tenant ceiling, connection visibility
+and origin ceiling. The result decides who may read it.
+
+| Change | Effect |
+| --- | --- |
+| Author lowers their setting | Their shared content narrows on the next request, including results already delivered (delivery is rechecked) |
+| Operator lowers a project ceiling, the tenant default or the tenant ceiling | The same, for every source the ceiling covers |
+| Connection owner narrows a connection | The same, permanently; passages are re-indexed |
+| Membership revoked, principal deactivated or quarantined | That principal loses the content on the next request |
+| Any ceiling raised | Only content stored at the higher level becomes visible again. Content captured while a term was lower stays at the level it was stored with |
+
+So raising a setting applies to what is captured from then on, and lowering one is
+a revocation that takes effect immediately.
+
+## Originals and passages
+
+Sharing passages never shares originals. An original has its own level
+(`originals` in the scope file, `private` by default), capped by the same terms and
+additionally by the passage level: an unredacted original is never visible more
+widely than its redacted passages. Reading an original also requires the
+`source_read` action, which is not part of default enrollment. An owner can still
+grant a specific source or connection's originals to a principal or project
+explicitly ([raw-access policy](DATA_BOUNDARIES.md#raw-access-policy)).
+
+## Curated and derived documents
+
+A curated or derived document is visible at the level of its capture connection's
+visibility, and only when every source it depends on is still visible to the
+reader under the ordinary source rules. The person setting, the scope-file request
+and the project and tenant ceilings above govern conversation passages and
+originals; they do not narrow curated documents, which exist only when an operator
+enables curation or an owner submits a reviewed note.
+
+## Enforcement
+
+One rule, three implementations that a regression test keeps in agreement:
+
+1. the indexed SQL predicate (`agenthub.search_permissions`), used to authorize
+   and re-validate results at delivery;
+2. the PostgreSQL row-level security function `search_document_allowed` and its
+   helper `search_passage_shared` (migration 045), applied by a restricted
+   database role to every ranking query, so a denied row never leaves the database;
+3. the Python oracle (`_visible_source`, `_document_allowed` and
+   `agenthub.raw_access`) used for originals, evidence and explicit releases.
+
+Ceilings are read from their tables inside each check; nothing about sharing is
+cached between requests. The stored level of a passage's own source is also copied
+to `enterprise_documents.raw_shared` (0, 1, 2) as a prefilter that lets other
+people's private passages be skipped cheaply; the full check still decides.
+
+## Project-scoped retrieval and the organization tier
+
+Search, the MCP `search_memory` tool and automatic context injection take the
+current project from the request (the client's project binding).
+
+| Scope | Returns |
+| --- | --- |
+| `project` (default) | Content of the current project the reader may read, then, as a separate later tier, content from other projects whose current level is `organization` |
+| `all` (explicit: MCP/HTTP `scope = "all"`) | Additionally, content from other projects the reader may read through membership or authorship |
+
+Without a current project nothing is narrowed. The scope narrows retrieval only;
+it never grants anything, and every item still passes the full permission check.
+Results are delivered tier by tier, keeping relevance order within a tier. In the
+lexical channel current-project matches fill the bounded candidate pool before any
+other project's, so a large shared corpus elsewhere cannot crowd them out.
+
+## Provenance and origin labels
+
+Every delivered item carries `provenance` (author handle, project, capture time,
+source type, original or derived wording) and `origin`, a machine-readable label:
+
+```json
+{"origin": {"project": "maple", "sharing": "team"}, "tier": "project"}
+```
+
+`origin.sharing` is the item's current level (the lowest over the sources it
+depends on); `origin.project` is `null` when the sources span several projects.
+Against a current project each search item also has a `tier` (`project`,
+`other_project` or `organization`), and any item from outside the current project
+carries a human-readable line, for example
+`"from": "birch · alice · 2026-10-01"`. Both appear in the HTTP response, the MCP
+tool output and the injected context. Provenance is read after authorization and
+never widens delivery. See [shared-memory governance](MEMORY_GOVERNANCE.md).
+
+## Origin labels and session taint (forthcoming)
+
+A later change will derive an **origin ceiling** from where content came from, for
+example a session that recalled restricted memory, so that anything derived from
+recalled memory inherits the original restriction. The hook already exists as a
+term of the minimum (`agenthub.project_sharing.origin_ceiling` and the policy key
+`origin_ceiling`); it is the most permissive level until that change supplies it,
+so today it has no effect.
+
+## Retention, erasure and legal hold
+
+Withdrawal blocks a source and everything derived from it; deletion purges source,
+derived content, vectors and retained objects. Scheduled retention, legal holds and
+subject erasure use the same purge, and a legal hold turns a deletion into a
+withdrawal until it is released. Sharing levels never extend retention. See
+[data lifecycle](DATA_LIFECYCLE.md).
+
+## Access reviews
+
+The content-free access report lists, per principal, credentials and actions
+(calling out `source_read`), project memberships and their origin, delegations,
+connection reader grants, reviewed-release grants, last activity and the person's
+own sharing setting (`max_sharing`). Reviewers approve or revoke each entitlement;
+revocations take effect immediately. See [access reviews](ACCESS_REVIEW.md).
+`vaelius sharing-policy` reports the ceilings, how many people chose each level
+and, per project, how many sources are stored at each level and how many requests
+were capped.
+
+## Limits
+
+- The service operator is trusted. Database administrators can read stored content
+  regardless of application policy.
+- Sharing levels govern reads through Vaelius. They do not recall copies a reader
+  already made, or text an agent produced from delivered content.
+- Redaction reduces exposure of credentials; it is not anonymization.
+
+## Upgrading to migration 045
+
+Migration 045 is additive and widens nothing:
+
+- existing tenants keep their project default and get a tenant ceiling of `team`,
+  the highest level that existed before; an operator raises it to allow
+  `organization`;
+- existing principals who own a source already stored as `team` get a person
+  setting of `team`, so nothing currently visible disappears; every other existing
+  principal, and every new one, starts at `private`;
+- existing originals are `private`;
+- policy definitions of existing sources are unchanged, so the search projection
+  needs no rebuild.
+
+A client that requests `organization` or `originals` needs a service with this
+migration; an older service rejects those fields.

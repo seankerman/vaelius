@@ -59,7 +59,7 @@ def validate_source(value):
 
 def validate_search(value):
     _object(value, {"version", "query"}, {"project", "limit", "mode", "as_of", "time_mode",
-                                           "session", "boundary_id"})
+                                           "session", "boundary_id", "scope"})
     _text(value["query"], MAX_QUERY_CHARS)
     if "project" in value: _text(value["project"], 256)
     if "session" in value: _text(value["session"], 256)
@@ -76,6 +76,11 @@ def validate_search(value):
         raise ValueError("invalid_search_limit")
     if value.get("mode", "explicit") not in {"explicit", "automatic"}:
         raise ValueError("invalid_search_mode")
+    # Retrieval reach with a project: "project" (default) is that project plus
+    # organization-shared content from others; "all" adds every project the
+    # reader may read. It narrows retrieval and never grants access.
+    if value.get("scope", "project") not in {"project", "all"}:
+        raise ValueError("invalid_search_scope")
     return value
 
 

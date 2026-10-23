@@ -98,8 +98,18 @@ def derived_provenance(db, groups):
     return result
 
 
-def document_provenance(db, document_ids):
-    """{document_id: (block, flagged)}; temporal assertion IDs resolve to their document."""
+def document_metadata(db, document_ids):
+    """{id: (block, flagged, origin)}; temporal assertion IDs resolve to their document.
+
+    `origin` is the machine-readable origin label: the source project (None when
+    the sources span several) and the CURRENT sharing level, the lowest over every
+    source. A passage's level is its stored level under every current ceiling
+    (agenthub.project_sharing); a curated or derived document's level is the
+    capture connection's visibility. Later layers can make anything derived from a
+    delivered item inherit this restriction.
+    """
+    from agenthub.search_permissions import LEVEL
+    from agenthub.project_sharing import SHARING
     ids = sorted({i for i in document_ids if isinstance(i, str)})
     if not ids or not _postgres(db):
         return {}
@@ -110,36 +120,66 @@ def document_provenance(db, document_ids):
             'SELECT assertion_id,document_id FROM knowledge_temporal_assertions WHERE assertion_id=ANY(?::text[])',
             (temporal,)).fetchall()}
     documents = sorted({assertions.get(i, i) for i in ids})
-    rows = db.execute('''WITH requested AS MATERIALIZED (
-            SELECT x.document_id,x.source_id FROM enterprise_dependencies x WHERE x.document_id=ANY(?::text[])
-        ), sourced AS (''' + _SOURCE_SQL.replace('SELECT s.id,', 'SELECT q.document_id,s.id,', 1).replace(
-            'FROM enterprise_sources s', 'FROM requested q JOIN enterprise_sources s ON s.id=q.source_id', 1) + ''')
-        SELECT x.document_id,ed.representation,array_agg(DISTINCT x.owner) owners,
-            array_agg(DISTINCT x.external_project) projects,min(x.created) first_captured,
-            max(x.created) last_captured,bool_or(x.instruction_like=1) flagged,
-            array_agg(DISTINCT x.source_type) source_types,array_agg(DISTINCT x.kind) kinds,
-            count(*) sources
-        FROM sourced x JOIN enterprise_documents ed ON ed.id=x.document_id
-        GROUP BY x.document_id,ed.representation''', (documents,)).fetchall()
+    rows = db.execute(_METADATA_SQL.replace('<LEVEL>', LEVEL), (documents,)).fetchall()
     found = {}
     for row in rows:
         original = row['representation'] in ORIGINAL and row['sources'] == 1
         kinds = [k for k in row['kinds'] if k]
         role = ROLE.get(kinds[0]) if original and len(kinds) == 1 else None
+        projects = sorted(set(row['projects']))
         found[row['document_id']] = (_block(row['owners'], row['projects'], row['first_captured'],
                                             row['last_captured'], row['source_types'],
                                             'original' if original else 'derived', role),
-                                     bool(row['flagged']))
+                                     bool(row['flagged']),
+                                     {'project': projects[0] if len(projects) == 1 else None,
+                                      'sharing': SHARING[row['level'] or 0]})
     result = {}
     for ident in ids:
         document = assertions.get(ident, ident)
         if document in found:
-            block, flagged = found[document]
+            block, flagged, origin = found[document]
             if ident.startswith('ta_'):
                 block = dict(block, wording='derived')
                 block.pop('role', None)
-            result[ident] = (block, flagged)
+            result[ident] = (block, flagged, origin)
     return result
+
+
+_METADATA_SQL = '''WITH requested AS MATERIALIZED (
+        SELECT x.document_id,x.source_id FROM enterprise_dependencies x WHERE x.document_id=ANY(?::text[])
+    ), sourced AS (
+        SELECT q.document_id,s.id,s.owner,s.external_project,s.created,s.instruction_like,m.kind,
+            CASE WHEN r.source_id IS NULL THEN 'agent'
+                 WHEN jsonb_array_length(c.source_types::jsonb)=1 THEN c.source_types::jsonb->>0
+                 ELSE r.payload::jsonb->>'source_type' END AS source_type,
+            CASE WHEN ed.representation!='raw'
+                     THEN coalesce(array_position(ARRAY['team','organization'],s.visibility),0)
+                 WHEN project.id IS NULL OR author.id IS NULL THEN 0
+                 ELSE <LEVEL> END AS level
+        FROM requested q JOIN enterprise_sources s ON s.id=q.source_id
+        JOIN enterprise_documents ed ON ed.id=q.document_id
+        LEFT JOIN memories m ON m.id=s.id
+        LEFT JOIN backend_source_revisions r ON r.source_id=s.id
+        LEFT JOIN backend_connections c ON c.id=r.connection
+        LEFT JOIN search_source_policies mapping ON mapping.source_id=s.id
+        LEFT JOIN search_policies policy ON policy.id=mapping.policy_id
+        LEFT JOIN enterprise_projects project ON project.tenant=s.tenant AND project.id=s.external_project
+            AND project.active=1
+        LEFT JOIN enterprise_organizations organization ON organization.id=s.tenant
+        LEFT JOIN enterprise_principals author ON author.tenant=s.tenant AND author.id=s.owner
+    )
+    SELECT x.document_id,ed.representation,array_agg(DISTINCT x.owner) owners,
+        array_agg(DISTINCT x.external_project) projects,min(x.created) first_captured,
+        max(x.created) last_captured,bool_or(x.instruction_like=1) flagged,
+        array_agg(DISTINCT x.source_type) source_types,array_agg(DISTINCT x.kind) kinds,
+        count(*) sources,min(x.level) level
+    FROM sourced x JOIN enterprise_documents ed ON ed.id=x.document_id
+    GROUP BY x.document_id,ed.representation'''
+
+
+def document_provenance(db, document_ids):
+    """{document_id: (block, flagged)}; temporal assertion IDs resolve to their document."""
+    return {ident: (block, flagged) for ident, (block, flagged, _) in document_metadata(db, document_ids).items()}
 
 
 def _text(item, keys):
@@ -156,10 +196,42 @@ def decorate(item, block, flagged, text_keys):
     return item
 
 
-def decorate_cards(db, cards):
-    known = document_provenance(db, [card['id'] for card in cards])
-    return [decorate(card, *known.get(card['id'], (None, False)), ('title', 'lesson', 'text'))
-            for card in cards]
+# Delivery order: the current project, then other projects the reader belongs to
+# (only with scope "all"), then other projects' organization-shared content.
+TIERS = ('project', 'other_project', 'organization')
+
+
+def origin_line(origin, block):
+    """Human-readable source of an item from outside the current project."""
+    block = block or {}
+    project = (origin or {}).get('project') or 'several projects'
+    date = (block.get('captured_at') or 'unknown date')[:10]
+    return 'from ' + ' · '.join((project, block.get('author', 'unknown'), date))
+
+
+def decorate_cards(db, cards, project=None):
+    """Provenance, the origin label and, against the current project, the tier.
+
+    Items from another project (or every item when no project is current) also
+    carry `from`: "from <project> · <author> · <date>". With a current project the
+    result is ordered by tier, keeping relevance order within each tier.
+    """
+    known = document_metadata(db, [card['id'] for card in cards])
+    output = []
+    for card in cards:
+        block, flagged, origin = known.get(card['id'], (None, False, None))
+        item = decorate(card, block, flagged, ('title', 'lesson', 'text'))
+        if origin:
+            item['origin'] = origin
+            if project is not None:
+                item['tier'] = ('project' if origin['project'] == project else
+                                'organization' if origin['sharing'] == 'organization' else 'other_project')
+            if item.get('tier') != 'project':
+                item['from'] = origin_line(origin, block)
+        output.append(item)
+    if project is not None:
+        output.sort(key=lambda item: TIERS.index(item.get('tier', 'project')))
+    return output
 
 
 def _fit_card(card, card_bound):

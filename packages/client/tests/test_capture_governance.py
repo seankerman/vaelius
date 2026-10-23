@@ -76,6 +76,8 @@ class CaptureGovernanceTests(unittest.TestCase):
         self.assertEqual(delivered['lesson'], CARD['lesson'])
         preference = next(card for card in cards if card['id'] == 'pref')
         self.assertEqual(preference['provenance']['author'], 'you')
+        self.assertEqual(preference['origin'], {'project': 'demo', 'sharing': 'private'})
+        self.assertIn('other projects marked by tier and from', prefix)
 
     def test_session_status_every_session_and_full_notice_once_per_project(self):
         first = self.hook('SessionStart', Backend(NOTICE))
@@ -98,6 +100,56 @@ class CaptureGovernanceTests(unittest.TestCase):
         prompt = self.hook('UserPromptSubmit', Backend(NOTICE), prompt='anything')
         self.assertNotIn('systemMessage', prompt)
         self.assertEqual(json.loads((self.home / 'config.json').read_text()), self.config)
+
+    def test_status_and_notice_show_the_persons_own_sharing_setting(self):
+        notice = dict(NOTICE, readers=dict(NOTICE['readers'], personal_sharing='team',
+                                           project_ceiling='organization', passage_sharing_limit='team'))
+        first = self.hook('SessionStart', Backend(notice))['systemMessage']
+        self.assertIn('Your sharing setting: team', first)
+        self.assertIn('shared with at most members of this project', first)
+        self.assertIn('vaelius-client sharing --set private|team|organization', first)
+        # Later sessions use the remembered setting without another request.
+        later = Backend(notice)
+        second = self.hook('SessionStart', later, session_id='s2')['systemMessage']
+        self.assertIn('Your sharing setting: team', second)
+        self.assertFalse(any(path.endswith('capture-notice') for path, _ in later.calls))
+        # The person changes it themselves; the status line follows.
+        from agentclient import cli
+
+        class Sharing:
+            def __init__(self):
+                self.calls = []
+
+            def request(self, path, value=None):
+                self.calls.append((path, value))
+                return {'principal': 'alice', 'max_sharing': 'organization', 'tenant_ceiling': 'organization',
+                        'changed': True}
+        service = Sharing()
+        with patch('agentclient.transport.enterprise_client', return_value=service), \
+                patch('builtins.print') as printed:
+            cli.main(['--home', str(self.home), 'sharing', '--set', 'organization'])
+        self.assertEqual(service.calls, [('/enterprise/v3/sharing', {'max_sharing': 'organization'})])
+        self.assertEqual(json.loads(printed.call_args[0][0])['max_sharing'], 'organization')
+        third = self.hook('SessionStart', Backend(notice), session_id='s3')['systemMessage']
+        self.assertIn('Your sharing setting: organization', third)
+        with patch('agentclient.transport.enterprise_client', return_value=service), patch('builtins.print'):
+            cli.main(['--home', str(self.home), 'sharing'])
+        self.assertEqual(service.calls[-1], ('/enterprise/v3/sharing', {}))
+        with self.assertRaises(SystemExit):
+            with patch('sys.stderr'):
+                cli.main(['--home', str(self.home), 'sharing', '--set', 'everyone'])
+
+    def test_sharing_response_is_validated_at_transport_boundary(self):
+        from agentclient.cloud_contract import validate_response
+        good = {'principal': 'alice', 'max_sharing': 'team', 'tenant_ceiling': 'organization', 'changed': False}
+        self.assertEqual(validate_response('/enterprise/v3/sharing', good), good)
+        for bad in (dict(good, max_sharing='everyone'), dict(good, extra=1), {'max_sharing': 'team'},
+                    dict(good, changed='yes'), dict(good, tenant_ceiling='public')):
+            with self.assertRaises(ValueError):
+                validate_response('/enterprise/v3/sharing', bad)
+        # Older clients keep accepting the notice: the new detail lives inside `readers`.
+        self.assertTrue(validate_response('/enterprise/v3/capture-notice', dict(NOTICE, readers=dict(
+            NOTICE['readers'], personal_sharing='team', passage_sharing_limit='team'))))
 
     def test_built_in_notice_when_service_is_unreachable(self):
         result = self.hook('UserPromptSubmit', Backend(None), prompt='first prompt in this project')

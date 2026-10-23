@@ -163,10 +163,12 @@ def main(argv=None):
     parser.add_argument('--since',help='epoch seconds or ISO-8601 with offset');parser.add_argument('--until')
     parser.add_argument('--apply',action='store_true',help='principal-withdraw: apply; default is a dry run')
     parser.add_argument('--limit',type=int,default=200)
-    # Project sharing ceiling (see docs/DATA_BOUNDARIES.md#team-shared-conversation-passages).
+    # Sharing ceilings (see docs/PRIVACY_MODEL.md).
     parser.add_argument('--project',help='sharing-policy: project whose ceiling is set')
-    parser.add_argument('--max-sharing',choices=['private','team','inherit'],
+    parser.add_argument('--max-sharing',choices=['private','team','organization','inherit'],
         help='sharing-policy: ceiling; with --project, inherit uses the tenant default; without it sets that default')
+    parser.add_argument('--tenant-ceiling',choices=['private','team','organization'],
+        help='sharing-policy: hard ceiling for the whole tenant, above every project setting')
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
@@ -230,10 +232,13 @@ def main(argv=None):
         elif args.command=='readiness':store.require_ready();value={'ready':True,'tenant':args.tenant}
         elif args.command in GOVERNANCE_COMMANDS:value=governance_command(store,args,parser)
         elif args.command=='sharing-policy':
-            if args.max_sharing is None:value=store.sharing_policy_status()
+            if args.tenant_ceiling is not None:
+                if args.max_sharing is not None or args.project:parser.error('--tenant-ceiling stands alone')
+                value=store.set_tenant_sharing_ceiling(args.tenant_ceiling)
+            elif args.max_sharing is None:value=store.sharing_policy_status()
             elif args.project:
                 value=store.set_project_sharing(args.project,None if args.max_sharing=='inherit' else args.max_sharing)
-            elif args.max_sharing=='inherit':parser.error('the tenant default needs private or team')
+            elif args.max_sharing=='inherit':parser.error('the tenant default needs private, team or organization')
             else:value=store.set_tenant_sharing_default(args.max_sharing)
         elif args.command in ('tenant-disable','tenant-enable'):
             from agenthub.postgres import TenantRegistry

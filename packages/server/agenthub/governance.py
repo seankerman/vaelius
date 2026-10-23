@@ -244,13 +244,14 @@ class GovernanceMixin:
 
     def decorate_delivery(self, path, result, request=None):
         """Attach per-item provenance after authorization; never widens delivery."""
-        from agenthub.provenance import decorate_cards, bound_search, document_provenance, decorate
+        from agenthub.provenance import decorate_cards, bound_search, document_metadata, decorate
         if not isinstance(result, dict):
             return result
         with self.open() as state:
             db = state.db
             if path == '/enterprise/v3/search':
-                cards = decorate_cards(db, result.get('results', []))
+                # Current project first, then other projects' tiers, each labelled.
+                cards = decorate_cards(db, result.get('results', []), project=(request or {}).get('project'))
                 bound = 1500 if (request or {}).get('mode') == 'automatic' else 4000
                 # Source discovery adds `notice`/`truncated`, which the v3 client
                 # contract rejects; deliver the documented envelope instead.
@@ -263,9 +264,12 @@ class GovernanceMixin:
             ident = result.get('id')
             if not isinstance(ident, str):
                 return result
-            block, flagged = document_provenance(db, [ident]).get(ident, (None, False))
+            block, flagged, origin = document_metadata(db, [ident]).get(ident, (None, False, None))
             keys = ('claim',) if 'claim' in result else ('episodes',)
-            return decorate(result, block, flagged, keys)
+            item = decorate(result, block, flagged, keys)
+            if origin:
+                item['origin'] = origin
+            return item
 
     # Capture notice ----------------------------------------------------------
 
@@ -286,6 +290,7 @@ class GovernanceMixin:
             with self.open() as state:
                 row = state.db.execute('''SELECT project,visibility,reader_ids,active FROM backend_connections
                     WHERE id=? AND tenant=? AND owner=?''', (value['connection'], ctx['tenant'], ctx['actor'])).fetchone()
+                ceilings = self._ceilings(state.db, ctx['tenant'], row['project'], ctx['actor']) if row else None
             if row is None or ('project' in value and row['project'] != value['project']):
                 from agenthub.enterprise import Denied
                 raise Denied()
@@ -297,4 +302,12 @@ class GovernanceMixin:
                 describe += ', limited to ' + str(readers) + ' listed reader' + ('s' if readers != 1 else '') + ' and you'
             result['readers'] = {'visibility': row['visibility'], 'description': describe,
                                  'connection_active': bool(row['active'])}
+            if ceilings:
+                # The person's own setting and how widely passages can be shared at
+                # most; a scope-file request can only lower it further.
+                from agenthub.project_sharing import lowest
+                result['readers'].update(personal_sharing=ceilings['person'],
+                    project_ceiling=lowest(ceilings['project'], ceilings['tenant']),
+                    passage_sharing_limit=lowest(ceilings['person'], ceilings['project'], ceilings['tenant'],
+                                                 row['visibility']))
         return result

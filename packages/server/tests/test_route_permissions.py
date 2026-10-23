@@ -151,6 +151,16 @@ class RouteGateTests(unittest.TestCase):
                 response, calls = self.request(method, path, set(), data=body(method, path), authenticated=False)
                 self.assertEqual((response.status_code, calls), (404, []))
 
+    def test_changing_ones_own_sharing_needs_ingest_or_policy(self):
+        change = {'max_sharing': 'organization'}
+        response, calls = self.request('POST', '/enterprise/v3/sharing', {'read', 'audit'}, data=change)
+        self.assertEqual((response.status_code, calls), (404, []))
+        for actions in ({'ingest'}, {'policy'}):
+            response, calls = self.request('POST', '/enterprise/v3/sharing', actions, data=change)
+            self.assertEqual((response.status_code, calls), (200, ['sharing_setting']))
+        response, calls = self.request('POST', '/enterprise/v3/sharing', {'read'}, data={})
+        self.assertEqual((response.status_code, calls), (200, ['sharing_setting']))
+
     def test_unknown_route_is_refused_before_any_business_method(self):
         response, calls = self.request('POST', '/enterprise/v9/unclassified', EVERY_ACTION, data={})
         self.assertEqual((response.status_code, calls), (404, []))

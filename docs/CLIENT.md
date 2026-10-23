@@ -187,7 +187,8 @@ A repository can declare how Vaelius treats it with a checked-in TOML file named
 ```toml
 project = "example-repo"   # the service project name
 capture = "on"             # on | read-only | off
-sharing = "private"        # private | team
+sharing = "private"        # private | team | organization  (redacted passages)
+originals = "private"      # private | team | organization  (unredacted originals)
 ```
 
 | `capture` | Capture | Automatic recall |
@@ -221,11 +222,40 @@ Precedence, from strongest:
 
 An unreadable or invalid scope file fails closed: no capture and no recall there.
 
-`sharing = "team"` is a **request**. It is sent with each captured event, and the
-service caps it by the operator's project policy and the connection's visibility,
-so editing the file can never widen access beyond what the operator allows; see
-[team-shared conversation passages](DATA_BOUNDARIES.md#team-shared-conversation-passages).
-`private` is never sent, so older services keep working for private capture.
+`sharing` and `originals` are **requests**. They are sent with each captured event,
+and the service caps them by your own sharing setting (below), the operator's
+project and tenant ceilings and the connection's visibility, so editing the file
+can never widen access beyond what you and the operator allow. Originals are never
+shared above passages. See the [privacy model](PRIVACY_MODEL.md) and
+[shared conversation passages](DATA_BOUNDARIES.md#shared-conversation-passages-and-originals).
+`private` is never sent, so older services keep working for private capture; a
+service before migration 045 rejects `organization` and `originals`.
+
+### Your own sharing setting
+
+Your setting is the most any of your captured content is shared, in every project
+and whatever a repository asks for. It starts at `private`:
+
+```sh
+vaelius-client --home /absolute/private/client-profile sharing                       # show it
+vaelius-client --home /absolute/private/client-profile sharing --set team            # project members
+vaelius-client --home /absolute/private/client-profile sharing --set organization    # everyone in your organization
+vaelius-client --home /absolute/private/client-profile sharing --set private         # only you
+```
+
+Lowering it hides your already shared content on the next search. Raising it
+applies to what is captured from then on; content captured while it was lower
+stays at that level. Only you can change it (a delegated credential cannot), and
+each change is audited. The session status line shows it.
+
+### Which projects recall reaches
+
+Automatic context and `search_memory` return memory from the current project
+first. Content other projects shared with the whole organization follows as a
+separate tier; each such item says where it came from
+(`"from": "<project> · <author> · <date>"`). Other projects you belong to are
+searched only when you ask: the MCP tool's `scope = "all"`, or `"scope": "all"` in
+an HTTP search request.
 
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
@@ -245,7 +275,7 @@ everything else (tags, team, search filters, nested keys) is ignored:
 | `project` | project name |
 | `capture` | as above |
 | `mode` | `default` → `on`, `read-only` → `read-only`, `disabled` → `off` (used when `capture` is absent) |
-| `sharing` | as above |
+| `sharing`, `originals` | as above |
 
 A legacy file without `project` only adjusts an explicitly enrolled project.
 
@@ -253,9 +283,10 @@ A legacy file without `project` only adjusts an explicitly enrolled project.
 
 Login and `enroll-project` print the organization's capture notice: what is
 captured (prompts, assistant replies, tool calls and results), who can read it under
-the service's policy, and how to pause or withdraw. The hook shows the full notice
-the first time a project is captured and one capture ON/OFF status line at the start
-of every session. Displays are recorded in the profile's `notice-acknowledgements.json`.
+the service's policy, your own sharing setting and how widely passages in that
+project can be shared at most, and how to pause or withdraw. The hook shows the full
+notice the first time a project is captured and one capture ON/OFF status line,
+including your sharing setting, at the start of every session. Displays are recorded in the profile's `notice-acknowledgements.json`.
 
 ```sh
 vaelius-client --home /absolute/private/client-profile notice --project PROJECT --acknowledge

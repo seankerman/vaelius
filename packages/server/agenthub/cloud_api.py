@@ -83,6 +83,9 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/source-documents/download'):READ,
     ('POST','/enterprise/v3/source-documents/upload'):(('ingest',),),
     ('POST','/enterprise/v3/capture-notice'):ANY_CREDENTIAL,
+    # Reading one's own sharing setting is open; changing it needs a capture or
+    # policy action (see route_rule).
+    ('POST','/enterprise/v3/sharing'):ANY_CREDENTIAL,
     ('POST','/enterprise/v3/preferences'):READ,
     ('POST','/enterprise/v3/preferences/curate'):(('curate',),),
     ('POST','/enterprise/v3/preferences/withdraw'):(('withdraw',),),
@@ -110,6 +113,9 @@ PREFIX_ACTIONS={
 }
 # Lifecycle needs the action of the requested operation.
 LIFECYCLE_ACTIONS={'correct':'correct','withdraw':'withdraw','delete':'withdraw','policy':'policy'}
+# Changing one's own sharing setting needs the action that creates shareable
+# content (ingest) or the owner policy action; reading it needs neither.
+SHARING_CHANGE_ACTIONS=(('ingest',),('policy',))
 # Why each ANY_CREDENTIAL route is open to every authenticated credential. Each
 # acts only on the presented credential or returns operator-wide notice text.
 SELF_SERVICE={
@@ -121,6 +127,8 @@ SELF_SERVICE={
         'principal; an enrollment held by another principal is a conflict',
     ('POST','/enterprise/v3/capture-notice'):'returns the capture notice shown before capture starts; '
         'connection reader detail is returned only for a connection the caller owns',
+    ('POST','/enterprise/v3/sharing'):'reports the presented principal\'s own sharing setting; changing it '
+        'needs ingest or policy, acts only on that principal and is refused for delegated credentials',
 }
 # Routes that carry their own credential in the body (or are a credential
 # exchange) and so run before Bearer authentication.
@@ -136,6 +144,8 @@ def route_rule(method,path,data=None):
         action=LIFECYCLE_ACTIONS.get(data.get('operation')) if isinstance(data,dict) else None
         if action is None:raise ValueError('invalid_lifecycle_operation')
         return ((action,),)
+    if (method,path)==('POST','/enterprise/v3/sharing') and isinstance(data,dict) and 'max_sharing' in data:
+        return SHARING_CHANGE_ACTIONS
     rule=ROUTE_ACTIONS.get((method,path))
     if rule is not None:return rule
     for (allowed,prefix),rule in PREFIX_ACTIONS.items():
@@ -345,6 +355,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 return store.preferences(ctx,project=data['project'],task=data.get('task'),explicit=data.get('explicit'),
                     session=data.get('session'),mode=data.get('mode','explicit'))
         # These business methods own their policy/write transaction boundary.
+        if method=='POST' and path=='/enterprise/v3/sharing':return store.sharing_setting(ctx,data)
         if method=='POST' and path=='/enterprise/v3/preferences/curate':
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])

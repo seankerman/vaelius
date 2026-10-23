@@ -73,13 +73,14 @@ Two tiers, both rechecked at delivery:
 
 1. **Redacted passages** — search results, cited evidence spans and conversation
    context. Need `read`. Raw-representation passages are visible to their source
-   owner, and to project members only when the source is team-shared under the
-   operator's project policy ([below](#team-shared-conversation-passages)). Other
-   principals see derived knowledge and its citations through the normal search policy.
+   owner, and to others only as far as the source's sharing level reaches
+   ([below](#shared-conversation-passages-and-originals)). Other principals see
+   derived knowledge and its citations through the normal search policy.
 2. **Retained originals** — the complete canonical source (`/enterprise/v2/sources/`,
    `/enterprise/v1/sources/`) and original document bytes (`source-documents/download`).
-   Need the credential action `source_read` **and** source ownership or an explicit,
-   active, owner-issued grant. Document metadata (`describe`, `list`) stays at tier 1.
+   Need the credential action `source_read` **and** source ownership, the original's
+   own sharing level reaching the reader, or an explicit, active, owner-issued grant.
+   Document metadata (`describe`, `list`) stays at tier 1.
 
 `source_read` is no longer part of default enrollment (`/enterprise/v3/auth/complete`
 without operator `enrollment_actions`) or of the default OAuth scope mapping (a
@@ -127,78 +128,99 @@ next introspection applies it. Rolling back to an older binary ignores grants an
 re-opens team document downloads; apply the same hold as other source-pipeline
 rollbacks.
 
-## Team-shared conversation passages
+## Shared conversation passages and originals
+
+The complete model, including who controls each setting, is in the
+[privacy model](PRIVACY_MODEL.md). In short: every captured source has a sharing
+level on one ladder, `private` < `team` < `organization`, for its redacted passages
+and, separately, for its unredacted original.
 
 By default a captured conversation passage is readable only by the person who
-captured it, even on a team connection, so teammates see nothing of each other's
-work unless curation runs. A repository can ask for more with a checked-in scope
-file ([client side](CLIENT.md#repository-scope-files)):
+captured it, even on a team or organization connection. A repository can ask for
+more with a checked-in scope file ([client side](CLIENT.md#repository-scope-files)):
 
 ```toml
 # .vaelius at the repository root
 project = "example-repo"
-capture = "on"        # on | read-only | off
-sharing = "team"      # private | team
+capture = "on"            # on | read-only | off
+sharing = "organization"  # private | team | organization  (redacted passages)
+originals = "private"     # private | team | organization  (unredacted originals)
 ```
 
 The file is a **request, never a grant**: anyone who can edit the repository can
-edit it. The service decides with operator policy.
+edit it.
 
 | Step | Rule |
 | --- | --- |
-| Ceiling | Each project has `max_sharing` (`private` or `team`); a project without one inherits the tenant's `default_max_sharing`, which is `private` until the operator changes it. |
-| Ingest | Effective sharing = the minimum of the request, the project ceiling at that moment and the capture connection's visibility (a `private` connection never shares). It is stored per source in `enterprise_sources.sharing`, next to `sharing_requested`. A capped request is audited (`sharing_request` / `capped_private`). |
-| Query | A teammate can read a passage, its cited evidence and its conversation context only when every source it depends on is stored as `team`, the project's **current** ceiling is `team`, the reader is an active member of that project, and every ordinary source rule passes. |
+| Ceilings | The author's own setting (`enterprise_principals.max_sharing`, default `private`, changed only by that person with `vaelius-client sharing --set`); the project ceiling (`enterprise_projects.max_sharing`, or the tenant's `default_max_sharing` for a project without one); the tenant ceiling (`enterprise_organizations.max_sharing`); the capture connection's visibility; an origin ceiling that has no effect yet. |
+| Ingest | Effective level = the minimum of the request and every ceiling at that moment. It is stored per source in `enterprise_sources.sharing` (and `originals_sharing`, never above `sharing`), next to the request. A capped request is audited (`sharing_request` / `capped_<level>`, `originals_request` / `capped_<level>`). |
+| Query | Every ceiling is applied again to the stored level. A reader other than the author can read a passage, its cited evidence and its conversation context only when, for every source it depends on, that current level reaches them (`team`: an active member of the project; `organization`: also any active, non-quarantined principal of the tenant) and every ordinary source rule passes. |
 
 Consequences:
 
-- **Lowering** a ceiling (or the tenant default) hides team passages on the next
-  request, including results already delivered (delivery is rechecked).
-- **Raising** a ceiling never exposes a source that was stored as private, even if
-  its scope file asked for team. Sources stored as team become visible again.
+- **Lowering** any ceiling (the author's setting, a project ceiling, the tenant
+  default or ceiling) hides shared passages and originals on the next request,
+  including results already delivered (delivery is rechecked).
+- **Raising** a ceiling never exposes a source stored at a lower level, even if its
+  scope file asked for more. Sources stored higher become visible again.
 - Every existing protection still applies on top: tenant isolation, withdrawal and
   deletion, legal holds (a held deletion hides like a withdrawal), operator
   quarantine (held sources stay owner-only), delegation project limits, connection
   reader lists and freshness, and membership removal.
-- **Retained originals do not change.** The complete source and original documents
-  still need `source_read` and ownership or an explicit owner grant (above).
+- **Originals follow their own level**, which defaults to `private`. They also
+  need `source_read`; explicit owner grants keep working.
 
-Who sees what for a passage Alice captured in project `maple`:
+Who sees what for a passage Alice captured in project `maple` on an organization
+connection, with her own setting at `organization`:
 
-| Reader | Stored `private` | Stored `team`, ceiling `team` | Stored `team`, ceiling lowered to `private` |
-| --- | --- | --- | --- |
-| Alice | passage + original | passage + original | passage + original |
-| Bob, active `maple` member | nothing | passage, evidence, context | nothing |
-| Carol, not a member (even on an organization connection) | nothing | nothing | nothing |
+| Reader | Stored `private` | Stored `team` | Stored `organization` | Stored `organization`, Alice lowers her setting to `team` |
+| --- | --- | --- | --- | --- |
+| Alice | passage + original | passage + original | passage + original | passage + original |
+| Bob, active `maple` member | nothing | passage, evidence, context | passage, evidence, context | passage, evidence, context |
+| Carol, another project only | nothing | nothing | passage, evidence, context | nothing |
+| A deactivated or quarantined principal, a delegated or capture-only credential | nothing | nothing | nothing | nothing |
 
-Operators set and inspect the ceiling:
+Originals in that table require the original's own level (or a grant) as well.
+
+Operators set and inspect the ceilings:
 
 ```sh
 vaelius sharing-policy --profile PROFILE --tenant TENANT --project maple --max-sharing team
 vaelius sharing-policy --profile PROFILE --tenant TENANT --project maple --max-sharing inherit
-vaelius sharing-policy --profile PROFILE --tenant TENANT --max-sharing team     # tenant default
-vaelius sharing-policy --profile PROFILE --tenant TENANT                        # status and counts
+vaelius sharing-policy --profile PROFILE --tenant TENANT --max-sharing organization   # project default
+vaelius sharing-policy --profile PROFILE --tenant TENANT --tenant-ceiling team        # hard ceiling
+vaelius sharing-policy --profile PROFILE --tenant TENANT                              # status and counts
 ```
 
-Status reports, per project, the ceiling and the number of active sources stored as
-team or private and how many team requests were capped; never content or IDs.
-`explain` lists a source's passage readers under current policy in `raw_readers`.
+Status reports the ceilings, how many active principals chose each level and, per
+project, the number of active sources stored at each level (passages and originals)
+and how many requests were capped; never content or IDs. `explain` lists a source's
+passage readers under current policy in `raw_readers`.
 
 Enforcement is the compiled source policy used for all retrieval: the
-`search_source_policy_definitions` projection adds `"sharing": "team"` for
-team-shared sources, and the same clause (current ceiling plus active membership of
-the policy's project) is applied by the indexed predicate
-(`search_permissions.predicate` and `policy_condition(raw=True)`), the row-level
-security function `search_document_allowed`, and the Python oracle
-(`_visible_source(raw=True)` and `_document_allowed`). A parity test checks that
-the indexed predicate and the oracle agree. A teammate's search runs the same number
-of SQL statements as the owner's.
+`search_source_policy_definitions` projection adds `"sharing": "team"` or
+`"sharing": "organization"` for shared sources, and the same clause (the current
+level from the author's setting, project and tenant ceilings, visibility and origin
+ceiling, then membership or the organization audience) is applied by the indexed
+predicate (`search_permissions.predicate` and `policy_condition(raw=True)`), the
+row-level security function `search_document_allowed` (through
+`search_passage_shared`), and the Python oracle
+(`_visible_source(raw=True)` and `_document_allowed`). A parity test checks that all
+three agree across levels and readers. A teammate's search runs the same number of
+SQL statements as the owner's.
 
-Migration `042_project_sharing.sql` is additive: it adds the columns, replaces the
-policy view and `search_document_allowed`, and changes no existing policy definition
-(existing sources are `private`), so no projection rebuild is needed. Clients that
-do not send a request capture as before. A client that requests `team` needs a
-service with this migration; an older service rejects the field.
+Retrieval is scoped to the current project; other projects' organization-shared
+content arrives as a separate, labelled tier. See
+[project-scoped retrieval](PRIVACY_MODEL.md#project-scoped-retrieval-and-the-organization-tier).
+
+Migration `042_project_sharing.sql` introduced team sharing; migration
+`045_sharing_levels.sql` adds the organization level, the person and tenant
+ceilings, the originals level and the document project, replaces the policy view
+and `search_document_allowed`, and changes no existing policy definition, so no
+projection rebuild is needed. It widens nothing (see
+[upgrading](PRIVACY_MODEL.md#upgrading-to-migration-045)). Clients that do not send
+a request capture as before. A client that requests `organization` or `originals`
+needs a service with migration 045; an older service rejects those fields.
 
 ## Retention guidance
 
@@ -241,10 +263,11 @@ for SSE-KMS, TLS, file permissions and example least-privilege bucket and key po
 
 ## Trust boundaries
 
-Raw agent originals require owner/source access. Raw source passages require
-ownership, or team sharing that the operator's project policy allows and the reader's
-project membership satisfies. A project or team label, or a repository scope file,
-does not itself grant access. Reviewed derived knowledge and native
+Raw agent originals require `source_read` and ownership, their own sharing level or
+an owner grant. Raw source passages require ownership, or a sharing level that the
+author's own setting, the operator's ceilings and the connection allow and that
+reaches the reader. A project or team label, or a repository scope file, does not
+itself grant access ([privacy model](PRIVACY_MODEL.md)). Reviewed derived knowledge and native
 document representations retain their source policy dependencies. Identity,
 delegation, connection freshness, lifecycle state and exact revision integrity are
 rechecked before evidence is delivered. The operator controls enrollment and

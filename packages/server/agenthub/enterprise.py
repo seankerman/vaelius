@@ -201,13 +201,13 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         # Operator quarantine withholds a principal's held sources from others.
         if source.get("principal_quarantine") and source["owner"]!=ctx["actor"]:return False
         if raw:
-            # Redacted passages, evidence and context: the owner, or a project
-            # member when the source was stored as team-shared and the project
-            # ceiling still allows it (agenthub.project_sharing). Retained
-            # originals use _original_allowed (source_read + owner or grant).
+            # Redacted passages, evidence and context: the owner, or a reader
+            # the source's current sharing level reaches (agenthub.project_sharing).
+            # Retained originals use _original_allowed (source_read + owner,
+            # their own sharing level, or an explicit grant).
             if "read" not in ctx["actions"]:return False
             if source["owner"]==ctx["actor"]:return True
-            return self._team_shared(db,ctx,source) and self._visible_source(db,ctx,source)
+            return self._passage_shared(db,ctx,source) and self._visible_source(db,ctx,source)
         if "read" not in ctx["actions"]:return False
         if source["visibility"]=="private":return source["owner"]==ctx["actor"]
         if source["visibility"]=="team":return self._project_member(db,ctx,source["external_project"])
@@ -265,16 +265,20 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
 
     def _readable_scopes(self, db, ctx, project=None):
         self._need(ctx,"read")
-        clauses=["private"]
         if project is not None:
-            projects=[project]
+            projects=[(project,None)]
         else:
-            projects=[r[0] for r in db.execute("SELECT id FROM enterprise_projects WHERE tenant=? AND active=1",(ctx["tenant"],))]
+            # Every project with the reader's membership in one statement (the
+            # unscoped and scope "all" searches), not one lookup per project.
+            projects=[(r[0],bool(r[1])) for r in db.execute("""SELECT p.id,EXISTS(SELECT 1 FROM enterprise_memberships m
+                WHERE m.tenant=p.tenant AND m.project=p.id AND m.principal=? AND m.active=1)
+                FROM enterprise_projects p WHERE p.tenant=? AND p.active=1""",(ctx["actor"],ctx["tenant"]))]
         result=[]
-        for name in projects:
+        for name,known in projects:
             if ctx.get('delegated_projects') is not None and name not in ctx['delegated_projects']:
                 continue
-            if self._project_member(db,ctx,name):
+            member=self._project_member(db,ctx,name) if known is None else known
+            if member:
                 result.extend((_scope(ctx["tenant"],name,"private",ctx["actor"]),
                                _scope(ctx["tenant"],name,"team",ctx["actor"])))
             else:
@@ -344,7 +348,7 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         if not all(self._visible_source(db,ctx,s) for s in dependencies) and not self._release_allowed(db,ctx,document_id,dependencies):return None
         if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
         # Mirrors the raw clause of search_permissions.predicate: a passage is
-        # the owner's, or team-shared through every source it depends on.
+        # the owner's, or shared with the reader through every source it depends on.
         if doc.get("representation")=="raw" and ("read" not in ctx["actions"] or (doc["raw_owner"]!=ctx["actor"]
                 and not all(self._visible_source(db,ctx,s,raw=True) for s in dependencies))):return None
         return doc
@@ -406,16 +410,17 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
             JOIN enterprise_dependencies x ON x.document_id=i.related_document_id
             WHERE NOT EXISTS(SELECT 1 FROM backend_jobs b WHERE b.episode_job=j.job_id AND b.dependency_snapshot_complete=1)
         ), valid AS MATERIALIZED (
-            SELECT e.document_id,e.project,e.active_revision_id,min(s.tenant) AS tenant
+            SELECT e.document_id,e.project,e.active_revision_id,min(s.tenant) AS tenant,
+                CASE WHEN count(DISTINCT s.external_project)=1 THEN min(s.external_project) END AS source_project
             FROM eligible e JOIN sources x ON x.document_id=e.document_id
             LEFT JOIN enterprise_sources s ON s.id=x.source_id
             GROUP BY e.document_id,e.project,e.active_revision_id
             HAVING count(*)=count(s.id) AND count(DISTINCT s.tenant)=1
             AND bool_and(s.active!=0 AND s.internal_project=e.project)
         ), registered AS (
-            INSERT INTO enterprise_documents(id,tenant,internal_project,revision,created)
-            SELECT document_id,tenant,project,active_revision_id,%s FROM valid
-            ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,
+            INSERT INTO enterprise_documents(id,tenant,internal_project,revision,created,source_project)
+            SELECT document_id,tenant,project,active_revision_id,%s,source_project FROM valid
+            ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,source_project=excluded.source_project,
             active=CASE WHEN enterprise_documents.blocked_reason='building' THEN 1 ELSE enterprise_documents.active END,
             blocked_reason=CASE WHEN enterprise_documents.blocked_reason='building' THEN '' ELSE enterprise_documents.blocked_reason END
             RETURNING id

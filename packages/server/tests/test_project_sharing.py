@@ -4,6 +4,11 @@ Synthetic PostgreSQL cases. A client's `sharing: team` request is only honored
 when the project's ceiling allows it at ingest AND still allows it at query time,
 for active project members, through every existing source rule. Originals stay
 owner/grant-only. No model calls.
+
+These cases model a tenant that kept the private default (every tenant created
+before migration 045) whose authors raised their own setting to team; the
+organization level and the person's own setting are covered in
+test_sharing_levels.py.
 """
 import json
 from pathlib import Path
@@ -32,6 +37,9 @@ class ProjectSharingTests(PostgresFixture, unittest.TestCase):
         self.bob = self.store.authenticate(self.tokens['bob'])
         self.carol = self.store.authenticate(self.tokens['carol'])
         self.store.enroll_connection(self.ctx, 'share-test', 'test', 'maple', ['agent'], visibility='team')
+        self.store.set_tenant_sharing_default('private')
+        for ctx in (self.ctx, self.bob):
+            self.store.sharing_setting(ctx, {'max_sharing': 'team'})
         self.fixture = json.loads((Path(__file__).parent / 'fixtures/raw_default_v1.json').read_text())
 
     def tearDown(self):
@@ -231,7 +239,7 @@ class ProjectSharingTests(PostgresFixture, unittest.TestCase):
 
     # Parity and cost ----------------------------------------------------------
 
-    def test_indexed_predicate_matches_python_oracle(self):
+    def test_indexed_predicate_row_security_and_python_oracle_agree(self):
         self.store.enroll_connection(self.bob, 'bob-share', 'bob', 'maple', ['agent'], visibility='team')
         self.store.set_project_sharing('maple', 'team')
         self.ingest(0);self.ingest(1, sharing='private');self.ingest(2, connection='bob-share', ctx=self.bob)
@@ -251,6 +259,12 @@ class ProjectSharingTests(PostgresFixture, unittest.TestCase):
                     oracle = {d for d in docs if EnterpriseStore._document_allowed(self.store, state.db, ctx, d)}
                     indexed = set(self.store._authorized_documents(state, ctx)) & set(docs)
                     self.assertEqual(indexed, oracle, (label, ctx['actor']))
+                    # The row-level security function (migration 045) used by ranking.
+                    from agenthub.search_reader import restrict
+                    with self.store.open() as reader_state, restrict(self.store, reader_state, ctx, reach='all'):
+                        secured = {r[0] for r in reader_state.db.execute(
+                            "SELECT id FROM enterprise_documents WHERE representation='raw'")}
+                    self.assertEqual(secured, oracle, (label, ctx['actor'], 'row_level_security'))
                     yield ctx['actor'], len(oracle)
         self.assertEqual(dict(compare('team')), {'alice': 3, 'bob': 3, 'carol': 0})
         self.store.set_project_sharing('maple', 'private')

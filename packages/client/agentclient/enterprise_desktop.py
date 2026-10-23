@@ -7,7 +7,7 @@ from pathlib import Path
 from agentclient.enterprise_capture import normalize_capture
 
 
-def convert(record, session, project, connection, *, turn='', order=None, sharing='private'):
+def convert(record, session, project, connection, *, turn='', order=None, sharing='private', originals='private'):
     payload=record.get('payload', {})
     if not isinstance(payload, dict): return None
     typ=record.get('type');event={'session_id':session, 'turn_id':payload.get('turn_id',turn),
@@ -99,7 +99,7 @@ def convert(record, session, project, connection, *, turn='', order=None, sharin
             else: event.update(hook_event_name='UnsupportedHostItem')
         else: return None
     else: return None
-    return normalize_capture(event,project,connection,origin='desktop_rollout',sharing=sharing)
+    return normalize_capture(event,project,connection,origin='desktop_rollout',sharing=sharing,originals=originals)
 
 
 def poll(home, config, allowed_root=None):
@@ -156,7 +156,7 @@ def poll(home, config, allowed_root=None):
                     try:
                         record=json.loads(line);payload=record.get('payload',{})
                         if isinstance(payload,dict) and payload.get('turn_id'): cursor['turn']=payload['turn_id']
-                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before,sharing=scope['sharing'])
+                        event=convert(record,session,project,capture_connection(config,project),turn=cursor.get('turn',''),order=before,sharing=scope['sharing'],originals=scope.get('originals','private'))
                     except (ValueError,TypeError,KeyError):
                         event=normalize_capture({'hook_event_name':'gap','session_id':session,
                             'turn_id':cursor.get('turn',''),'event_id':'parse-gap:'+str(before)},project,capture_connection(config,project))

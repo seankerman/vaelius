@@ -124,14 +124,17 @@ class SourceIndex:
         self.store.refresh_documents(db=db,document_id=doc)
         try:occurred=stamp(row['occurred_at'])
         except (ValueError,TypeError,OverflowError):occurred=None
+        # raw_shared is the stored level of this source (0 private, 1 team,
+        # 2 organization): a stable prefilter, never the decision.
+        from agenthub.project_sharing import RANK
         db.execute('''UPDATE enterprise_documents SET representation='raw',raw_owner=?,source_time=?,
-            source_captured=?,raw_shared=? WHERE id=?''',(row['owner'],occurred,row['created'],
-            int(row.get('sharing')=='team'),doc))
+            source_captured=?,raw_shared=?,source_project=? WHERE id=?''',(row['owner'],occurred,row['created'],
+            RANK.get(row.get('sharing'),0),row['external_project'],doc))
 
 
 def search(store,ctx,value,filters,*,candidate_pool=False):
     """Source discovery through the existing authorized hybrid candidate query."""
-    rows=store.candidates(ctx,value['query'],project=value.get('project'),
+    rows=store.candidates(ctx,value['query'],project=value.get('project'),scope=value.get('scope','project'),
         filters=dict(filters,source_as_of=value.get('as_of'),time_mode=value.get('time_mode')),
         limit=store.retrieval_candidate_limit,vector=store.hybrid_enabled,lexical=store.retrieval_lexical_enabled)
     cards=[]

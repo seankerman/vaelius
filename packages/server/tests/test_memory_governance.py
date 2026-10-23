@@ -472,8 +472,10 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
         notice = self.store.capture_notice(self.ctx, {'project': 'maple', 'connection': 'agent-team'})
         self.assertEqual(notice['notice'], text)
         self.assertEqual(notice['source'], 'operator')
+        # The person's own setting (private by default) caps what the team connection shares.
         self.assertEqual(notice['readers'], {'visibility': 'team', 'description': 'members of project maple',
-                                             'connection_active': True})
+                                             'connection_active': True, 'personal_sharing': 'private',
+                                             'project_ceiling': 'organization', 'passage_sharing_limit': 'private'})
         self.assertEqual(notice['captured'], ['user_prompts', 'assistant_replies', 'tool_calls', 'tool_results'])
         with self.assertRaises(Denied):
             self.store.capture_notice(self.bob, {'connection': 'agent-team'})

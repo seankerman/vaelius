@@ -4,11 +4,14 @@ Two tiers, both rechecked at delivery:
 
 * Redacted passages, search results, cited evidence and conversation context are
   read with ``read``. Raw-representation passages stay owner-only unless the
-  source is team-shared under project policy (agenthub.project_sharing).
+  source's sharing level reaches the reader (agenthub.project_sharing).
 * Retained originals (the complete canonical source payload or object, the v1
   source body and original document bytes) additionally need the credential's
-  ``source_read`` action AND either source ownership or an explicit, active,
-  owner-issued grant to the reading principal or to a project it belongs to.
+  ``source_read`` action AND one of: source ownership; the original's own
+  sharing level (``originals_sharing``, default private, never above the
+  passage level) reaching the reader under every current ceiling; or an
+  explicit, active, owner-issued grant to the reading principal or to a project
+  it belongs to. Sharing passages never shares originals.
 
 Grants never bypass tenant, lifecycle, delegation or connection-reader checks.
 ``source_read`` is not part of default enrollment or default OAuth scope
@@ -34,6 +37,8 @@ def original_allowed(store, db, ctx, source):
     if 'source_read' not in ctx['actions']:
         return False
     if source['owner'] == ctx['actor']:
+        return True
+    if store._originals_shared(db, ctx, source):
         return True
     return _granted(store, db, ctx, source)
 

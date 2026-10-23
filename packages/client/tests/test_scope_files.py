@@ -68,6 +68,23 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
         self.write(self.repo / '.vaelius', 'project = "example-repo"\n')
         self.assertEqual(discover(self.repo, names)['project'], 'example-repo')
 
+    def test_three_levels_and_a_separate_originals_request(self):
+        self.write(self.repo / '.vaelius', 'project = "example-repo"\nsharing = "organization"\noriginals = "team"\n')
+        found = discover(self.repo)
+        self.assertEqual((found['sharing'], found['originals']), ('organization', 'team'))
+        self.write(self.repo / '.vaelius', 'project = "example-repo"\nsharing = "team"\n')
+        self.assertEqual(discover(self.repo)['originals'], 'private')
+        for text in ('originals = "everyone"\n', 'originals = true\n', 'sharing = "public"\n'):
+            self.write(self.repo / '.vaelius', 'project = "example-repo"\n' + text)
+            found = discover(self.repo)
+            self.assertEqual((found['capture'], found['sharing'], found['originals']), ('off', 'private', 'private'), text)
+            self.assertIn('error', found)
+        # The legacy key/value reader maps the same keys and levels.
+        self.write(self.repo / '.mindshare', 'mode: default\nsharing: organization\noriginals: team\nteam: x\n')
+        names = scope_file.scope_names({'scope_files': ['.mindshare']})
+        found = discover(self.repo, names)
+        self.assertEqual((found['capture'], found['sharing'], found['originals']), ('on', 'organization', 'team'))
+
     def test_scope_files_option_is_validated(self):
         for bad in ([], ['../x'], ['a/b'], ['.git'], 'x', [1]):
             with self.assertRaises(ScopeFileError):scope_file.scope_names({'scope_files': bad})
@@ -175,10 +192,20 @@ class ScopeHookTest(unittest.TestCase):
         # Hooks never rewrite config.json for a scope-file enrollment.
         self.assertEqual(json.loads((self.home / 'config.json').read_text())['projects'], {})
 
+    def test_organization_and_originals_requests_are_sent(self):
+        self.scope('project = "example-repo"\nsharing = "organization"\noriginals = "team"\n')
+        self.hook()
+        self.assertEqual((Outbox.events[0]['sharing'], Outbox.events[0]['originals']), ('organization', 'team'))
+        self.scope('project = "example-repo"\nsharing = "team"\n')
+        self.hook()
+        self.assertEqual(Outbox.events[-1]['sharing'], 'team')
+        self.assertNotIn('originals', Outbox.events[-1])
+
     def test_private_request_is_not_sent(self):
         self.scope('project = "example-repo"\n')
         self.hook()
         self.assertNotIn('sharing', Outbox.events[0])
+        self.assertNotIn('originals', Outbox.events[0])
 
     def test_read_only_recalls_but_does_not_capture(self):
         self.scope('project = "example-repo"\ncapture = "read-only"\nsharing = "team"\n')
@@ -301,14 +328,24 @@ class DesktopScopeTest(unittest.TestCase):
 
 
 class SharingContractTest(unittest.TestCase):
-    def test_only_a_team_request_is_carried_and_nothing_else_is_accepted(self):
+    def test_only_shared_levels_are_carried_and_nothing_else_is_accepted(self):
         from agentclient.enterprise_capture import normalize_capture
         from agentclient.general_contract import validate_event
         event = {'hook_event_name': 'UserPromptSubmit', 'event_id': 'e1', 'session_id': 's', 'prompt': 'x'}
         team = normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='team')
         self.assertEqual(team['sharing'], 'team')
-        self.assertNotIn('sharing', normalize_capture(event, 'example-repo', 'synthetic-connection'))
-        for forged in ('private', 'organization', 'everyone', None):
-            with self.assertRaises(ValueError):validate_event(dict(team, sharing=forged))
-        with self.assertRaises(ValueError):
-            normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='organization')
+        self.assertNotIn('originals', team)
+        plain = normalize_capture(event, 'example-repo', 'synthetic-connection')
+        self.assertNotIn('sharing', plain)
+        self.assertNotIn('originals', plain)
+        wide = normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='organization',
+                                 originals='team')
+        self.assertEqual((wide['sharing'], wide['originals']), ('organization', 'team'))
+        # Private travels as omission, so older services see the same event.
+        for key in ('sharing', 'originals'):
+            for forged in ('private', 'everyone', 'public', None, ['team']):
+                with self.assertRaises(ValueError):
+                    validate_event(dict(wide, **{key: forged}))
+        for key in ('sharing', 'originals'):
+            with self.assertRaises(ValueError):
+                normalize_capture(event, 'example-repo', 'synthetic-connection', **{key: 'everyone'})

@@ -51,22 +51,35 @@ def provision(db, worker, schema):
                 policy, relation, sql.Identifier(role_name), sql.SQL(predicate)))
 
 
+REACHES = ('project', 'all')
+
+
 @contextmanager
-def restrict(store, state, ctx, project=None):
-    """Switch one existing transaction; RESET/rollback cannot leak user context."""
+def restrict(store, state, ctx, project=None, *, reach=None):
+    """Switch one existing transaction; RESET/rollback cannot leak user context.
+
+    `reach` narrows retrieval, never authorization. 'project': the requested
+    project's documents, plus documents from other projects only when they are
+    shared with the whole organization. 'all': every project the reader may
+    read. None keeps the earlier behavior (scopes of the requested project).
+    """
     from psycopg import sql
     from agenthub.draft_review import selected_documents
+    if reach is not None and reach not in REACHES:
+        raise ValueError('invalid_search_scope')
     store.current_identity(state.db, ctx)
     store._need(ctx, 'read')
-    scopes = store._readable_scopes(state.db, ctx, project)
+    scopes = store._readable_scopes(state.db, ctx, None if reach == 'all' else project)
     releases = [r[0] for r in state.db.execute('SELECT document_id FROM backend_releases WHERE tenant=?', (ctx['tenant'],))]
     releases = [doc for doc in releases if store._document_allowed(state.db, ctx, doc)]
     context = dict(tenant=ctx['tenant'], actor=ctx['actor'], scopes=scopes, project=project,
-        # Migration 031 names this flag source_read; it gates owner or team-shared redacted
+        # Migration 031 names this flag source_read; it gates the owner's or shared redacted
         # passages, which now need only `read`. Originals use agenthub.raw_access.
         source_read='read' in ctx['actions'],
         delegated=sorted(ctx['delegated_projects']) if ctx.get('delegated_projects') is not None else None,
         review=selected_documents(store, ctx), releases=releases)
+    if reach is not None:
+        context['reach'] = reach
     connection = state.db.connection
     database, schema, worker = connection.execute('SELECT current_database(),current_schema(),current_user').fetchone().values()
     role = reader_role(database, schema, worker)

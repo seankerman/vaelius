@@ -72,6 +72,7 @@ vaelius worker-run --profile /absolute/private/profile --tenant acme --max-jobs 
 
 See [client enrollment](docs/CLIENT.md), [self-hosting](docs/SELF_HOSTING.md),
 [enterprise OAuth and migration](docs/ENTERPRISE_AUTH.md),
+[the privacy model](docs/PRIVACY_MODEL.md),
 [security and data boundaries](docs/DATA_BOUNDARIES.md),
 [data lifecycle and legal holds](docs/DATA_LIFECYCLE.md),
 [shared-memory governance](docs/MEMORY_GOVERNANCE.md), and

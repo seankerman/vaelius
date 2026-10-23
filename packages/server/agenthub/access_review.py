@@ -135,7 +135,8 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
     tenant = store.tenant_id
     bindings = _control_bindings(store)
     with _snapshot(store) as db:
-        principal_rows = db.execute('SELECT id,active,settings_admin FROM enterprise_principals WHERE tenant=%s ORDER BY id',
+        principal_rows = db.execute('''SELECT id,active,settings_admin,max_sharing FROM enterprise_principals
+            WHERE tenant=%s ORDER BY id''',
             (tenant,)).fetchall()
         projects = {row['id']: bool(row['active']) for row in db.execute(
             'SELECT id,active FROM enterprise_projects WHERE tenant=%s', (tenant,))}
@@ -191,6 +192,7 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
     def person(ident):
         if ident not in people:
             people[ident] = {'principal': ident, 'known': False, 'active': False, 'settings_admin': False,
+                'max_sharing': None,
                 'identity_bindings': [], 'directory': [], 'groups': [], 'credentials': [],
                 'project_grants': [], 'document_grants': [], 'connection_reader_grants': [],
                 'owned_connections': [], 'delegations': {'acts_for': [], 'represented_by': []},
@@ -199,7 +201,9 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
 
     for row in principal_rows:
         record = person(row['id'])
-        record.update(known=True, active=bool(row['active']), settings_admin=bool(row['settings_admin']))
+        # The person's own sharing ceiling: how widely their captured content can be shared.
+        record.update(known=True, active=bool(row['active']), settings_admin=bool(row['settings_admin']),
+                      max_sharing=row['max_sharing'])
     active = {ident for ident, record in people.items() if record['active']}
     lines = []
 

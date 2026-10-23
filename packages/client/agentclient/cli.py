@@ -72,12 +72,17 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     if args.command=='hook':
         # The handler reads the profile itself, so a missing profile can still be reported.
         from agentclient.hooks import handle
+        from agentclient.host_command import upgrade_notice
+        event=None
         try:
             raw=sys.stdin.buffer.read(32*1024*1024+1)
             if len(raw)>32*1024*1024:raise ValueError('hook_payload_bound')
-            result=handle(home,json.loads(raw),host=args.host,via=args.via)
+            event=json.loads(raw)
+            result=handle(home,event,host=args.host,via=args.via)
         except Exception as exc:
             result={'systemMessage':'Vaelius capture unavailable ('+type(exc).__name__+'). Normal work continues.'}
+        notice=upgrade_notice(home,args.host,event)
+        if notice:result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),notice) if x))
         print(json.dumps(result));return
     if args.command=='mcp-headers':
         from agentclient.mcp_headers import headers, failure

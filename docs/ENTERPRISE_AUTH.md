@@ -156,7 +156,7 @@ likewise omits `source_read`. See the
 ## Plugin enrollment and migration
 
 ```sh
-python -m agentclient.cloud_enroll --home /absolute/private/profile \
+python -P -m agentclient.cloud_enroll --home /absolute/private/profile \
   --url https://memory.example.org --tenant company --enrollment laptop \
   --oauth-client-id vaelius-plugin --credential-store keyring \
   --callback-uri http://127.0.0.1:59001/callback
@@ -201,7 +201,7 @@ the service has more than one, from the enrollment details their administrator
 gives them:
 
 ```sh
-python -m agentclient.cloud_enroll ... --tenant company \
+python -P -m agentclient.cloud_enroll ... --tenant company \
   --oauth-issuer https://identity.example.org/realms/company
 ```
 
@@ -337,7 +337,7 @@ Client sign-in needs the optional extra `pip install 'vaelius-client[aws]'`:
 
 ```sh
 aws sso login --profile developer
-python -m agentclient.cloud_enroll --home /absolute/private/profile \
+python -P -m agentclient.cloud_enroll --home /absolute/private/profile \
   --url https://memory.example.org --tenant company --enrollment laptop \
   --auth aws-sts --aws-profile developer --aws-region us-east-1
 ```

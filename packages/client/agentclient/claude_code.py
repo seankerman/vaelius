@@ -27,10 +27,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import shutil
-import sys
 import tempfile
+
+from agentclient.host_command import module_command
 
 SERVER = 'vaelius'
 RECEIPT = 'claude-code-installation.json'
@@ -56,7 +56,8 @@ def claude_json(directory):
 
 
 def _python_command(home, *args):
-    return ' '.join(shlex.quote(x) for x in (sys.executable, '-m', 'agentclient.cli', '--home', str(home), *args))
+    # Runs in the project folder: never import modules from there (see host_command).
+    return module_command('agentclient.cli', '--home', str(home), *args)
 
 
 def hook_command(home):
@@ -64,9 +65,7 @@ def hook_command(home):
 
 
 def guardrail_command(home, profile):
-    # -P: the hook runs in the project folder; never import modules from there.
-    return ' '.join(shlex.quote(x) for x in (sys.executable, '-P', '-m', 'agentclient.cli', '--home', str(home),
-                                              'guardrail-check', '--profile', profile))
+    return _python_command(home, 'guardrail-check', '--profile', profile)
 
 
 def mcp_entry(home, endpoint, project):

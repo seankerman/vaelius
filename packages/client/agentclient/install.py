@@ -2,10 +2,10 @@ import json
 import fcntl
 from pathlib import Path
 import shlex
-import sys
 import tempfile
 import tomllib
 
+from agentclient.host_command import module_command, written_forms
 from agentclient.local_state import private_dir
 
 
@@ -52,18 +52,18 @@ def install(home, codex_home, projects, sessions):
     config.setdefault("paused",False)
     config["remote_publication"]=False
     config_path.write_text(json.dumps(config,indent=2));config_path.chmod(0o600)
-    command=" ".join(shlex.quote(x) for x in (sys.executable,"-m","agentclient.cli","--home",str(home),"hook"))
+    command=module_command("agentclient.cli","--home",str(home),"hook")
     path=codex_home/"hooks.json";codex_home.mkdir(parents=True,exist_ok=True)
     doc=json.loads(path.read_text()) if path.exists() else {"hooks":{}}
-    # An interpreter upgrade changes the command. Remove only the old command
-    # bound by this profile's installation receipt, never a prefix/name match.
+    # An interpreter upgrade, or a command written before `-P`, changes the command.
+    # Remove only the old command bound by this profile's receipt, never a prefix/name match.
     receipt=home/'installation.json'
     owned=json.loads(receipt.read_text()) if receipt.exists() else {}
     old=owned.get('command','')
     try:parts=shlex.split(old)
     except ValueError:parts=[]
     if (old and Path(owned.get('hooks_file','')).resolve()==path.resolve()
-            and len(parts)==6 and parts[1:]==['-m','agentclient.cli','--home',str(home),'hook']):
+            and parts[1:] in written_forms('agentclient.cli','--home',str(home),'hook')):
         for event,groups in doc.get('hooks',{}).items():
             for group in groups:
                 group['hooks']=[h for h in group.get('hooks',[]) if h.get('command')!=old]
@@ -121,7 +121,7 @@ def mcp_block(home):
     config=json.loads((Path(home)/'config.json').read_text())
     backend=require_backend(config)
     endpoint=backend_endpoint(backend)+'/mcp'
-    helper=' '.join(shlex.quote(x) for x in (sys.executable,'-m','agentclient.mcp_headers','--home',str(home)))
+    helper=module_command('agentclient.mcp_headers','--home',str(home))
     return ('\n'+_BEGIN+'[mcp_servers.agentnetwork_memory]\nurl = '+json.dumps(endpoint)+
         '\nhttp_headers_helper = '+json.dumps(helper)+
         '\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n'+_END)

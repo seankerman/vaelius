@@ -9,7 +9,7 @@ The operator must configure the identity broker, enrollment and source connectio
 first. Login creates a private profile and enrolls no project automatically:
 
 ```sh
-python -m agentclient.cloud_enroll \
+python -P -m agentclient.cloud_enroll \
   --home /absolute/private/client-profile --url https://memory.example.org \
   --tenant TENANT --oauth-client-id vaelius-plugin --enrollment ENROLLMENT \
   --callback-uri http://127.0.0.1:CALLBACK_PORT/callback
@@ -38,6 +38,38 @@ vaelius-client --home /absolute/private/client-profile pause
 vaelius-client --home /absolute/private/client-profile resume
 vaelius-client --home /absolute/private/client-profile uninstall
 ```
+
+## Hook commands and the project folder
+
+Codex and Claude Code run the installed hook and MCP header-helper commands with
+the project folder as the working directory. Installers write them as
+`python -P -m agentclient...`: `-P` stops Python from looking for modules in that
+folder, so only the installed client runs.
+
+Installations made by `vaelius-client` 0.3.0, and by development builds before
+this change, wrote these commands without `-P`. In those installations a project
+containing its own `agentclient` package could run its code in place of the
+client, with this profile's credentials. Affected: the Codex installation
+(`install`) and the Claude Code settings installation (`install --claude-code`).
+The Claude Code plugin is not affected: it runs the `vaelius-client` console
+script, which does not import from the working directory.
+
+Re-run the install command you used; it rewrites only the entries this profile
+installed, as recorded in its receipt, and keeps everything else:
+
+```sh
+vaelius-client --home /absolute/private/client-profile install --codex-home /absolute/codex-home
+vaelius-client --home /absolute/private/client-profile install --claude-code --scope user
+vaelius-client --home /absolute/private/client-profile install --claude-code --scope project \
+  --project-root /absolute/project
+```
+
+(For Claude Code this also adds the `standard` guardrail profile if none is
+installed; add `--guardrails none` to leave guardrails out.) Until then, a session
+started by an older hook command shows a one-line status naming the command to
+run. Only the real client can show that line: in a folder whose own package
+replaces the client, that package runs instead and nothing is shown. Re-run the
+install rather than waiting for the message.
 
 ## Claude Code
 

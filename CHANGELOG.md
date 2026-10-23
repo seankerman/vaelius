@@ -19,6 +19,9 @@ The release workflow publishes the section whose heading matches the tag.
 - `setuptools` 84.1.0 (build backend pin and hashed locks) fixes a Windows path
   escape through `namespace_packages.txt` during legacy wheel installation
   (GHSA-xmj3-9gf7-h52w, Low).
+- `filelock` 4.2.1 (hashed locks; pulled in by `huggingface-hub`) fixes a
+  `ReadWriteLock` symlink or journal-file plant that could make the locking
+  process overwrite or unlink its own files (GHSA-v4x8-3wr5-3wq8, High).
 - Runtime base image updated to Python 3.12.15 (`python:3.12.15-slim-trixie`),
   fixing Python and OpenSSL vulnerabilities that the new image scan reported.
 - CI audits the locked dependencies with osv-scanner and scans the runtime image

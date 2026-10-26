@@ -53,12 +53,14 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
         return self.store.sharing_setting(ctx, {'max_sharing': level})
 
     def ingest(self, connection='a-maple', project='maple', *, index=0, sharing='private', ctx=None,
-               session='s1', tag=''):
+               session='s1', tag='', origin=None):
         row = self.fixture['messages'][index]
         event = normalize_capture({'hook_event_name': 'UserPromptSubmit' if row['role'] == 'user' else 'Stop',
             'event_id': row['id'] + ':' + connection + tag, 'session_id': session,
             'turn_id': row['id'] + tag, 'timestamp': row['time'], 'prompt': row['text'],
             'last_assistant_message': row['text'], 'revision': '1'}, project, connection, sharing=sharing)
+        if origin is not None:
+            event['origin_label'] = origin  # as origin-labelled capture sends it (agentclient.origin)
         return self.store.ingest_general(ctx or self.alice, event)['source_id']
 
     def drain(self):
@@ -285,33 +287,29 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
     def test_origin_ceiling_caps_a_raise_and_a_grant(self):
         """A source whose origin is private stays private, even for its owner's change."""
         self.personal(self.alice, 'organization')
-        source = self.ingest(sharing='private')
+        source = self.ingest(sharing='private', origin={'ceiling': 'private', 'kinds': ['outside_repo'],
+                                                        'reason': 'personal_content', 'projects': [],
+                                                        'inherited': False})
+        plain = self.ingest(index=1, sharing='private', session='s2')
         self.drain()
-        with self.store.open() as state:
-            columns = {r[0] for r in state.db.execute('''SELECT column_name FROM information_schema.columns
-                WHERE table_schema=current_schema() AND table_name='enterprise_sources' ''')}
-        if 'origin_ceiling' not in columns:
-            self.skipTest('origin labels (migration 046) not present')
-        self.taint(source, 'private')
-        preview, applied = self.apply('change_sharing', self.alice, {'source_ids': [source], 'sharing': 'organization'})
+        preview, applied = self.apply('change_sharing', self.alice, {'source_ids': [source, plain],
+                                                                     'sharing': 'organization'})
         self.assertEqual(preview['stored_below_request_by_origin'], 1)
-        self.assertIn('origin', preview['capped_by'])
+        self.assertEqual(preview['capped_by'], {'origin': 1})
+        self.assertIn('origin', preview['capped'])
         with self.store.open() as state:
-            self.assertEqual(state.db.execute('SELECT sharing FROM enterprise_sources WHERE id=?',
-                                              (source,)).fetchone()['sharing'], 'private')
-        grant = self.apply('grant', self.alice, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                                 'grantee': 'bob'})[0]
+            stored = {r['id']: r['sharing'] for r in state.db.execute(
+                'SELECT id,sharing FROM enterprise_sources WHERE id=ANY(?::text[])', ([source, plain],))}
+        self.assertEqual(stored, {source: 'private', plain: 'organization'})
+        item = next(i for i in self.store.mine(self.alice, {})['items'] if i['source_id'] == source)
+        self.assertIn('origin', item['sharing']['binding'])
+        # No grant carries it past its origin, and there is no override.
+        grant = self.apply('grant', self.alice, {'scope': 'source', 'ids': [source, plain],
+                                                 'grantee_kind': 'principal', 'grantee': 'dave'})[0]
         self.assertEqual(grant['kept_by_origin'], 1)
-        self.assertEqual(self.found(self.bob), set())
-        self.assertLayers(self.bob, set())
-
-    def taint(self, source, ceiling):
-        """Store a source with an origin label, as origin-labelled capture does at ingest."""
-        with self.store.open() as state, state.db:
-            row = dict(state.db.execute('SELECT * FROM enterprise_sources WHERE id=?', (source,)).fetchone())
-            state.db.execute('ALTER TABLE enterprise_sources DISABLE TRIGGER enterprise_sources_origin_fixed')
-            state.db.execute('UPDATE enterprise_sources SET origin_ceiling=? WHERE id=?', (ceiling, row['id']))
-            state.db.execute('ALTER TABLE enterprise_sources ENABLE TRIGGER enterprise_sources_origin_fixed')
+        self.assertEqual(self.found(self.dave), {plain})
+        self.assertLayers(self.dave, {plain})
+        self.assertLayers(self.bob, {plain})
 
     # Grants -----------------------------------------------------------------------------
 

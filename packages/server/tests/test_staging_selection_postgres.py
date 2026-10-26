@@ -19,6 +19,8 @@ class FrozenSelectionPostgres(PostgresFixture,unittest.TestCase):
         self.store.retrieval_authorization_shape='authorized_cte'
         self.store.retrieval_selection_policy='facets_v1';self.store.retrieval_numeric_mode='typed'
         self.ctxs={name:self.store.authenticate(self.tokens[name]) for name in ('alice','bob')}
+        from test_cloud_postgres import share_at_visibility
+        share_at_visibility(self.store,self.ctxs.values())
         self.store.enroll_connection(self.ctxs['alice'],'selection-native','fixture','maple',['document'],visibility='team',reader_ids=['alice','bob'])
         self.service=DocumentStore(self.store,FileSourceObjects(Path(self.temp.name)/'objects'))
 

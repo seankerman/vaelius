@@ -16,6 +16,8 @@ class BackendRetrievalTests(unittest.TestCase):
         for name in ('alice','bob'):self.store.set_membership('orchard','maple',name,True)
         self.tokens={name:self.store.enroll('orchard',name,name,['ingest','read','source_read','feedback','curate','correct','policy','withdraw']) for name in ('alice','bob')}
         self.alice=self.store.authenticate(self.tokens['alice']);self.bob=self.store.authenticate(self.tokens['bob'])
+        # Curated documents are capped by their sources' sharing (migration 047): opt in.
+        for ctx in (self.alice,self.bob):self.store.sharing_setting(ctx,{'max_sharing':'organization'})
 
     def tearDown(self):self.tmp.cleanup()
 

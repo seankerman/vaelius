@@ -825,16 +825,21 @@ class HybridRetrievalMixin:
         self.current_identity(state.db, ctx)
         self._need(ctx, 'read')
         scopes = self._readable_scopes(state.db, ctx, project)
-        sql = "ed.tenant=? AND ed.active=1 AND d.lifecycle='active'\n            AND (ed.internal_project=ANY(?::text[]) OR EXISTS(SELECT 1 FROM cloud_preferences pf\n                WHERE pf.document_id=d.document_id AND pf.tenant=? AND pf.owner=? AND pf.valid_until IS NULL\n                AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=?))))\n            AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM knowledge_generation_documents gd JOIN knowledge_generations g\n                    ON g.generation_id=gd.generation_id WHERE gd.document_id=d.document_id AND g.status='active'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preference_candidates pc WHERE pc.document_id=d.document_id AND pc.status IN ('pending','held'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                AND (pf.owner!=? OR pf.tenant!=?))\n            AND (NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                    AND pf.valid_until IS NULL AND pf.revision_id=d.active_revision_id))\n            "
-        from agenthub.search_permissions import predicate
+        sql = "ed.tenant=? AND ed.active=1 AND d.lifecycle='active'\n            AND (ed.internal_project=ANY(?::text[]) OR EXISTS(SELECT 1 FROM cloud_preferences pf\n                WHERE pf.document_id=d.document_id AND pf.tenant=? AND pf.owner=? AND pf.valid_until IS NULL\n                AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=?)))\n                OR <GRANTED>)\n            AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM knowledge_generation_documents gd JOIN knowledge_generations g\n                    ON g.generation_id=gd.generation_id WHERE gd.document_id=d.document_id AND g.status='active'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preference_candidates pc WHERE pc.document_id=d.document_id AND pc.status IN ('pending','held'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                AND (pf.owner!=? OR pf.tenant!=?))\n            AND (NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                    AND pf.valid_until IS NULL AND pf.revision_id=d.active_revision_id))\n            "
+        from agenthub.search_permissions import predicate, document_granted_condition
+        # A passage explicitly granted to the reader (agenthub.owner_controls) is
+        # readable outside the reader's own scopes; every other rule still applies.
+        granted, granted_args = document_granted_condition(ctx)
+        sql = sql.replace('<GRANTED>', granted)
         compact, policy_args = predicate(ctx)
         sql += compact
-        args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, ctx['actor'], ctx['tenant'], *policy_args)
+        args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, *granted_args, ctx['actor'], ctx['tenant'], *policy_args)
         from agenthub.draft_review import selected_documents
         review = selected_documents(self, ctx)
         if review is not None:
             sql = sql.replace("g.status='active'))", "g.status='active') OR d.document_id=ANY(?::text[]))")
-            args = (*args[:5], review, *args[5:], review)
+            head = 5 + len(granted_args)
+            args = (*args[:head], review, *args[head:], review)
             sql += ' AND d.document_id=ANY(?::text[])'
         return (sql, args)
 

@@ -128,6 +128,8 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
     def setUp(self):
         self.postgres_setup()
         self.bob = self.store.authenticate(self.tokens['bob'])
+        from test_cloud_postgres import share_at_visibility
+        share_at_visibility(self.store, (self.ctx, self.bob))
 
     def tearDown(self):
         self.postgres_teardown()
@@ -465,6 +467,7 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
 
     def test_capture_notice_uses_operator_wording_and_connection_readers(self):
         from agenthub.governance import notice_from_settings
+        self.store.sharing_setting(self.ctx, {'max_sharing': 'private'})  # the default this notice reports
         text = 'Synthetic organization notice: your agent sessions are retained for project review.'
         self.store.capture_notice_config = notice_from_settings({'tenants': {'acme': {
             'text': text, 'policy_url': 'https://policy.example.invalid/memory'}}})

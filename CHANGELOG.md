@@ -39,6 +39,15 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Added
 
+- Origin labels and session taint for agent capture. The client labels each
+  captured tool event with what it touched (paths outside the repository, personal
+  folders and credentials, other repositories, MCP servers, non-public web
+  addresses, recalled memory) and keeps the most restrictive label for the rest of
+  the session; the service stores it per source and applies it as the origin
+  ceiling of the sharing minimum, so a session that read personal files is captured
+  as private from that point on. Scope files can allow specific paths and MCP
+  servers (`[capture] allowed_paths`, `allowed_mcp_servers`). Events carry an
+  optional `origin_label`; deploy the service before clients.
 - Docker `HEALTHCHECK` against the unauthenticated `/health` endpoint.
 - One sharing ladder, `private` < `team` < `organization`, for conversation passages
   and, separately, for originals. Effective sharing is the minimum of the author's own
@@ -47,6 +56,17 @@ The release workflow publishes the section whose heading matches the tag.
   request. Retrieval is project-scoped, with other projects' organization-shared
   content as a labelled later tier and an explicit `scope = "all"`. Migration 045;
   see [the privacy model](docs/PRIVACY_MODEL.md).
+- Owner self-service: every person can list (`vaelius-client mine`), delete
+  (`forget`, including "forget this session"), re-share (`sharing --set` with a
+  selection) and share with named people or projects (`share`, `unshare`) the
+  content they created, without an operator; also as MCP tools that need an
+  explicit `confirm` and HTTP routes under `/enterprise/v3/my-data`. Deletion uses
+  the canonical purge and reports legal holds; raises are capped by every ceiling
+  and never exceed the origin ceiling; every change and grant is audited. New
+  `share` action (default enrollment) and `moderate` action (project members hide
+  others' content). Curated and derived documents registered after migration 047
+  follow the sharing levels like passages. See
+  [owner controls](docs/PRIVACY_MODEL.md#owner-controls).
 
 ## [0.3.0] - 2026-10-09
 

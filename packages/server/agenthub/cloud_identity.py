@@ -291,7 +291,7 @@ class CloudIdentityMixin:
             binding = self.identity_bindings.resolve(external_identity, tenant)
             if binding['principal'] != principal:
                 raise Denied()
-        allowed={'ingest','read','source_read','feedback','curate','correct','withdraw','policy','audit','settings','legal_hold'}
+        allowed={'ingest','read','source_read','feedback','curate','correct','withdraw','share','moderate','policy','audit','settings','legal_hold'}
         if not isinstance(enrollment,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,120}',enrollment):
             raise ValueError('invalid_enrollment')
         if not actions or set(actions)-allowed:raise ValueError('invalid_actions')

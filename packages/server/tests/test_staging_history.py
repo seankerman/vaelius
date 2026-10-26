@@ -26,6 +26,8 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
         self.canonical_pin=verify()
         self.postgres_setup();self.store=CloudStore(self.store.home,self.dsn,'acme')
         self.alice=self.store.authenticate(self.tokens['alice']);self.bob=self.store.authenticate(self.tokens['bob'])
+        from test_cloud_postgres import share_at_visibility
+        share_at_visibility(self.store,(self.alice,self.bob))
         self.store.enroll_connection(self.alice,'native-history','fixture','maple',['document'],visibility='team',reader_ids=['alice','bob'])
         self.service=DocumentStore(self.store,FileSourceObjects(Path(self.temp.name)/'objects'))
         self.fixture=json.loads(FIXTURE.read_text())

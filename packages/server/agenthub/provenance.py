@@ -102,10 +102,12 @@ def document_metadata(db, document_ids):
     """{id: (block, flagged, origin)}; temporal assertion IDs resolve to their document.
 
     `origin` is the machine-readable origin label: the source project (None when
-    the sources span several) and the CURRENT sharing level, the lowest over every
-    source. A passage's level is its stored level under every current ceiling
-    (agenthub.project_sharing); a curated or derived document's level is the
-    capture connection's visibility. Later layers can make anything derived from a
+    the sources span several), the CURRENT sharing level, the lowest over every
+    source, and `projects`, every other project whose content it carries (present
+    only when there is one). A passage's level is its stored level under every current ceiling
+    (agenthub.project_sharing); a curated or derived document registered after
+    migration 047 (level_capped) has the same level, an earlier one the capture
+    connection's visibility. Later layers can make anything derived from a
     delivered item inherit this restriction.
     """
     from agenthub.search_permissions import LEVEL
@@ -127,12 +129,18 @@ def document_metadata(db, document_ids):
         kinds = [k for k in row['kinds'] if k]
         role = ROLE.get(kinds[0]) if original and len(kinds) == 1 else None
         projects = sorted(set(row['projects']))
+        label = {'project': projects[0] if len(projects) == 1 else None, 'sharing': SHARING[row['level'] or 0]}
+        # Every other project whose content the item carries (sources spanning
+        # projects, and their origin labels): a client restating it in a session
+        # tags that session with them (agentclient.origin).
+        carried = {name for names in (row['carried'] or []) for name in (names or [])}
+        others = sorted((carried | (set(projects) if len(projects) > 1 else set())) - {label['project']})
+        if others:
+            label['projects'] = others
         found[row['document_id']] = (_block(row['owners'], row['projects'], row['first_captured'],
                                             row['last_captured'], row['source_types'],
                                             'original' if original else 'derived', role),
-                                     bool(row['flagged']),
-                                     {'project': projects[0] if len(projects) == 1 else None,
-                                      'sharing': SHARING[row['level'] or 0]})
+                                     bool(row['flagged']), label)
     result = {}
     for ident in ids:
         document = assertions.get(ident, ident)
@@ -148,11 +156,11 @@ def document_metadata(db, document_ids):
 _METADATA_SQL = '''WITH requested AS MATERIALIZED (
         SELECT x.document_id,x.source_id FROM enterprise_dependencies x WHERE x.document_id=ANY(?::text[])
     ), sourced AS (
-        SELECT q.document_id,s.id,s.owner,s.external_project,s.created,s.instruction_like,m.kind,
+        SELECT q.document_id,s.id,s.owner,s.external_project,s.created,s.instruction_like,m.kind,s.origin_projects::jsonb origin_projects,
             CASE WHEN r.source_id IS NULL THEN 'agent'
                  WHEN jsonb_array_length(c.source_types::jsonb)=1 THEN c.source_types::jsonb->>0
                  ELSE r.payload::jsonb->>'source_type' END AS source_type,
-            CASE WHEN ed.representation!='raw'
+            CASE WHEN ed.representation!='raw' AND ed.level_capped=0
                      THEN coalesce(array_position(ARRAY['team','organization'],s.visibility),0)
                  WHEN project.id IS NULL OR author.id IS NULL THEN 0
                  ELSE <LEVEL> END AS level
@@ -172,7 +180,7 @@ _METADATA_SQL = '''WITH requested AS MATERIALIZED (
         array_agg(DISTINCT x.external_project) projects,min(x.created) first_captured,
         max(x.created) last_captured,bool_or(x.instruction_like=1) flagged,
         array_agg(DISTINCT x.source_type) source_types,array_agg(DISTINCT x.kind) kinds,
-        count(*) sources,min(x.level) level
+        count(*) sources,min(x.level) level,jsonb_agg(x.origin_projects) carried
     FROM sourced x JOIN enterprise_documents ed ON ed.id=x.document_id
     GROUP BY x.document_id,ed.representation'''
 

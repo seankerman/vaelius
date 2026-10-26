@@ -33,10 +33,11 @@ NONCE_HEADER = 'x-vaelius-nonce'
 BODY = 'Action=GetCallerIdentity&Version=2011-06-15'
 IDENTITY_PROVIDER = 'aws-sts'
 IDENTITY_CENTER_ROLE_PREFIX = 'AWSReservedSSO_'
-ACTIONS = {'ingest', 'read', 'source_read', 'feedback', 'curate', 'correct', 'withdraw', 'policy', 'audit', 'settings'}
+ACTIONS = {'ingest', 'read', 'source_read', 'feedback', 'curate', 'correct', 'withdraw', 'share', 'moderate', 'policy',
+           'audit', 'settings'}
 DEFAULTS = {'issuer': 'aws-sts:identity-center', 'allowed_role_patterns': [IDENTITY_CENTER_ROLE_PREFIX + '*'],
     'require_identity_center': True, 'regions': ['us-east-1'], 'token_ttl_seconds': 3600,
-    'max_clock_skew_seconds': 300, 'actions': ['feedback', 'ingest', 'read', 'source_read']}
+    'max_clock_skew_seconds': 300, 'actions': ['feedback', 'ingest', 'read', 'share', 'source_read', 'withdraw']}
 # STS refuses a SigV4 signature more than 15 minutes from its timestamp. A
 # recorded signature is kept at least that long, plus the permitted skew.
 SIGNATURE_LIFETIME = 900

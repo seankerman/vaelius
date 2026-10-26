@@ -90,7 +90,7 @@ def _seed_identity(store,tenant,profile):
         if path.exists():
             if path.stat().st_mode&0o077:raise ValueError('profile_token_permissions')
             continue
-        actions=['read','settings','audit'] if principal=='settings-admin' else ['ingest','read','source_read','feedback','curate','correct','withdraw','policy']
+        actions=['read','settings','audit'] if principal=='settings-admin' else ['ingest','read','source_read','feedback','curate','correct','withdraw','share','policy']
         token=store.enroll(tenant,principal,'local-'+principal,actions,expires_in=86400)
         fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as output:output.write(token+'\n')

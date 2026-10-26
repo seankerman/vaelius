@@ -104,6 +104,9 @@ class SearchReader(CompletePolicyEquivalence):
             self.assertTrue(entered.is_set())
 
     def test_unrelated_source_policy_writes_do_not_serialize(self):
+        # Every source stored private, so the team definition both writers move to
+        # already exists (the stored level is part of a policy definition).
+        self.store.sharing_setting(self.contexts['alice'], {'max_sharing': 'private'})
         self.note('existing-team-policy', visibility='team')
         first, _ = self.note('first-policy')
         second, _ = self.note('second-policy')

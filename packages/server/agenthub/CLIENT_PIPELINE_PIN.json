@@ -3,9 +3,9 @@
   "contract_version": "enterprise-local-2",
   "modules": {
     "agentclient.cleaning": "5fac2d1998a3007dd5eeea40bdb7980fc5c6deba54a565540776becef5c274c1",
-    "agentclient.cloud_contract": "cc902effae32bf4320755c7a3bbd2166595276fb9102d0b0388a61df81c0dfb0",
+    "agentclient.cloud_contract": "6a6f9806a33cd33c4e2f4af9252b162e5a418e5268dcc5cca467bf3ee08a937f",
     "agentclient.enterprise_contract": "0825b669d3a2520edb69d31a54e1abf04433054e3d330b0ad140708756414221",
-    "agentclient.general_contract": "8e155bfe7501607b0072d15fc539b86b578af0f227a3c2ae6d47e033a923badd",
+    "agentclient.general_contract": "f5c1db1eae1ef5cdf4f42cd1236567a4ec1609730c4a26b7072b772298286f70",
     "agentclient.secret_detection": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",
     "agenthub.processing.__init__": "961019d775e8e3a8a4280fc7ec84281af060dd3004e6a52cdeb973b37b4a02a5",
     "agenthub.processing.accounting": "ef0e6dfae1b9ac247e6901a3fd271a303d2146b73ecff59f8d3d1fdd1ed6a5d9",

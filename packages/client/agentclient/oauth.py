@@ -70,7 +70,8 @@ def discover(url,tenant,client_id,issuer=None):
         'issuer':issuer,'resource':resource,'client_id':client_id,
         'require_issuer_response':provider.get('authorization_response_iss_parameter_supported',False),
         'scope':'openid '+' '.join(s for s in scopes if s in
-            ('vaelius:read','vaelius:source_read','vaelius:ingest','vaelius:feedback'))}
+            ('vaelius:read','vaelius:source_read','vaelius:ingest','vaelius:feedback',
+             'vaelius:withdraw','vaelius:share'))}
 
 
 def issued(value):

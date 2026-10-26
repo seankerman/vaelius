@@ -222,6 +222,170 @@ projection rebuild is needed. It widens nothing (see
 a request capture as before. A client that requests `organization` or `originals`
 needs a service with migration 045; an older service rejects those fields.
 
+## Origin labels and session taint
+
+A scope file decides capture for a whole session, but a single tool call can read
+far outside the repository: a document in the person's home folder, a mail or chat
+MCP server, a credentials file. Without a further check that content would be
+captured with the repository's sharing. The client therefore labels every captured
+event with what it touched (`agentclient.origin`), deterministically, locally and
+without a model call, and the service enforces the label.
+
+### What an event touched
+
+| Touched | Label |
+| --- | --- |
+| A path inside the current project's root, or governed by the same project's scope file (another checkout or worktree). Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
+| A path inside another repository whose scope file names a different project | tagged with that project: sharing no wider than that scope file requests, and for `team` only readers who are members of **every** tagged project |
+| A path inside a repository with no scope file, or whose scope file is off or invalid | `private` |
+| Personal folders under home (`Documents`, `Desktop`, `Downloads`, `Pictures`, `Movies`, `Music`, iCloud and cloud-drive folders, `Library/Mail`, `Library/Messages`) and credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, ...) | always `private`; no allowlist opens them |
+| Temporary folders (`$TMPDIR`, `/tmp`, `/private/var/folders`), tool caches and package folders (`~/.cache`, `~/.npm`, `~/.cargo`, `site-packages`, `node_modules`, Claude Code plugin folders, ...), read-only system locations (`/usr`, `/opt/homebrew`, `/etc`, `/Library/Developer`) | no restriction |
+| Anything else that exists outside the project (the rest of the home folder, other volumes) | `private` |
+| A path that does not exist (a file the agent is about to create) | no restriction: nothing was read |
+| Public web fetches and searches | no restriction, recorded as origin `web` |
+| A fetch from a non-public address (`localhost`, private and link-local ranges, single-label and intranet-style names, `file:`) | `private` (`file:` follows the path rules) |
+| An MCP server other than Vaelius itself (mail, chat, document stores, issue trackers, ...) | `private`: those systems have permissions memory cannot reproduce |
+| Recalled or injected memory | the label the service attached to each item: an organization item restricts nothing, a team item keeps `team` and adds its project to the tag set, a private or unlabelled item is `private`. The person's own preferences are standing instructions, like prompts, and do not restrict |
+| A tool the client does not recognise | `private` |
+
+Planning, delegation and question tools (`TodoWrite`, `Task`/`Agent`, `AskUserQuestion`,
+`Skill`, `update_plan`, ...) touch nothing themselves; a subagent's own tool calls
+are labelled as they happen.
+
+**Shell commands** are labelled only by the paths they name, after expanding `~`,
+`$HOME`, `$TMPDIR` and `$PWD`, following `cd`/`pushd`, and scanning inside command
+and process substitution, `bash -c`/`eval` scripts, heredocs and quoted inline code
+(`python -c "open('/x')"`). Inline code that asks for the home folder indirectly
+(`expanduser`, `Path.home()`, `os.homedir()`, `getenv("HOME")`) is `private`. A
+command that names no outside path does not restrict, whatever it runs: `aws`,
+`gh`, `git`, `curl`, `kubectl`, `cdk`, test runners. A bare name that exists in the
+working directory is checked too, so `cat link` through a symlink out of the
+repository is caught. Hosts are covered: Claude Code `Bash`, Codex `Bash`
+(including unified exec), and Codex rollout `shell`, `exec_command`,
+`CommandExecution` and `write_stdin`; file tools `Read`, `Write`, `Edit`,
+`MultiEdit`, `NotebookEdit`, `Glob`/`Grep` (including the files they returned),
+`LS`, `LSP`, Codex `apply_patch` and `FileChange`; `WebFetch`, `WebSearch`; and
+`mcp__<server>__<tool>`, plugin servers `mcp__plugin_<plugin>_<server>__<tool>`,
+MCP resource tools and Codex `McpToolCall` items.
+
+### Exceptions in the scope file
+
+`capture` may be a table that names places whose content may be shared with the
+repository's own sharing:
+
+```toml
+project = "example-repo"
+sharing = "team"
+
+[capture]
+mode = "on"                                  # on | read-only | off (default on)
+allowed_paths = ["../shared-fixtures"]       # relative to the scope file, absolute, or ~/
+allowed_mcp_servers = ["docs"]               # names as the host registers them
+```
+
+Anyone who can edit the repository can edit this file, so an `allowed_paths` entry
+that is the filesystem root, the home folder or above it, or a hidden folder or
+`Library` under home is ignored, and personal folders and credentials stay private
+even below an allowed entry. `allowed_mcp_servers` also matches a plugin-provided
+server of that name. An invalid table turns capture off, like any invalid scope file.
+
+### Session taint
+
+Content an agent has read stays in its context, so labels are **sticky per
+session**. The client keeps a small state file in the profile
+(`origin-sessions.json`, 0600, keyed by a hash of the session ID; ceiling, project
+set, reason category, start time and a coarse display hint such as `~/Documents/...`;
+entries untouched for 30 days are dropped) so the label survives the separate hook
+processes:
+
+- the event that first touches restricted content, and **every later event** of
+  the session (tool results, prompts, assistant replies, turn ends), carry at least
+  that restriction; the most restrictive label wins and nothing widens it again;
+- events captured before it are unaffected;
+- a session that works in one project and then in another carries the first
+  project into the second one's tag set;
+- only a **new session ID** starts clean: `/clear`, a new conversation. Resuming the
+  same session keeps the label. **Compaction does not reset it**, because the
+  summary that replaces the context is written from the restricted content;
+- reads while capture is paused, or while the working directory is outside every
+  project, still count: a session that read `~/Documents` and then moves into a
+  captured repository is restricted there;
+- when a label cannot be computed or recorded, the event is `private`.
+
+The person sees one line when it happens, and again when a restricted session is
+resumed, for example:
+
+```text
+vaelius: this session read personal files (~/Documents/...) — capture is now private
+vaelius: this session spans projects maple, birch — capture is now limited to team and to members of every project involved
+```
+
+### On the wire and in storage
+
+Each event carries an optional `origin_label`:
+
+```json
+{"ceiling": "private", "kinds": ["outside_repo"], "reason": "personal_content",
+ "projects": [], "inherited": false}
+```
+
+`ceiling` is `private`, `team` or `organization`; `kinds` and `reason` come from
+fixed category lists in `agentclient.general_contract`; `projects` names up to 16
+other projects; `inherited` says the restriction comes from an earlier event of the
+session. Paths, commands, server names and display hints never leave the computer.
+Events that only touched the project carry no label. The client also lowers its own
+`sharing` and `originals` requests to the ceiling, so even a service that ignored the
+label would not widen the event beyond it.
+
+The service treats the label as a restriction it enforces, never a grant:
+
+| Step | Rule |
+| --- | --- |
+| Validate | `origin_label` must match the contract (fixed categories, at most 16 project names); anything else rejects the event. The source's own project is removed from `projects` |
+| Ingest | The ceiling, and the current ceiling of every project in `projects` (an unknown or inactive project counts as `private`), are terms of the sharing minimum. The label is stored per source as `origin_ceiling`, `origin_reason` and `origin_projects`, and a restricting label is audited (`origin_label` / its ceiling) |
+| Fixed | A trigger refuses any later change to the three origin columns, so no policy change, maintenance task or manual update can widen an origin |
+| Query | The policy definition of a restricted source carries `origin_ceiling` and `origin_projects`. Every layer (indexed predicate, row-level security function `search_passage_shared`, Python oracle) applies the stored ceiling and each tagged project's current ceiling again, and a `team` reader must be an active member of the source project and of every tagged project. Lowering a tagged project's ceiling or leaving that project hides the source at once; raising anything never exposes it beyond the stored origin |
+| Derived documents | Curated and derived documents otherwise follow their capture connection's visibility. For every source a document depends on, a reader other than that source's owner also needs the source's origin to reach them: the same origin level (stored ceiling capped by each tagged project's current ceiling), with `team` requiring membership of the source project and of every tagged project and `private` reaching nobody else. The same clause is in the indexed predicate (`ORIGIN_REACHES`), the row-level security function (`search_origin_reaches`, called from `search_document_allowed`) and the Python oracle (`_origin_reaches`), and a parity test checks all three. Person, project and tenant ceilings still do not apply to curated documents |
+| Delivery | Recalled items report `origin.projects`: the other projects their sources carry, so a client that restates them tags its own session the same way |
+
+Sources without an origin label have no origin keys in their policy definition, so
+existing definitions are unchanged (migration `046_origin_labels.sql` needs no
+projection rebuild). `explain` lists a source's passage readers under these rules in
+`raw_readers`.
+
+### Known limits
+
+The labels are a best-effort, deterministic guard against the common ways content
+from elsewhere enters a session. They are not a sandbox.
+
+- **A program can read anything without naming a path.** `./run.sh`, `make`,
+  `pytest`, a Python script or a build tool in the repository may read the home
+  folder internally; only the command line is inspected. So do `xargs` or
+  `while read` loops fed from a file, and variables other than `HOME`, `TMPDIR` and
+  `PWD`.
+- **Commands that fetch from other systems are not restricted** unless they name
+  an outside path: `aws`, `gh`, `kubectl`, `curl`, `ssh` and database clients
+  return data whose permissions memory cannot see. This is a deliberate trade so
+  ordinary engineering sessions are not all private; MCP servers, by contrast, are
+  restricted by default.
+- **Intranet addresses with public-looking names** are treated as public web by
+  `WebFetch`. Only `localhost`, IP ranges that are not global and intranet-style
+  names are recognised.
+- **Allowed locations can hold personal content.** A file copied into `/tmp`, a
+  cache folder or a package folder is not restricted unless its name or symlink
+  target says otherwise.
+- **Forks lose the label.** A forked session (`--fork-session`, Codex `fork`) gets a
+  new session ID while keeping the parent's context; the client cannot link the two.
+  The same applies to any host that resumes under a new ID.
+- **Subagents** are labelled by the tool calls their hooks report. A host that runs a
+  subagent under a different session ID would not taint the parent.
+- **The scope file is editable by anyone who can edit the repository**, including
+  its allowlists, within the guards above.
+- **Text the person types** (a pasted document in a prompt) is captured with the
+  session's current label; the client does not inspect prompt content.
+- **Local state**: deleting or corrupting `origin-sessions.json` forgets the labels
+  of running sessions.
+
 ## Retention guidance
 
 - Keep only what you need: withdraw or delete sources (`/enterprise/v1/lifecycle`)

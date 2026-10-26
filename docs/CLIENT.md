@@ -146,7 +146,9 @@ prompt, tool call with its result, and final reply of a turn is redacted locally
 queued in the outbox; Claude Code's `prompt_id` identifies the turn. A `StopFailure`
 records only the error category, marking a turn that has no reply. Calls to the
 Vaelius MCP tools themselves, under either tool-name form, are never captured, so
-retrieved memory is not fed back. `SessionEnd` only delivers what is queued.
+retrieved memory is not fed back, but the sharing labels of what they return still
+restrict the session ([origin labels](DATA_BOUNDARIES.md#origin-labels-and-session-taint)).
+`SessionEnd` only delivers what is queued.
 Automatic context is added on `SessionStart` and `UserPromptSubmit` as framed
 reference data.
 
@@ -432,6 +434,31 @@ an HTTP search request.
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
 ```
+
+### Content from outside the repository
+
+Each captured tool event is labelled with what it touched, and the label sticks to
+the rest of the session: once an agent reads a personal folder, a credentials file,
+a repository without a scope file, or uses an MCP server other than Vaelius, that
+event and everything after it in the session is captured as private. Reading another
+repository that has its own scope file tags the session with that project instead,
+so the service shares it only with members of both. Shell commands are judged by the
+paths they name; `aws`, `gh`, `git` and similar commands that name no outside path do
+not restrict. A new session or `/clear` starts clean; compaction does not. The person
+sees one line when it happens, for example
+`vaelius: this session read personal files (~/Documents/...) — capture is now private`.
+
+`capture` can be a table to allow specific places:
+
+```toml
+[capture]
+mode = "on"
+allowed_paths = ["../shared-fixtures"]
+allowed_mcp_servers = ["docs"]
+```
+
+Rules, guards on the allowlists, what is sent and the known limits are in
+[origin labels and session taint](DATA_BOUNDARIES.md#origin-labels-and-session-taint).
 
 ### Legacy scope file names
 

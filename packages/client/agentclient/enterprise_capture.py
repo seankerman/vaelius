@@ -4,7 +4,7 @@ import uuid
 
 from agentclient.cleaning import SECRET_KEYS, REDACTED_SECRET
 from agentclient.secret_detection import redact_text
-from agentclient.general_contract import VERSION, validate_event
+from agentclient.general_contract import ORIGIN_LEVELS, VERSION, validate_event
 
 SELF_TOOLS = {'agentnetwork_memory', 'mcp__agentnetwork__agentnetwork_memory'}
 # MCP server names under which hosts register the Vaelius service. Claude Code
@@ -59,13 +59,20 @@ def redact(value, field='$', manifest=None):
     return value, manifest
 
 
+def lower_level(level, ceiling):
+    """The lower of a sharing request and an origin ceiling on the private < team < organization ladder."""
+    if level not in ORIGIN_LEVELS:
+        return level  # rejected below
+    return min(level, ceiling, key=ORIGIN_LEVELS.index)
+
+
 def turn_of(event):
     """Codex sends `turn_id`; Claude Code identifies the turn by `prompt_id`."""
     return event.get('turn_id') or event.get('prompt_id') or ''
 
 
 def normalize_capture(event, project, connection, *, source_type='agent', origin='host_hook', sharing='private',
-                      originals='private'):
+                      originals='private', origin_label=None):
     kind = event.get('hook_event_name', '')
     tool = str(event.get('tool_name', ''))
     blocks = [];role = 'unknown';channel = '';complete = False;disposition = 'accepted'
@@ -130,6 +137,11 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
     if extra and value['disposition'] == 'accepted': value['disposition'] = 'redacted'
     # A repository scope file's requests (redacted passages, unredacted originals);
     # the service decides the effective levels. Private is sent as omission.
+    if origin_label:
+        # What the event touched (agentclient.origin). Its ceiling also lowers the
+        # requests here, so a service that ignored the label would still not widen them.
+        value['origin_label'] = origin_label
+        sharing, originals = (lower_level(level, origin_label['ceiling']) for level in (sharing, originals))
     for key, level in (('sharing', sharing), ('originals', originals)):
         if level in ('team', 'organization'): value[key] = level
         elif level != 'private': raise ValueError('invalid_sharing_request')

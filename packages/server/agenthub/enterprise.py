@@ -200,6 +200,9 @@ class EnterpriseStore(GovernanceMixin,ProjectSharingMixin,GeneralSourcesMixin,Re
         if not self._general_source_allowed(db,ctx,source):return False
         # Operator quarantine withholds a principal's held sources from others.
         if source.get("principal_quarantine") and source["owner"]!=ctx["actor"]:return False
+        # Origin labels (agenthub.project_sharing): what the captured content came
+        # from also caps every document derived from it, curated ones included.
+        if source["owner"]!=ctx["actor"] and not self._origin_reaches(db,ctx,source):return False
         if raw:
             # Redacted passages, evidence and context: the owner, or a reader
             # the source's current sharing level reaches (agenthub.project_sharing).

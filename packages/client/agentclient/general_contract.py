@@ -4,6 +4,8 @@ No tenant, reader list, visibility grant or provider choice comes from a source.
 Optional `sharing` (redacted passages) and `originals` (unredacted originals) fields
 carry a repository scope file's request; the service caps them by the person's own
 setting, project and tenant policy and connection visibility, so they never grant access.
+An optional `origin_label` carries what the event touched (`agentclient.origin`):
+its `ceiling` can only lower the stored levels, never raise them.
 Connection enrollment is a trusted server operation, independently of content.
 """
 import base64
@@ -20,6 +22,16 @@ MAX_PARTS = 128
 SOURCE_TYPES = {'agent', 'conversation', 'document', 'record'}
 DISPOSITIONS = {'accepted', 'redacted', 'excluded', 'unsupported', 'incomplete'}
 BLOCK_TYPES = {'text', 'tool_arguments', 'tool_result', 'diff', 'record_fields', 'attachment'}
+# Origin labels (agentclient.origin): the sharing ladder, most restrictive first;
+# what an event touched; why it (or its session before it) was restricted; and
+# how many other projects one label may name. Categories only, never content.
+ORIGIN_LEVELS = ('private', 'team', 'organization')
+ORIGIN_KINDS = ('project', 'web', 'allowed_path', 'allowed_mcp', 'local_tooling', 'outside_repo', 'other_project',
+                'mcp', 'shell', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call')
+ORIGIN_REASONS = ('outside_repo', 'shell_outside_repo', 'personal_content', 'credential_file', 'other_project',
+                  'mcp_server', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call')
+ORIGIN_MAX_PROJECTS = 16
+ORIGIN_PROJECT = re.compile(r'[A-Za-z0-9_-]{1,120}')
 
 
 def canonical(value):
@@ -46,7 +58,7 @@ def text(value, limit=256, empty=False):
 def validate_event(value):
     object_fields(value, {'version', 'connection', 'external_id', 'revision', 'source_type',
         'project', 'conversation', 'turn', 'event', 'blocks', 'occurred_at',
-        'actor', 'source_url', 'disposition', 'redactions', 'origin'}, ('sharing', 'originals'))
+        'actor', 'source_url', 'disposition', 'redactions', 'origin'}, ('sharing', 'originals', 'origin_label'))
     if value['version'] != VERSION or value['source_type'] not in SOURCE_TYPES:
         raise ValueError('unsupported_general_version_or_type')
     # A scope-file request, never a grant: the service caps it by every ceiling.
@@ -55,6 +67,8 @@ def validate_event(value):
     for key in ('sharing', 'originals'):
         if key in value and value[key] not in ('team', 'organization'):
             raise ValueError('invalid_sharing_request')
+    if 'origin_label' in value:
+        validate_origin_label(value['origin_label'])
     for key in ('connection', 'external_id', 'project', 'conversation', 'turn', 'actor'):
         text(value[key], empty=key in {'conversation', 'turn', 'actor'})
     text(value['revision'], 16)
@@ -104,6 +118,31 @@ def validate_event(value):
     if len(canonical(value)) > EVENT_BYTES:
         raise ValueError('logical_event_too_large')
     return value
+
+
+def validate_origin_label(label):
+    """{'ceiling', 'kinds', 'reason', 'projects', 'inherited'}.
+
+    `projects` names other projects whose content the event carries: the service
+    shares it no wider than every one of them allows, and for team sharing only
+    with members of all of them. A restricted label carries its reason."""
+    object_fields(label, {'ceiling', 'kinds', 'reason', 'projects', 'inherited'})
+    if label['ceiling'] not in ORIGIN_LEVELS:
+        raise ValueError('invalid_origin_ceiling')
+    if (not isinstance(label['kinds'], list) or len(label['kinds']) > len(ORIGIN_KINDS)
+            or len(set(label['kinds'])) != len(label['kinds'])
+            or any(kind not in ORIGIN_KINDS for kind in label['kinds'])):
+        raise ValueError('invalid_origin_kinds')
+    projects = label['projects']
+    if (not isinstance(projects, list) or len(projects) > ORIGIN_MAX_PROJECTS or len(set(projects)) != len(projects)
+            or any(not isinstance(p, str) or not ORIGIN_PROJECT.fullmatch(p) for p in projects)):
+        raise ValueError('invalid_origin_projects')
+    if type(label['inherited']) is not bool:
+        raise ValueError('invalid_origin_inherited')
+    restricted = label['ceiling'] != ORIGIN_LEVELS[-1] or bool(projects)
+    if (label['reason'] not in ORIGIN_REASONS) if restricted else label['reason'] != '':
+        raise ValueError('invalid_origin_reason')
+    return label
 
 
 def validate_part(value):

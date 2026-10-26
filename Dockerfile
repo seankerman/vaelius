@@ -1,6 +1,6 @@
 # Base: python:3.12.15-slim-trixie from the public ECR mirror of Docker Official
 # Images. The tag is informational (Dependabot reads it); the digest is what pulls.
-FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS builder
+FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704 AS builder
 WORKDIR /src
 # Hash-locked build backend; --no-build-isolation stops pip fetching an unverified one.
 COPY requirements-build.txt /tmp/requirements-build.txt
@@ -9,7 +9,7 @@ COPY packages/client/ /src/client/
 COPY packages/server/ /src/server/
 RUN python -m pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels /src/client /src/server
 
-FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+FROM public.ecr.aws/docker/library/python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 COPY --from=builder /wheels /wheels
 COPY requirements-runtime.txt /requirements-runtime.txt
 # Third-party packages come only from the hash-locked file. The project wheels are

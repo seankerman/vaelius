@@ -154,9 +154,20 @@ SOURCE_GRANTED = """({source}.tenant={T} AND {source}.active=1 AND {source}.owne
                                 AND grantee_member.principal={A} AND grantee_member.active=1)))
                         ))"""
 
+# The reader holds at least one active passage grant (directly or through a
+# project membership). Uncorrelated, so PostgreSQL evaluates it once per query:
+# readers without grants never pay for the per-document check below.
+RECEIVES_GRANTS = """EXISTS(SELECT 1 FROM raw_source_grants received WHERE received.tenant={T}
+                    AND received.revoked IS NULL AND received.passages=1
+                    AND ((received.grantee_kind='principal' AND received.grantee={A})
+                        OR (received.grantee_kind='project' AND received.grantee IN (SELECT reader_member.project
+                            FROM enterprise_memberships reader_member WHERE reader_member.tenant={T}
+                            AND reader_member.principal={A} AND reader_member.active=1))))"""
+
 # A passage document (alias ed) every source of which is granted to the reader.
 # raw_granted is only a prefilter maintained by grants and passage indexing.
 DOCUMENT_GRANTED = """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM {A}
+                    AND """ + RECEIVES_GRANTS + """
                     AND EXISTS(SELECT 1 FROM enterprise_dependencies granted_dep WHERE granted_dep.document_id=ed.id)
                     AND NOT EXISTS(SELECT 1 FROM enterprise_dependencies granted_dep
                         JOIN enterprise_sources granted ON granted.id=granted_dep.source_id

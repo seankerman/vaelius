@@ -91,6 +91,15 @@ BEGIN
             WHERE held.tenant=tenant_id AND held.principal=actor_id) THEN
         RETURN false;
     END IF;
+    -- Readers without any active passage grant stop here (one indexed probe).
+    IF NOT EXISTS(SELECT 1 FROM raw_source_grants received WHERE received.tenant=tenant_id
+            AND received.revoked IS NULL AND received.passages=1
+            AND ((received.grantee_kind='principal' AND received.grantee=actor_id)
+                OR (received.grantee_kind='project' AND received.grantee IN (SELECT reader_member.project
+                    FROM enterprise_memberships reader_member WHERE reader_member.tenant=tenant_id
+                    AND reader_member.principal=actor_id AND reader_member.active=1)))) THEN
+        RETURN false;
+    END IF;
     RETURN EXISTS(SELECT 1 FROM enterprise_dependencies dep WHERE dep.document_id=target)
         AND NOT EXISTS(SELECT 1 FROM enterprise_dependencies dep
             JOIN enterprise_sources granted ON granted.id=dep.source_id
@@ -149,18 +158,15 @@ DECLARE
         ELSE ARRAY(SELECT jsonb_array_elements_text(context->'review')) END;
     releases TEXT[] := ARRAY(SELECT jsonb_array_elements_text(context->'releases'));
     at_time DOUBLE PRECISION := extract(epoch FROM statement_timestamp());
-    granted BOOLEAN := false;
 BEGIN
     IF context IS NULL OR tenant_id IS NULL OR actor_id IS NULL THEN RETURN false; END IF;
-    -- Only passages of another owner flagged as granted pay for the grant check.
-    SELECT ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM actor_id
-        AND coalesce((context->>'source_read')::boolean,false)
-        AND search_passage_granted(ed.id,tenant_id,actor_id)
-        INTO granted FROM enterprise_documents ed WHERE ed.id=target AND ed.tenant=tenant_id;
-    granted := coalesce(granted,false);
-    IF context->>'reach'='project' AND requested_project IS NOT NULL AND NOT granted AND NOT EXISTS(
+    -- A granted passage passes the reach. The grant check is written inline here
+    -- and below: only another owner's passage flagged raw_granted ever calls
+    -- search_passage_granted, so readers without grants pay nothing for it.
+    IF context->>'reach'='project' AND requested_project IS NOT NULL AND NOT EXISTS(
             SELECT 1 FROM enterprise_documents ed WHERE ed.id=target
-            AND (ed.source_project=requested_project OR ed.representation!='raw'
+            AND (ed.source_project=requested_project OR ed.representation!='raw' OR (ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM actor_id
+            AND coalesce((context->>'source_read')::boolean,false) AND search_passage_granted(ed.id,tenant_id,actor_id))
                 OR (ed.raw_shared=2 AND (SELECT bool_and(required.dependency_count>0
                         AND search_passage_shared(policy.definition,tenant_id,NULL,2))
                     FROM search_document_policies required
@@ -174,7 +180,8 @@ BEGIN
         AND (review IS NULL OR d.document_id=ANY(review))
         -- Redacted passages: the owner, every dependency's current level reaches
         -- the reader (search_passage_shared), or an explicit grant.
-        AND (ed.representation!='raw' OR granted OR (coalesce((context->>'source_read')::boolean,false) AND (
+        AND (ed.representation!='raw' OR (ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM actor_id
+            AND coalesce((context->>'source_read')::boolean,false) AND search_passage_granted(ed.id,tenant_id,actor_id)) OR (coalesce((context->>'source_read')::boolean,false) AND (
             ed.raw_owner=actor_id OR (ed.raw_shared>0 AND (SELECT bool_and(required.dependency_count>0
                     AND search_passage_shared(policy.definition,tenant_id,actor_id,1))
                 FROM search_document_policies required
@@ -189,7 +196,8 @@ BEGIN
                 LEFT JOIN search_policies policy ON policy.id=required.policy_id
                 WHERE required.document_id=d.document_id) IS TRUE)
         AND d.lifecycle='active' AND ((ed.tenant=tenant_id AND ed.active=1 AND d.lifecycle='active'
-            AND (ed.internal_project=ANY(scopes::text[]) OR granted OR EXISTS(SELECT 1 FROM cloud_preferences pf
+            AND (ed.internal_project=ANY(scopes::text[]) OR (ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM actor_id
+            AND coalesce((context->>'source_read')::boolean,false) AND search_passage_granted(ed.id,tenant_id,actor_id)) OR EXISTS(SELECT 1 FROM cloud_preferences pf
                 WHERE pf.document_id=d.document_id AND pf.tenant=tenant_id AND pf.owner=actor_id AND pf.valid_until IS NULL
                 AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=requested_project))))
             AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)
@@ -214,7 +222,8 @@ BEGIN
                         AND (connection.reader_ids::jsonb='[]'::jsonb OR connection.owner=actor_id OR EXISTS(
                             SELECT 1 FROM jsonb_array_elements_text(connection.reader_ids::jsonb) reader
                             WHERE reader.value=actor_id))))
-                    AND (granted OR policy.definition->>'visibility'='organization'
+                    AND ((ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM actor_id
+            AND coalesce((context->>'source_read')::boolean,false) AND search_passage_granted(ed.id,tenant_id,actor_id)) OR policy.definition->>'visibility'='organization'
                         OR (policy.definition->>'visibility'='private' AND policy.definition->>'owner'=actor_id)
                         OR (policy.definition->>'visibility'='team' AND EXISTS(
                             SELECT 1 FROM enterprise_memberships membership

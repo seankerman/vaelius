@@ -27,9 +27,9 @@ authlib==1.8.0 \
     --hash=sha256:88aebbd9af6757e14e912d5dc007ae1dc1f3e27e3b2152ce7c552ee2c3b3c121 \
     --hash=sha256:f3ecd5f1da737262fb53bf1a4d95c4ea1ad9dd509316587a255c99ab1838a4f0
     # via -r requirements-runtime.in
-boto3==1.43.113 \
-    --hash=sha256:2e6fa2eef6decd7cbe5cf55b4ccc3218a3784630e54cb5e7e7f7074437dda281 \
-    --hash=sha256:5a3e7750325c22fab0957c41a500fe2f95a936c2bbcf5c18f58472ba5ffbb792
+boto3==1.43.114 \
+    --hash=sha256:be704857751564a5cf69c5bbaadbfa01c22806409815c73563db42fbffe583a2 \
+    --hash=sha256:d9cac2eb921ce674970cef1c9ad750f85ee3a846aedcf188d18368fb9eb6da23
     # via -r requirements-runtime.in
 botocore==1.43.116 \
     --hash=sha256:00b1fbfc1c024b56633538385628a1bbc7ab15aca0b5b53e5fe188841d96c8ce \

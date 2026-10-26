@@ -44,6 +44,13 @@ actions answer `404`, the same as a missing resource.
 | `POST /enterprise/v1/reviewed-notes` (MCP `submit_memory_candidate`), `POST /enterprise/v3/preferences/curate` | `curate` |
 | `POST /enterprise/v1/lifecycle` | `correct`, `withdraw` (also for `delete`) or `policy`, by operation |
 | `POST /enterprise/v3/preferences/withdraw` | `withdraw` |
+| `POST /enterprise/v3/my-data` (MCP `list_my_memories`): the caller's own sources and sessions | `read` |
+| `POST /enterprise/v3/my-data/forget` (MCP `forget_memories`) | `withdraw` (own sources only) |
+| `POST /enterprise/v3/my-data/sharing` (MCP `change_memory_sharing`) | `withdraw` or `share`; raising needs `share`, a non-delegated credential and a tenant that allows owner sharing |
+| `POST /enterprise/v3/my-data/grants` (MCP `list_memory_shares`) | `read` |
+| `POST /enterprise/v3/my-data/grant` (MCP `share_memories`) | `share` or `policy` (own sources only; not delegated with `share`) |
+| `POST /enterprise/v3/my-data/revoke` (MCP `unshare_memories`) | `share`, `withdraw` or `policy` (own grants only) |
+| `POST /enterprise/v3/moderation/withdraw` | `moderate` (and active membership of the project) |
 | `POST /enterprise/v2/release` | `policy` and `read` |
 | Directory events and SCIM | `settings` (and the tenant administrator flag) |
 | `GET /enterprise/v1/processing-status` | `audit` |
@@ -66,6 +73,23 @@ the presented credential or returns text meant for every user:
 A malformed request body is reported (`400`) only after authentication; an
 unauthenticated caller gets the same `401`/`404` for any route.
 
+### `share` and `moderate`
+
+`share` lets a person raise the stored sharing level of their own sources and
+grant them to named people or projects ([owner controls](PRIVACY_MODEL.md#owner-controls)).
+It is part of default interactive enrollment and of the default provider and AWS
+sign-in scopes (`vaelius:share`), together with `withdraw`, which the owner needs to
+delete and to lower levels. Credentials and refresh sessions issued before
+migration 047 that hold `withdraw` also hold `share` (`legacy_actions` bit 2); their
+stored action lists are not rewritten. Delegations cannot include `share`. An
+operator restricts it tenant-wide with `enterprise_organizations.owner_sharing =
+'lower_only'`, which keeps lowering, deleting and revoking.
+
+`moderate` lets a project member withdraw (hide) anyone's sources in that project;
+it never deletes and never reads originals. It is never a default, cannot be
+delegated, is reported as privileged in [access reviews](ACCESS_REVIEW.md), and is
+granted explicitly through `enrollment_actions` or a provider's `actions`.
+
 ### `feedback` and `curate`
 
 `feedback` (outcome reports) and `curate` (reviewed notes and preference curation)
@@ -78,7 +102,7 @@ rewritten, so renewal still reports the same actions and clients' scope checks k
 passing. Grants issued after the upgrade state their actions explicitly:
 
 - Interactive enrollment without operator `enrollment_actions` now grants
-  `ingest, read, feedback, correct, withdraw`. Add `curate` there (or to a
+  `ingest, read, feedback, correct, withdraw, share`. Add `curate` there (or to a
   delegation) for users who should submit reviewed notes; `curate` is reported as
   privileged in [access reviews](ACCESS_REVIEW.md).
 - Provider OAuth tokens need the `vaelius:feedback` scope to report outcomes (the
@@ -137,7 +161,9 @@ tenant; do not infer the tenant from an email or caller header.
 
 For Keycloak, configure a public `vaelius-plugin` client with PKCE required, exact
 loopback callback, disabled password/direct grant and scopes `vaelius:read`,
-`vaelius:source_read`, `vaelius:ingest`, `vaelius:feedback`. Include scopes in the
+`vaelius:source_read`, `vaelius:ingest`, `vaelius:feedback`, `vaelius:withdraw` and
+`vaelius:share` (the last two let people forget and share their own content; the
+plugin requests them when offered). Include scopes in the
 token. Use two audience mappers: the Vaelius resource URI and the confidential
 `vaelius-api` introspection client. Include the subject in introspection. Configure
 refresh rotation (`revokeRefreshToken`, max reuse zero), short access lifetime,
@@ -284,7 +310,7 @@ login and explicit service credentials.
 | `issuer` | `aws-sts:identity-center` | Issuer recorded in bindings and credentials |
 | `token_ttl_seconds` | `3600` | Vaelius credential lifetime, 60–43200 |
 | `max_clock_skew_seconds` | `300` | Accepted difference from the signed `X-Amz-Date`, 30–900 |
-| `actions` | `feedback, ingest, read, source_read` | Actions granted to issued credentials |
+| `actions` | `feedback, ingest, read, share, source_read, withdraw` | Actions granted to issued credentials |
 
 `providers` may be omitted when `aws_sts` is present. Unknown keys and invalid
 values stop startup. Run control-plane migrations: they add the

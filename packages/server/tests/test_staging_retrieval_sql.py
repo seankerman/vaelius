@@ -50,6 +50,8 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         self.store = CloudStore(self.store.home, self.dsn, 'acme')
         self.docs = set()
         self.contexts = {who: self.store.authenticate(token) for who, token in self.tokens.items()}
+        from test_cloud_postgres import share_at_visibility
+        share_at_visibility(self.store, self.contexts.values())
 
     def tearDown(self):
         self.postgres_teardown()

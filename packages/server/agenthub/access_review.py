@@ -25,7 +25,7 @@ import secrets
 import sys
 import time
 
-PRIVILEGED_ACTIONS = frozenset({'audit', 'curate', 'policy', 'settings', 'source_read'})
+PRIVILEGED_ACTIONS = frozenset({'audit', 'curate', 'moderate', 'policy', 'settings', 'source_read'})
 DEFAULT_STALE_DAYS = 90
 ROUTE_PREFIX = '/enterprise/v3/access-review/'
 LAST_USED_BASIS = ('latest credential issuance, refresh-token rotation or delivery receipt; precise to one '

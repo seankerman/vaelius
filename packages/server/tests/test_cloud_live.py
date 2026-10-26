@@ -168,6 +168,8 @@ class ReceiverContractTests(unittest.TestCase):
 class LivePreflightTests(PostgresFixture,unittest.TestCase):
     def setUp(self):
         self.postgres_setup()
+        from test_cloud_postgres import share_at_visibility
+        share_at_visibility(self.store,[self.store.authenticate(self.tokens[n]) for n in ('alice','bob')])
         self.store.curation_enabled=True  # This preflight explicitly exercises enrichment.
         self.store.retrieval_corpus='all'
         profile=Path(self.temp.name)/'profile';profile.mkdir();self.profile=profile

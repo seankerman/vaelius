@@ -20,12 +20,12 @@ class LargeSourceScope(CompletePolicyEquivalence):
                 (id,tenant,owner,external_project,internal_project,external_id,
                  enrollment,payload_hash,visibility,raw_visibility,active,
                  policy_version,source_version,occurred_at,created,
-                 occurred_precision,occurred_timezone)
+                 occurred_precision,occurred_timezone,sharing)
                 SELECT md5('large-source-fixture-' || n::text),tenant,owner,
                  external_project,internal_project,'noise-' || n::text,
                  enrollment,payload_hash,visibility,raw_visibility,active,
                  policy_version,source_version,occurred_at,created,
-                 occurred_precision,occurred_timezone
+                 occurred_precision,occurred_timezone,sharing
                 FROM enterprise_sources CROSS JOIN generate_series(1,55000) n
                 WHERE id=?""", (source,))
         self.store.retrieval_authorization_shape = 'authorized_cte'

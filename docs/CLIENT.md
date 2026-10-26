@@ -422,6 +422,63 @@ applies to what is captured from then on; content captured while it was lower
 stays at that level. Only you can change it (a delegated credential cannot), and
 each change is audited. The session status line shows it.
 
+### Your own content: find, delete, re-share and share
+
+Everything below acts only on content you created (sources you captured, or that a
+delegated service captured for you), needs no operator, and works from the command
+line or by asking your agent (the MCP tools in brackets).
+
+| Command | What it does | Needs |
+| --- | --- | --- |
+| `mine` (`list_my_memories`) | Lists your sources, or with `--sessions` your capture sessions, with each source's current sharing level and which setting holds it there | `read` |
+| `forget` (`forget_memories`) | Deletes a session, chosen sources, everything of yours in a project, or a date range | `withdraw` |
+| `sharing --set LEVEL` with a selection (`change_memory_sharing`) | Changes the stored level of those sources | `withdraw` to lower, `share` to raise |
+| `share` / `unshare` (`share_memories`, `unshare_memories`) | Shares a session or sources with one person or one project's members, and revokes it; `share --list` (`list_memory_shares`) lists shares you made and received | `share` |
+
+Select content with `--session current` (the session captured most recently in this
+folder's project: "what we just did"), `--session HANDLE` (from `mine --sessions`)
+or a host conversation ID, `--source ID` (repeatable), `--project NAME`, and
+`--since` / `--until` (UTC dates or ISO times):
+
+```sh
+vaelius-client --home /absolute/private/client-profile mine --sessions
+vaelius-client --home /absolute/private/client-profile mine --sharing organization
+vaelius-client --home /absolute/private/client-profile forget --session current
+vaelius-client --home /absolute/private/client-profile forget --session current --confirm TOKEN
+vaelius-client --home /absolute/private/client-profile forget --project maple --until 2026-01-01 --yes
+vaelius-client --home /absolute/private/client-profile sharing --set private --session current --yes
+vaelius-client --home /absolute/private/client-profile share --session current --with-project maple
+vaelius-client --home /absolute/private/client-profile share --source SOURCE --with-principal alice --originals --yes
+vaelius-client --home /absolute/private/client-profile unshare --source SOURCE --with-principal alice
+```
+
+`forget`, `sharing` with a selection and `share` change nothing on their own: they
+print a preview (how many sources, sessions and projects, what is held, what would
+be capped) and a `confirm_token`. Run the same command with `--confirm TOKEN`, or
+add `--yes` to preview and apply in one step. A selection that changed in between
+is previewed again instead of applied. The MCP tools work the same way: they need
+`confirm`, which must be `false` (preview) or the preview's token, so your agent
+has to show you the preview and get your agreement first. These tools are never
+captured back into memory.
+
+- **Deleting** purges the sources, everything derived from them and their
+  originals, exactly as the service's own deletion does. Content under a legal hold
+  is hidden and preserved instead, and the result counts it as `held`. Content
+  captured after you forget a session is captured as usual; pause capture to stop it.
+- **Lowering** a level hides the content on the next search. **Raising** applies
+  to the selected sources only, is never stored above the content's origin (content
+  recalled from a more restricted place stays as restricted), and is still capped
+  at every search by your own setting and the project, tenant and connection
+  ceilings; the preview names the ceiling that will hold it lower. An operator can
+  restrict raising and new shares tenant-wide; lowering, deleting and revoking
+  always work.
+- **Sharing with people** names one principal or the members of one project. They
+  can then read those passages even where your sharing level would not reach them,
+  in every project they search, and, with `--originals` and their own `source_read`
+  action, the originals. A session share also covers what is captured later in that
+  session. Revoking takes effect on the next search. Every change and share is
+  audited. See [the privacy model](PRIVACY_MODEL.md#owner-controls).
+
 ### Which projects recall reaches
 
 Automatic context and `search_memory` return memory from the current project
@@ -498,7 +555,8 @@ rate-limited capture (HTTP 429) stays in the outbox until the service's
 
 Desktop capture is forward-only at enrollment. Capture is an explicit finite poll;
 installation does not start a recurring collector or import past conversations.
-Pausing or uninstalling does not delete server records; use backend lifecycle tools.
+Pausing or uninstalling does not delete server records; use `vaelius-client forget`
+(above) to delete what was captured.
 
 `vaelius-client` defaults to `~/.local/share/vaelius/client`. The old `agentclient`
 alias retains its old default for compatibility. Supplying `--home` always selects

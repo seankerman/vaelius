@@ -178,9 +178,14 @@ class OriginCeilingTests(PostgresFixture, unittest.TestCase):
         # The other project's current ceiling applies to derived documents too.
         self.store.set_project_sharing('birch', 'private')
         self.assertLayers(self.bob, {plain, team}, 'other project lowered', raw=False)
-        # Curated documents without an origin keep exactly their previous rules.
+        # Since migration 047 a curated document is capped like a passage, so the
+        # project ceiling applies to it at query time as well.
         self.store.set_project_sharing('maple', 'private')
-        self.assertLayers(self.erin, {plain}, 'project ceiling does not apply to curated documents', raw=False)
+        self.assertLayers(self.erin, set(), 'project ceiling applies to new curated documents', raw=False)
+        # Curated documents registered before migration 047 keep their previous rules.
+        with self.store.open() as state, state.db:
+            state.db.execute('UPDATE enterprise_documents SET level_capped=0')
+        self.assertLayers(self.erin, {plain}, 'pre-047 curated documents keep their rules', raw=False)
 
     # Project sets ----------------------------------------------------------------
 

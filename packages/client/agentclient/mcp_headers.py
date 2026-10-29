@@ -26,9 +26,18 @@ def headers(home, *, project=None, project_dir=None, url=None):
         raise ValueError('mcp_url_not_this_profile_service')
     backend=enterprise_client(config)
     enrolled=set(config.get('projects',{}).values())|set(config.get('sessions',{}).values())
+    scope=None
     if project:
         selected=project
-        enrolled|={value.get('project') for value in enrollments(home).values() if isinstance(value,dict)}
+        recorded=enrollments(home)
+        enrolled|={value.get('project') for value in recorded.values() if isinstance(value,dict)}
+        roots=[root for root,name in config.get('projects',{}).items() if name==project]
+        roots+=[root for root,value in recorded.items() if isinstance(value,dict) and value.get('project')==project]
+        for root in roots:
+            try:found=resolve_scope(config,{'cwd':root})
+            except Exception:found=None
+            if found and found['project']==project:
+                scope=found;break
     else:
         # The folder's project as hooks resolve it; a read-only scope file still recalls.
         scope=resolve_scope(config,{'cwd':project_dir or os.getcwd()})
@@ -38,7 +47,26 @@ def headers(home, *, project=None, project_dir=None, url=None):
         raise ValueError('project_not_enrolled')
     result={'Authorization':'Bearer '+backend.token,'X-AgentNetwork-Session':'mcp-'+uuid.uuid4().hex}
     if selected:result['X-AgentNetwork-Project']=selected
+    label=session_label(scope,selected)
+    if label:result['X-Vaelius-Session-Label']=json.dumps(label,separators=(',',':'))
     return result
+
+
+def session_label(scope, selected):
+    """The connection's session label: the workspace the folder starts a session in.
+
+    The header helper cannot tell which conversation will use the connection, so it
+    sends the label a session starting in that folder gets (agentclient.session_label);
+    a later narrowing only widens what such a session may recall, so this is never
+    wider than the session's own label. No label (old behavior) outside a workspace
+    folder with capture on."""
+    from agentclient.session_label import LABELLED_ORIGINS, NAME
+    if (not scope or not selected or scope.get('project')!=selected or scope.get('capture')!='on'
+            or scope.get('origin') not in LABELLED_ORIGINS or not NAME.fullmatch(str(selected))):
+        return None
+    label={'workspace':selected}
+    if scope.get('sharing') in ('private','team'):label['sharing']=scope['sharing']
+    return label
 
 
 def failure(error):

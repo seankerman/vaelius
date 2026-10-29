@@ -106,6 +106,9 @@ ROUTE_ACTIONS={
     # audited break-glass override (`settings`).
     ('POST','/enterprise/v3/workspaces'):READ,
     ('POST','/enterprise/v3/workspaces/show'):READ,
+    # The session label's advisory descriptor (docs/ACCESS_MODEL.md sections 5 and 7):
+    # needs `read` and a role in every workspace it names.
+    ('POST','/enterprise/v3/workspaces/descriptor'):READ,
     ('POST','/enterprise/v3/workspaces/create'):(('manage',),),
     ('POST','/enterprise/v3/workspaces/settings'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/workspaces/entries/set'):(('manage',),('settings',)),
@@ -171,6 +174,7 @@ OWNER_ROUTES={'/enterprise/v3/my-data':'mine','/enterprise/v3/my-data/forget':'f
     '/enterprise/v3/moderation/withdraw':'moderate'}
 # Workspace, group and tenant-policy routes and the business method each calls.
 WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/workspaces/show':'show_workspace',
+    '/enterprise/v3/workspaces/descriptor':'session_descriptor',
     '/enterprise/v3/workspaces/create':'create_workspace','/enterprise/v3/workspaces/settings':'workspace_settings',
     '/enterprise/v3/workspaces/entries/set':'set_entry','/enterprise/v3/workspaces/entries/remove':'remove_entry',
     '/enterprise/v3/workspaces/repos/link':'link_repo','/enterprise/v3/workspaces/repos/unlink':'unlink_repo',
@@ -183,6 +187,7 @@ WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/
 CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/enterprise/v3/auth/aws-sts',
     '/enterprise/v3/auth/renew','/enterprise/v3/auth/revoke')
 INVALID_BODY=object()
+from agenthub.workspace_access import LABELLED_ROUTES  # recall routes that honor a session label
 TENANT_PATH=re.compile(r'[A-Za-z0-9_.:-]{1,128}')
 
 
@@ -300,6 +305,25 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         # A malformed body is reported only to an authenticated caller.
         if data is INVALID_BODY:raise ValueError('json_object_required')
         authorize_route(ctx,method,path,data)
+        label=None
+        if method=='POST' and path in LABELLED_ROUTES and isinstance(data,dict) and 'session_label' in data:
+            data=dict(data);label=data.pop('session_label')
+            if path=='/enterprise/v3/search':
+                # The label decides which workspaces recall reaches (folds in `scope`).
+                data.pop('scope',None)
+        session={}
+        if label is not None:
+            from agenthub.workspace_access import validate_session_label
+            label=validate_session_label(label)
+        def labelled(context):
+            # Computed lazily, once per request, inside the request's own transaction on
+            # current state (WorkspaceAccessMixin._label); shared after re-authentication.
+            if label is None:return context
+            return dict(context,session_label_request=label,session_label_cache=session)
+        def epoch():
+            if 'filter' not in session:session['filter']=store.session_filter(ctx,label)['session_label']
+            return session['filter']['epoch']
+        ctx=labelled(ctx)
         with span('ready'):store.require_ready()
         if method=='POST' and limits_apply(path,data):
             check_write_limit(store,ctx,len(json.dumps(data,ensure_ascii=False).encode()))
@@ -314,7 +338,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     with span('delivery_lock_wait'):stack.enter_context(store.delivery_read_lock())
                     with span('delivery_check'):
                         _,current=authenticate(request)
-                        return store.validate_search_delivery(current,data,value)
+                        return store.validate_search_delivery(labelled(current),data,value)
             result=checked(result)
             if ranker is not None and result.get('results'):
                 previous_gaps=result.get('coverage_gaps',[])
@@ -342,10 +366,12 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             result.pop('_candidate_pool',None)
             if ranker is not None:result=pack_search_result(data,result)
             if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
+            if label is not None:result=dict(result,session_epoch=epoch())
             meter_search(store,ctx,result)
             return result
         with getattr(store,'delivery_read_lock',store.delivery_lock)():
             store,ctx=authenticate(request)
+            ctx=labelled(ctx)
             if method=='GET' and path=='/enterprise/v1/status':return store.status(ctx)
             if method=='GET' and path=='/enterprise/v3/service-status':
                 # Build identity is operator detail; unauthenticated /health is liveness only.
@@ -378,6 +404,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             if method=='POST' and path in ('/enterprise/v1/search','/enterprise/v3/search'):
                 result=store.search(ctx,data)
                 if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
+                if label is not None:result=dict(result,session_epoch=epoch())
                 meter_search(store,ctx,result);return result
             if method=='POST' and path=='/enterprise/v3/timeline':
                 if set(data)-{'id','offset','limit','cursor'} or not isinstance(data.get('id'),str):

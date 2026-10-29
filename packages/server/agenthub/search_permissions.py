@@ -85,7 +85,13 @@ SOURCE_GRANTED = """({source}.tenant={T} AND {source}.active=1 AND {source}.owne
                                 SELECT 1 FROM group_closure grantee_member
                                 WHERE grantee_member.tenant={source}.tenant AND grantee_member.group_id=grant_row.grantee
                                 AND grantee_member.principal={A})))
+                        AND {GQ}
                         ))"""
+
+# A session label (docs/ACCESS_MODEL.md section 7) additionally needs the share's
+# subject to contain the session audience: a group in {SG} or a principal in {SP}.
+SESSION_GRANTEE = """((grant_row.grantee_kind='principal' AND grant_row.grantee=ANY({SP}::text[]))
+                            OR (grant_row.grantee_kind='group' AND grant_row.grantee=ANY({SG}::text[])))"""
 
 # The reader holds at least one active passage share (directly or through a group).
 # Uncorrelated, so PostgreSQL evaluates it once per query: readers without shares
@@ -99,7 +105,8 @@ RECEIVES_GRANTS = """EXISTS(SELECT 1 FROM raw_source_grants received WHERE recei
 
 # A passage document (alias ed) every source of which is shared with the reader.
 # raw_granted is only a prefilter maintained by shares and passage indexing.
-DOCUMENT_GRANTED = """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM {A}
+def _document_granted(grantee='true'):
+    return """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM {A}
                     AND """ + RECEIVES_GRANTS + """
                     AND EXISTS(SELECT 1 FROM enterprise_dependencies granted_dep WHERE granted_dep.document_id=ed.id)
                     AND NOT EXISTS(SELECT 1 FROM enterprise_dependencies granted_dep
@@ -107,20 +114,53 @@ DOCUMENT_GRANTED = """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_o
                         LEFT JOIN search_source_policies granted_mapping ON granted_mapping.source_id=granted.id
                         LEFT JOIN search_policies granted_policy ON granted_policy.id=granted_mapping.policy_id
                         WHERE granted_dep.document_id=ed.id AND NOT coalesce(""" + SOURCE_GRANTED.format(
-                            source='granted', policy='granted_policy', T='{T}', A='{A}') + """,false)))"""
+                            source='granted', policy='granted_policy', T='{T}', A='{A}', GQ=grantee) + """,false)))"""
+
+
+DOCUMENT_GRANTED = _document_granted()
+
+# The session-label term of one policy row (recall, docs/ACCESS_MODEL.md section 7):
+# the item's audience contains the session audience. Never origin_private; the
+# workspace in S (the workspaces whose audience contains the session audience) when
+# the item is not private, or {SSHARE} (shares whose subjects contain it); every
+# carried workspace in S; a legacy 'team' origin needs the workspace and every
+# carried one in SD (direct audiences). The owner gets no short cut: a person's own
+# private items are recalled only in a private session, which has no session term.
+# Mirrors search_session_admits (migration 049) and WorkspaceAccessMixin._session_admits.
+SESSION = """(coalesce(policy.definition->>'origin_ceiling','')!='private'
+                    AND ((coalesce((policy.definition->>'private')::boolean,false)=false
+                            AND policy.definition->>'project'=ANY({S}::text[])) OR {SSHARE})
+                    AND """ + CARRIED + """ <@ {S}::text[]
+                    AND (coalesce(policy.definition->>'origin_ceiling','')!='team' OR (
+                        policy.definition->>'project'=ANY({SD}::text[]) AND """ + CARRIED + """ <@ {SD}::text[])))"""
 
 
 def _bind(template, ctx, access=None):
-    """Replace {T}/{A}/{R}/{D} placeholders, in order, with bound parameters."""
+    """Replace {T}/{A}/{R}/{D} (and the session's {S}/{SD}/{SP}/{SG}) placeholders, in
+    order, with bound parameters."""
     import re
     args = []
     values = {'T': ctx['tenant'], 'A': ctx['actor']}
     if access is not None:
         values.update(R=list(access[0]), D=list(access[1]))
+    session = ctx.get('session_label') or {}
+    values.update(S=list(session.get('workspaces', ())), SD=list(session.get('direct', ())),
+                  SP=list(session.get('principals', ())), SG=list(session.get('groups', ())))
     def replace(match):
         args.append(values[match.group(1)])
         return '?'
-    return re.sub(r'\{([TARD])\}', replace, template), tuple(args)
+    return re.sub(r'\{(SD|SP|SG|[TARDS])\}', replace, template), tuple(args)
+
+
+def labelled(ctx):
+    """The request carries a session label that restricts recall (not a private session)."""
+    session = ctx.get('session_label')
+    return bool(session) and not session.get('private')
+
+
+def session_condition(ctx, share):
+    """SESSION with `share` (an SQL template over {T}/{A}/{SP}/{SG}) as the share path."""
+    return _bind(SESSION.replace('{SSHARE}', share), ctx)
 
 
 def audience_condition(ctx, access, share=None):
@@ -136,7 +176,7 @@ def audience_condition(ctx, access, share=None):
 
 
 def source_granted_condition(ctx, source='src', policy='policy'):
-    return _bind(SOURCE_GRANTED.format(source=source, policy=policy, T='{T}', A='{A}'), ctx)
+    return _bind(SOURCE_GRANTED.format(source=source, policy=policy, T='{T}', A='{A}', GQ='true'), ctx)
 
 
 def document_granted_condition(ctx):
@@ -179,9 +219,14 @@ def policy_condition(ctx, access, *, raw=True):
     common, common_args = _common(ctx)
     inherited, inherited_args = audience_condition(ctx, access)
     shared, shared_args = audience_condition(ctx, access, source_granted_condition(ctx))
+    session, session_args = ('true', ())
+    if labelled(ctx):
+        session, session_args = session_condition(ctx, SOURCE_GRANTED.format(
+            source='src', policy='policy', T='{T}', A='{A}', GQ=SESSION_GRANTEE))
     return ('(' + common + """
                     AND (""" + inherited + """ OR """ + shared + """)
-                )""", common_args + inherited_args + shared_args)
+                    AND """ + session + """
+                )""", common_args + inherited_args + shared_args + session_args)
 
 
 def predicate(ctx, access):
@@ -197,17 +242,23 @@ def predicate(ctx, access):
     common, common_args = _common(ctx)
     inherited, inherited_args = audience_condition(ctx, access)
     shared, shared_args = audience_condition(ctx, access, granted)
+    session, session_args = ('', ())
+    if labelled(ctx):
+        # Recall in a labelled session: also the session term (SESSION) on every policy.
+        session, session_args = session_condition(ctx, "(ed.representation='raw' AND "
+                                                  + _document_granted(SESSION_GRANTEE) + ')')
+        session = ' AND ' + session
     # raw_shared (the passage's own source is not private) and raw_granted (an
     # active share covers it) are stable prefilters that keep other people's
     # private passages cheap to exclude. The policy pass below decides.
     return """AND (ed.representation!='raw' OR (? AND (ed.raw_owner=? OR ed.raw_shared>0 OR ed.raw_granted=1)))
         AND (SELECT bool_and(required.dependency_count>0 AND (""" + common + """
-                AND (""" + inherited + """ OR (ed.representation='raw' AND """ + shared + """))) IS TRUE)
+                AND (""" + inherited + """ OR (ed.representation='raw' AND """ + shared + """))""" + session + """) IS TRUE)
         FROM search_document_policies required
         LEFT JOIN search_policies policy ON policy.id=required.policy_id
         LEFT JOIN backend_connections connection ON connection.id=policy.definition->>'connection'
         WHERE required.document_id=d.document_id)""", ('read' in ctx['actions'], ctx['actor'], *common_args,
-                                                       *inherited_args, *shared_args)
+                                                       *inherited_args, *shared_args, *session_args)
 
 
 def validate_source_snapshots(store, db, ctx, expected):
@@ -221,6 +272,7 @@ def validate_source_snapshots(store, db, ctx, expected):
     # Redacted passage tier (owner, or shared at its level): `read` suffices. Retained
     # originals are a separate source_read + owner/grant check in agenthub.raw_access.
     store._need(ctx,'read')
+    store._label(db,ctx)
     condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     ids=sorted(expected)
     for offset in range(0,len(ids),1000):
@@ -287,6 +339,7 @@ def read_source_context(store,db,ctx,ids):
     ids=sorted(set(ids))
     if len(ids)>1000:raise ValueError('context_source_batch_bound')
     if not ids:return []
+    store._label(db,ctx)
     condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     return [dict(row) for row in db.execute('''WITH requested AS MATERIALIZED (
         SELECT * FROM enterprise_sources WHERE id=ANY(?::text[])

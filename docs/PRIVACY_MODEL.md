@@ -27,6 +27,11 @@ exists and how it fits together) that document describes the full specification.
   person's writer role alone.
 - One predicate, *reader ∈ item audience*, is implemented in Python, in the
   indexed SQL search filter and in row-level security, with parity tests.
+- A captured agent session has a **fixed label**: the audience of the workspace it
+  starts in. It may read and recall only content whose audience contains that
+  audience (no read up). The guardrail hook denies other workspaces' folders; the
+  service filters recall in the same three layers. The person can narrow a session
+  explicitly ("this workspace and B"); captures then carry B.
 - Owned content is never deleted by a role change or by offboarding. Withdrawal,
   deletion, legal hold and subject erasure continue to apply.
 
@@ -283,6 +288,49 @@ credential only for its delegated workspaces). These partitions **narrow
 retrieval**; they never decide access. The one predicate above is the final
 check.
 
+## Session labels and recall
+
+A captured Claude Code session takes a fixed label when it starts: the workspace of
+its starting folder, narrowed explicitly by the person (`vaelius-client session use
+<workspace>` or the MCP tool `use_workspace`) and, when it becomes private (the
+person's `contributions_default`, the workspace's `item_default`, a private
+request, `use private`, or the backstop below), only the person. Sessions that are
+read-only, off or outside every workspace have no label and capture nothing.
+
+**Superset list.** For a label the service computes, on current materialized
+membership, the set `S` of workspaces the reader can read whose audience contains
+the session audience (`audience(A) ∩ audience(narrowed…)`), plus the groups whose
+members contain it. It is extensional: an organization entry contains every session
+audience except quarantined members, who must be direct members. Nothing is cached
+between requests.
+
+**Recall filter.** A recall request (prompt injection, `search_memory`, evidence,
+context, timeline and history routes) that carries a label returns only items
+whose audience contains the session audience:
+
+```
+session_admits(i) = private session
+                  ∨ ( ¬i.origin_private
+                    ∧ ( (¬i.private ∧ i.workspace ∈ S) ∨ shared_to_subject_containing(session audience) )
+                    ∧ i.carried ⊆ S
+                    ∧ (i.origin_ceiling ≠ 'team' ∨ (i.workspace, i.carried ⊆ S_direct)) )
+```
+
+It is the fourth term of the same predicate in all three layers
+(`WorkspaceAccessMixin._session_admits`, `search_permissions.SESSION`, and
+`search_session_admits` called from `search_document_allowed`, migration 049), with
+parity tests. In a shared session the person's own private items are not recalled;
+a private session recalls everything the person can read. Preferences are always
+delivered. Requests without a label (older clients) keep today's behavior. The label
+replaces the cross-project `scope = "all"` option: recall reaches every workspace in
+`S`, the current one first.
+
+**Read rule.** The client caches an advisory descriptor (the service's `S` for the
+session) in its profile and the PreToolUse guardrail hook denies reads of scoped
+folders whose workspace is not in it, without a network call. The descriptor is
+advisory: captured items carry every other workspace the session read, so
+confidentiality of a capture does not depend on the hook being right.
+
 ## Provenance labels
 
 Every delivered item carries `provenance` (author handle, workspace, capture
@@ -370,6 +418,10 @@ entitlement; revocations take effect immediately. See
 - Origin labels are a deterministic best effort from what a tool call names;
   they are not a sandbox (see the limits in
   [data boundaries](DATA_BOUNDARIES.md#known-limits)).
+- The session read rule covers file tools and the paths shell commands name.
+  Programs that open files without naming them are covered only by the backstop
+  (the session becomes private), and file edits into other folders are not policed
+  by the label beyond the personal-folder and credential rules.
 - Redaction reduces exposure of credentials; it is not anonymization.
 
 ## Upgrading to migration 048

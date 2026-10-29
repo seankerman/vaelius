@@ -382,8 +382,21 @@ def _decision(reason):
             'permissionDecisionReason': reason}}
 
 
-def check(event, profile_name, env=None):
-    """The hook's answer for one PreToolUse event: {} (no opinion) or deny."""
+def check(event, profile_name, env=None, home=None):
+    """The hook's answer for one PreToolUse event: {} (no opinion) or deny, never `ask`.
+
+    With the client profile folder (`home`), a labelled session also gets the fixed
+    session-label read rule (agentclient.session_label): reads of scoped folders whose
+    workspace is narrower than the session, unreadable or unknown are denied. Local
+    files only; no network call."""
+    result = _check(event, profile_name, env)
+    if result or home is None:return result
+    from agentclient.session_label import hook_reason
+    reason = hook_reason(home, event)
+    return _decision(reason) if reason else {}
+
+
+def _check(event, profile_name, env=None):
     if profile_name not in PROFILES:raise ValueError('invalid_guardrail_profile')
     env = os.environ if env is None else env
     tool = str(event.get('tool_name', ''))

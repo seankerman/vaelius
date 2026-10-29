@@ -150,6 +150,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     _add_workspace_commands(sub)
     _add_group_commands(sub)
+    _add_session_commands(sub)
     args=parser.parse_args(argv)
     if args.command=='guardrail-check':
         # Needs no profile: runs on every file-tool and Bash call, and must not create folders.
@@ -157,7 +158,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
         try:
             raw=sys.stdin.buffer.read(32*1024*1024+1)
             if len(raw)>32*1024*1024:raise ValueError('hook_payload_bound')
-            result=check(json.loads(raw),args.profile)
+            # The profile folder is only read (session labels); it is never created here.
+            result=check(json.loads(raw),args.profile,home=Path(args.home).expanduser())
         except Exception as exc:
             # strict fails closed (exit 2 blocks the call); standard must never stop normal
             # work, so it reports the failure (exit 1, shown to the person) and lets the call run.
@@ -248,6 +250,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             result=_workspace_command(config,args)
         elif args.command=='group':
             result=_group_command(config,args)
+        elif args.command in ('session','use'):
+            result=_session_command(home,config,args)
         elif args.command=='install' and (args.claude_code or args.guardrails or args.guardrails_only):
             from agentclient.claude_code import install
             result=install(home,scope=args.scope,claude_config_dir=args.claude_config_dir,project_root=args.project_root,
@@ -320,6 +324,43 @@ def _sharing_command(config, home, args):
             'existing': value.get('existing'),
             'changed': value.get('changed', False),
             'note': note}
+
+
+def _add_session_commands(sub):
+    """`vaelius-client session use|status` (and the `use` shorthand): fixed session labels."""
+    session = sub.add_parser('session', help='show or narrow the fixed label of a running agent session')
+    inner = session.add_subparsers(dest='session_command', required=True)
+    for parser in (inner.add_parser('use', help='narrow the session to also use a workspace (or make it private); '
+                                                 'capture is then limited to people who can read both'),
+                   sub.add_parser('use', help='shorthand for `session use`')):
+        parser.add_argument('target', help='a workspace name, a folder of one, a linked remote, or "private"')
+        parser.add_argument('--session', help='host session ID (default: the session active in this folder)')
+    status = inner.add_parser('status', help='the label of the session active in this folder')
+    status.add_argument('--session', help='host session ID (default: the session active in this folder)')
+
+
+def _session_command(home, config, args):
+    from urllib.error import HTTPError
+    from agentclient import session_label
+    from agentclient.scope_file import scope_names
+    command = 'use' if args.command == 'use' else args.session_command
+    try:
+        if command == 'use':
+            return session_label.use(home, config, args.target, session=args.session)
+        _, entry = session_label.resolve_session(home, os.getcwd(), args.session, scope_names(config))
+    except session_label.UseRefused as refused:
+        raise SystemExit(json.dumps({'error': 'session_use_refused', 'reason': str(refused)})) from None
+    except HTTPError as error:
+        if error.code not in (400, 403, 404):raise
+        raise SystemExit(json.dumps({'error': 'session_use_refused', 'reason': 'the service refused: you cannot '
+                                     'read that workspace, or it does not exist'})) from None
+    descriptor = entry.get('descriptor') or {}
+    return {'session': entry.get('short'), 'label': session_label.display(entry),
+            'narrowed': entry.get('narrowed', []), 'private': bool(entry.get('private')),
+            'status': session_label.status_line(entry) or ('vaelius: session label ' + session_label.display(entry)),
+            'readable_here': sorted(session_label.allowed(entry)[0]),
+            'descriptor': {key: descriptor.get(key) for key in ('epoch', 'role', 'fetched_at', 'refresh_after',
+                                                                 'expires_at')} if descriptor else None}
 
 
 def _workspace_payload(args):

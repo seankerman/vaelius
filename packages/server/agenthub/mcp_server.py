@@ -50,12 +50,17 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
                 raise ValueError('invalid_project')
             session=request.headers.get('x-agentnetwork-session')
             if session is not None and (not 1<=len(session)<=128):raise ValueError('invalid_session')
+            label=request.headers.get('x-vaelius-session-label')
+            if label is not None:
+                from agenthub.workspace_access import validate_session_label
+                if len(label)>4096:raise ValueError('invalid_session_label')
+                label=validate_session_label(json.loads(label))
             def invoke():
                 def operation(path, value=None):
                     # Each call resolves current identity through the same REST
                     # operation boundary; no token or permission result is cached.
                     return deliver(request, 'GET' if value is None else 'POST', path, value, mcp=True)
-                tools=MemoryTools(project,SimpleNamespace(request=operation),session=session)
+                tools=MemoryTools(project,SimpleNamespace(request=operation),session=session,label=label)
                 return tools.call(params.name,arguments)
             result=await run_in_threadpool(invoke)
             return types.CallToolResult(content=[types.TextContent(type='text',text=json.dumps(result,ensure_ascii=True))])

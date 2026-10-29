@@ -1147,3 +1147,254 @@ class WorkspaceAccessMixin:
             item.pop('org_role', None)
         return {'tenant': self.tenant_id, 'policy': dict(tenant) if tenant else None, 'workspaces': result,
                 'without_admin': [item['id'] for item in result if not item['counting_admins']]}
+
+    # Session labels (PR B) -----------------------------------------------------------
+
+    # Principals in the audience of one workspace (bound: tenant, workspace, workspace,
+    # tenant): every active principal with a role >= reader through a principal or group
+    # entry (subject to widest_entry), plus, through the organization entry, every active
+    # principal who is not under an operator quarantine. Mirrors search_workspace_role
+    # for a non-delegated credential.
+    _AUDIENCE_SQL = '''SELECT a.principal FROM workspace_access a
+            JOIN enterprise_projects p ON p.tenant=a.tenant AND p.id=a.workspace AND p.active=1
+            JOIN enterprise_organizations o ON o.id=a.tenant
+            JOIN enterprise_principals who ON who.tenant=a.tenant AND who.id=a.principal AND who.active=1
+            WHERE a.tenant=? AND a.workspace=? AND CASE o.widest_entry WHEN 'none' THEN a.principal_role=3
+                ELSE greatest(a.principal_role,a.group_role)>=1 END
+        UNION
+        SELECT who.id FROM enterprise_principals who
+            JOIN enterprise_projects p ON p.tenant=who.tenant AND p.id=? AND p.active=1 AND p.org_role>0
+            JOIN enterprise_organizations o ON o.id=who.tenant AND o.widest_entry='organization'
+            WHERE who.tenant=? AND who.active=1 AND NOT EXISTS(SELECT 1 FROM enterprise_principal_quarantine held
+                WHERE held.tenant=who.tenant AND held.principal=who.id)'''
+
+    # Which candidate workspaces (and groups) contain the session audience `sa`
+    # (extensional: current materialized membership, never entry lists). For each
+    # workspace: an open one (an organization entry not suspended by widest_entry)
+    # reaches every non-quarantined principal, so it only needs the quarantined members
+    # of the session audience as direct members; any other needs all of them. `direct`
+    # (for a legacy 'team' origin) ignores the organization entry. Set difference by
+    # counting, over the (tenant, principal, workspace) primary key.
+    _SUPERSET_SQL = '''WITH sa AS MATERIALIZED ({audience}),
+        member AS MATERIALIZED (SELECT sa.principal,EXISTS(SELECT 1 FROM enterprise_principal_quarantine held
+                WHERE held.tenant=? AND held.principal=sa.principal) held FROM sa),
+        total AS (SELECT count(*) n,count(*) FILTER (WHERE member.held) nq FROM member),
+        covered AS (SELECT a.workspace,count(*) n,count(*) FILTER (WHERE member.held) nq FROM member
+            JOIN workspace_access a ON a.tenant=? AND a.principal=member.principal AND a.workspace=ANY(?::text[])
+            JOIN enterprise_organizations o ON o.id=a.tenant
+            WHERE CASE o.widest_entry WHEN 'none' THEN a.principal_role=3
+                ELSE greatest(a.principal_role,a.group_role)>=1 END
+            GROUP BY a.workspace),
+        grouped AS (SELECT c.group_id,count(*) n FROM member JOIN group_closure c ON c.tenant=? AND c.principal=member.principal
+            AND c.group_id=ANY(?::text[]) GROUP BY c.group_id)
+        SELECT 'workspace' kind,p.id,
+            CASE WHEN p.org_role>0 AND o.widest_entry='organization' THEN coalesce(c.nq,0)=t.nq
+                ELSE coalesce(c.n,0)=t.n END AS contains,
+            coalesce(c.n,0)=t.n AS direct,t.n total
+        FROM enterprise_projects p JOIN enterprise_organizations o ON o.id=p.tenant CROSS JOIN total t
+        LEFT JOIN covered c ON c.workspace=p.id
+        WHERE p.tenant=? AND p.id=ANY(?::text[]) AND p.active=1
+        UNION ALL
+        SELECT 'group',g.id,coalesce(x.n,0)=t.n,false,t.n FROM groups g CROSS JOIN total t
+        LEFT JOIN grouped x ON x.group_id=g.id WHERE g.tenant=? AND g.id=ANY(?::text[])
+        UNION ALL
+        SELECT 'self',max(member.principal),count(*)=1 AND bool_and(member.principal=?),false,count(*) FROM member'''
+
+    def _session_label(self, db, ctx, label):
+        """The recall filter for one session label (docs/ACCESS_MODEL.md section 7).
+
+        `label` is the client's {workspace, narrowed, private, sharing}. The session
+        audience is the intersection of the audiences of the workspace and every
+        narrowed one, or only the person (a private session: `contributions_default`
+        or the workspace's `item_default` is private, the label or its legacy sharing
+        request says so, or the intersection is the person alone). Returns
+        {'private': True, ...} or {'private': False, 'workspaces': S, 'direct': SD,
+        'groups': G, 'principals': P}: S the workspaces the reader can read whose
+        audience contains the session audience, SD those whose direct (non-organization)
+        audience does, G the reader's groups whose members contain it and P the
+        principal a share must name to contain it (only ever the reader alone, which
+        makes the session private). Decided on current state at every request."""
+        from agenthub.enterprise import Denied
+        workspace = self._resolve_workspace(db, ctx['tenant'], label['workspace'], active_only=True)
+        if not workspace:
+            raise Denied()
+        names = [workspace['id']]
+        for ref in label.get('narrowed') or ():
+            row = self._resolve_workspace(db, ctx['tenant'], ref, active_only=True)
+            if not row:
+                raise Denied()
+            names.append(row['id'])
+        names = list(dict.fromkeys(names))
+        roles = self._roles(db, ctx)
+        readable = sorted(name for name, (role, _) in roles.items() if role >= READER)
+        person = db.execute('SELECT contributions_default FROM enterprise_principals WHERE tenant=? AND id=?',
+                            (ctx['tenant'], ctx['actor'])).fetchone()
+        requested = label.get('sharing')
+        private = bool(label.get('private') or requested == 'private'
+                       or not person or person['contributions_default'] == 'private'
+                       or workspace['item_default'] == 'private'
+                       or (requested == 'team' and workspace['org_role'] > 0))
+        epoch = db.execute('SELECT coalesce(sum(epoch),0) FROM enterprise_projects WHERE tenant=?',
+                           (ctx['tenant'],)).fetchone()[0]
+        result = {'workspace': workspace['id'], 'narrowed': names[1:], 'readable': readable, 'epoch': int(epoch),
+                  'private': private, 'workspaces': readable, 'direct': readable, 'groups': [], 'principals': []}
+        if private:
+            return result
+        audience = ' INTERSECT '.join('(' + self._AUDIENCE_SQL + ')' for _ in names)
+        args = [value for name in names for value in (ctx['tenant'], name, name, ctx['tenant'])]
+        groups = [r[0] for r in db.execute('SELECT group_id FROM group_closure WHERE tenant=? AND principal=?',
+                                           (ctx['tenant'], ctx['actor'])).fetchall()]
+        rows = db.execute(self._SUPERSET_SQL.format(audience=audience), (
+            *args, ctx['tenant'], ctx['tenant'], readable, ctx['tenant'], groups, ctx['tenant'], readable,
+            ctx['tenant'], groups, ctx['actor'])).fetchall()
+        alone = any(r['kind'] == 'self' and r['contains'] for r in rows)
+        if alone:
+            return dict(result, private=True)
+        result.update(workspaces=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['contains']),
+                      direct=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['direct']),
+                      groups=sorted(r['id'] for r in rows if r['kind'] == 'group' and r['contains']))
+        return result
+
+    def _label(self, db, ctx):
+        """This request's session-label recall filter, computed once, on first use, inside
+        a transaction the request already holds (`session_label_request` from the API;
+        an explicit `session_label`, including None, wins)."""
+        if 'session_label' in ctx or ctx.get('session_label_request') is None:
+            return ctx.get('session_label')
+        holder = ctx.setdefault('session_label_cache', {})
+        if 'filter' not in holder:
+            holder['filter'] = self._session_label(db, ctx, validate_session_label(ctx['session_label_request']))
+        ctx['session_label'] = holder['filter']
+        return holder['filter']
+
+    def session_filter(self, ctx, label):
+        """ctx with its `session_label` recall filter (None keeps today's behavior)."""
+        if label is None:
+            return ctx
+        label = validate_session_label(label)
+        with self.open() as state:
+            db = state.db
+            if hasattr(self, 'current_identity'):
+                self.current_identity(db, ctx)
+            return dict(ctx, session_label=self._session_label(db, ctx, label))
+
+    def _session_admits(self, db, ctx, source, *, granted=False):
+        """The session-label term of the recall filter for one source (Python oracle).
+
+        Mirrors search_permissions.SESSION and search_session_admits (migration 049):
+        never origin_private; the item's workspace in S when it is not private, or
+        `granted` (the document reaches the reader through shares whose subjects
+        contain the session audience); every carried workspace in S; a legacy 'team'
+        origin needs the workspace and every carried one in SD. A private session, or
+        a request without a label, admits everything the reader can read."""
+        session = ctx.get('session_label')
+        if not session or session.get('private'):
+            return True
+        ceiling, _, carried = _origin(source)
+        if ceiling == 'private' or ceiling not in SHARING:
+            return False
+        inside = set(session['workspaces'])
+        if not ((not int(source.get('private') or 0) and source['external_project'] in inside) or granted):
+            return False
+        if any(name not in inside for name in carried):
+            return False
+        if ceiling == 'team':
+            direct = set(session['direct'])
+            if source['external_project'] not in direct or any(name not in direct for name in carried):
+                return False
+        return True
+
+    def _session_granted(self, db, ctx, source):
+        """A share of this source to the reader names a subject whose members contain the
+        session audience (a group in G, or a principal in P)."""
+        session = ctx.get('session_label') or {}
+        return any((row['grantee_kind'] == 'principal' and row['grantee'] in session.get('principals', ()))
+                   or (row['grantee_kind'] == 'group' and row['grantee'] in session.get('groups', ()))
+                   for row in self._share_rows(db, ctx, source, 'passages'))
+
+    def session_descriptor(self, ctx, value):
+        """The client's advisory audience descriptor for a session label (section 5).
+
+        `value` is {workspace, narrowed?, private?, sharing?}; a narrowed entry may be
+        a workspace name or id, or a normalized repository remote linked to one. The
+        reader needs `read` and a role >= reader in every named workspace; anything
+        else is refused (403), so `vaelius-client session use` and the MCP tool
+        `use_workspace` cannot name a workspace the person cannot read."""
+        from agenthub.enterprise import Denied
+        self._need(ctx, 'read')
+        value = dict(value) if isinstance(value, dict) else value
+        if isinstance(value, dict) and isinstance(value.get('narrowed'), list):
+            with self.open() as state:
+                value['narrowed'] = [self._narrow_target(state.db, ctx, ref) for ref in value['narrowed']]
+        label = validate_session_label(value)
+        now = time.time()
+        with self.open() as state:
+            db = state.db
+            if hasattr(self, 'current_identity'):
+                self.current_identity(db, ctx)
+            roles = self._roles(db, ctx)
+            for ref in [label['workspace'], *label.get('narrowed', ())]:
+                row = self._resolve_workspace(db, ctx['tenant'], ref, active_only=True)
+                if not row or roles.get(row['id'], (0, 0))[0] < READER:
+                    raise Denied()
+            session = self._session_label(db, ctx, label)
+            workspace = self._resolve_workspace(db, ctx['tenant'], label['workspace'], active_only=True)
+            names = {r['id']: r['name'] for r in db.execute(
+                'SELECT id,name FROM enterprise_projects WHERE tenant=? AND id=ANY(?::text[])',
+                (ctx['tenant'], session['readable'])).fetchall()}
+            person = db.execute('SELECT contributions_default FROM enterprise_principals WHERE tenant=? AND id=?',
+                                (ctx['tenant'], ctx['actor'])).fetchone()
+            repos = [r[0] for r in db.execute('SELECT remote FROM workspace_repos WHERE tenant=? AND workspace=? '
+                                              'ORDER BY remote', (ctx['tenant'], workspace['id']))]
+            epoch = session['epoch']
+        listed = lambda ids: [{'id': ident, 'name': names.get(ident, ident)} for ident in ids]
+        return {'workspace': {'id': workspace['id'], 'name': workspace['name']}, 'epoch': int(epoch),
+                'role': role_name(roles.get(workspace['id'], (0, 0))[0]), 'item_default': workspace['item_default'],
+                'contributions_default': person['contributions_default'] if person else 'private',
+                'session': {'workspace': workspace['id'], 'narrowed': session['narrowed'],
+                            'private': session['private']},
+                'contains_session_audience': listed(session['workspaces']), 'readable': listed(session['readable']),
+                'repos': repos, 'fetched_at': int(now), 'refresh_after': int(now + DESCRIPTOR_REFRESH),
+                'expires_at': int(now + DESCRIPTOR_EXPIRY)}
+
+    def _narrow_target(self, db, ctx, ref):
+        """A workspace id for `use`: a workspace name or id, else a linked remote."""
+        if not isinstance(ref, str):
+            raise ValueError('invalid_session_label')
+        row = self._resolve_workspace(db, ctx['tenant'], ref)
+        if row:
+            return row['id']
+        from agentclient.general_contract import normalize_remote, REMOTE
+        remote = ref if REMOTE.fullmatch(ref) else (normalize_remote(ref) if ('/' in ref or ':' in ref) else None)
+        linked = db.execute('SELECT workspace FROM workspace_repos WHERE tenant=? AND remote=?',
+                            (ctx['tenant'], remote)).fetchone() if remote else None
+        if not linked:
+            from agenthub.enterprise import Denied
+            raise Denied()
+        return linked['workspace']
+
+
+# Recall routes that honor a session label (`session_label` in the body; the MCP
+# endpoint passes its connection's label the same way). The label only narrows.
+LABELLED_ROUTES = ('/enterprise/v3/search', '/enterprise/v3/document-evidence', '/enterprise/v3/document-context',
+                   '/enterprise/v3/timeline', '/enterprise/v3/project-history', '/enterprise/v3/project-episode')
+# The client refreshes its descriptor after 15 minutes and stops trusting it after 24 hours.
+DESCRIPTOR_REFRESH = 900
+DESCRIPTOR_EXPIRY = 86400
+SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing'}
+MAX_NARROWED = 16
+
+
+def validate_session_label(label):
+    """{workspace, narrowed, private, sharing} from a client; raises ValueError."""
+    if (not isinstance(label, dict) or set(label) - SESSION_LABEL_KEYS
+            or not isinstance(label.get('workspace'), str) or not NAME.fullmatch(label['workspace'])):
+        raise ValueError('invalid_session_label')
+    narrowed = label.get('narrowed', [])
+    if (not isinstance(narrowed, list) or len(narrowed) > MAX_NARROWED
+            or any(not isinstance(n, str) or not NAME.fullmatch(n) for n in narrowed)):
+        raise ValueError('invalid_session_label')
+    if type(label.get('private', False)) is not bool or label.get('sharing', 'organization') not in SHARING:
+        raise ValueError('invalid_session_label')
+    return {'workspace': label['workspace'], 'narrowed': list(dict.fromkeys(narrowed)),
+            'private': label.get('private', False), 'sharing': label.get('sharing', 'organization')}

@@ -247,6 +247,30 @@ access list, and **carried workspaces** (what `origin_projects` holds) each
 need the reader to have at least `reader` in them too. An `origin_private`
 label still makes the item owner-only and no share can widen it.
 
+### Fixed session labels and the backstop
+
+Since PR B the primary control for Claude Code sessions is the **fixed session
+label** ([access model, section 7](ACCESS_MODEL.md#7-fixed-session-labels)): a
+session started in a workspace folder with capture on may read only folders whose
+workspace audience contains its own, and the PreToolUse guardrail hook denies the
+rest before the read happens. The labels below remain, demoted to a **backstop**
+for what the hook cannot see or classify:
+
+| Read | Hook (before) | Origin label (after) |
+| --- | --- | --- |
+| The session's own workspace, or one it is narrowed to | Allow | None (narrowed workspaces are carried) |
+| Another workspace whose audience contains the session's | Allow | Carries that workspace; never narrows the session |
+| A narrower, unreadable or unknown workspace, or an unreadable scope file | **Deny** (one plain line, never `ask`) | — (the tool does not run) |
+| Personal folders, credential files | Deny (guardrail profile, unchanged) | `private` |
+| Unscoped repositories and unknown paths | Allow | `private` (the session becomes private) |
+| Programs that open files without naming them, MCP servers other than Vaelius, non-public web addresses, unknown tools | Not visible to the hook | `private`, exactly as before |
+| Recalled memory | Filtered by the service to the session's superset list | Carries its workspaces; never narrows |
+
+A read the hook allowed therefore never also narrows the session; it only adds the
+workspace to the carried set, so captured items are still limited to people who can
+read both. Sessions without a label (read-only, off, outside every workspace, other
+hosts, older clients) keep the #32 behavior described below unchanged.
+
 ### What an event touched
 
 | Touched | Label |
@@ -455,7 +479,12 @@ from elsewhere enters a session. They are not a sandbox.
 - **Text the person types** (a pasted document in a prompt) is captured with the
   session's current label; the client does not inspect prompt content.
 - **Local state**: deleting or corrupting `origin-sessions.json` forgets the labels
-  of running sessions.
+  of running sessions; deleting `session-labels.json` removes the session-label read
+  rule from running sessions (captures still carry what they read).
+- **The read rule trusts the client's descriptor** for the allow decision. It is
+  advisory: a stale descriptor can allow a read the service would now refuse, which
+  the carried set then limits; after 24 hours without a refresh only the session's
+  own workspaces are readable.
 
 ## Retention guidance
 
@@ -506,7 +535,9 @@ leaves the tools that read their own configuration working. The opt-in `strict`
 profile confines file tools and the Bash sandbox to the repository. Both are
 best-effort settings that the person controls unless an organisation deploys them
 as managed settings. `standard` is a denylist, and it does not stop a program that
-opens a file without naming it. The exact coverage and gaps are in
+opens a file without naming it. Both profiles also apply the fixed session-label read
+rule to labelled sessions: folders of narrower, unreadable or unknown workspaces are
+denied. The exact coverage and gaps are in
 [least privilege for agents](CLIENT.md#least-privilege-for-agents).
 
 ## Trust boundaries

@@ -39,6 +39,23 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Added
 
+- Fixed session labels (PR B of [the access model](docs/ACCESS_MODEL.md#7-fixed-session-labels),
+  migration 049). A Claude Code session started in a workspace folder with capture on
+  takes that workspace's audience as its label. The PreToolUse guardrail hook denies
+  reads of folders whose workspace is narrower, unreadable or unknown with one plain
+  line (never a prompt) and no network call; the service filters recall (search,
+  injection, evidence, context, timeline and history, and the MCP connection through
+  `X-Vaelius-Session-Label`) to items whose audience contains the session audience,
+  in the Python oracle, the indexed SQL filter and row-level security alike.
+  `POST /enterprise/v3/workspaces/descriptor` returns the session's superset list,
+  cached in the client profile with a 15-minute refresh and a 24-hour expiry.
+  `vaelius-client session use <workspace|folder|remote|private>` (or `use`), the MCP
+  tool `use_workspace` and `vaelius-client session status` narrow and show the label;
+  narrowing lasts until `/clear`, shows on the status line and later captures carry
+  the narrowed workspaces. The #32 floating taint remains only as the backstop for
+  reads the hook cannot see; an allowed read only adds its workspace to what
+  captures carry.
+
 - Origin labels and session taint for agent capture. The client labels each
   captured tool event with what it touched (paths outside the repository, personal
   folders and credentials, other repositories, MCP servers, non-public web
@@ -136,6 +153,10 @@ The release workflow publishes the section whose heading matches the tag.
   [access reviews](docs/ACCESS_REVIEW.md).
 
 ### Removed
+
+- The MCP tool `search_memory` no longer takes `scope`: the session label decides
+  which workspaces recall reaches. Unlabelled HTTP search requests still accept
+  `"scope": "all"`.
 
 - **`project_grant` lines in the access review**, replaced by
   `workspace_entry`, `group_membership` and `synced_group_membership`.

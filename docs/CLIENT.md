@@ -232,7 +232,9 @@ to programs that open files themselves, which is what lets `aws` keep reading
 cannot use deny rules: a deny rule always wins, so `Read(~/Documents/**)` would also
 lock out a project inside `~/Documents`, and a `!` exception cannot reopen part of a
 `~/` rule. A `PreToolUse` hook (`vaelius-client guardrail-check`, matched on those
-tool names) decides them instead, with the project as the exception. `standard`
+tool names) decides them instead, with the project as the exception. The same hook
+applies the [session label](#session-labels) read rule; it reads the client profile
+(`--home`) but never creates it and never calls the service. `standard`
 does not turn on the Bash sandbox. Its network isolation breaks git over SSH on
 macOS, database clients and connections to local servers, and its read limits apply
 to every child process of a command. So the sandbox cannot tell `cat
@@ -572,12 +574,47 @@ captured back into memory.
 
 ### Which projects recall reaches
 
-Automatic context and `search_memory` return memory from the current project
-first. Content other projects shared with the whole organization follows as a
-separate tier; each such item says where it came from
-(`"from": "<project> · <author> · <date>"`). Other projects you belong to are
-searched only when you ask: the MCP tool's `scope = "all"`, or `"scope": "all"` in
-an HTTP search request.
+A Claude Code session that starts in a workspace folder sends its **session label**
+with every recall (automatic context, and through the MCP connection's
+`X-Vaelius-Session-Label` header, `search_memory` and the evidence, context and
+history tools). The service then returns only items whose audience contains the
+session's: the current workspace first, then every other workspace at least as wide
+(an organization workspace, a workspace the same team can read), each marked
+`"from": "<workspace> · <author> · <date>"`. Your own private items are recalled only
+in a private session. The cross-project `scope = "all"` option is gone from the MCP
+tool: the label decides. Clients and sessions without a label keep the earlier
+behavior (the current project, then organization-shared items; `"scope": "all"` in an
+HTTP search request still widens it).
+
+### Session labels
+
+A session takes its label when it starts and keeps it: `cd` does not change it,
+compaction and `--resume` keep it, `/clear` or a new conversation starts over.
+Sessions that start read-only, off or outside every workspace have no label.
+
+- **Reads of narrower workspaces are denied.** The guardrail hook refuses folders
+  whose workspace fewer people can read than the session's, workspaces you cannot
+  read, and folders with a scope file that does not parse, with one line such as
+  `vaelius: denied — ~/src/birch (workspace "birch") is visible to fewer people than
+  this session (maple). Start a session there, or ask the person to run
+  \`vaelius-client session use birch\`; capture is then limited to people in both.`
+  It never asks. Unscoped folders stay readable and make the session private.
+- **Narrowing is explicit.** `vaelius-client session use birch` (or a folder of it,
+  a linked remote, or `private`) narrows the session active in this folder; with
+  several sessions, pass `--session <id>`. In Claude Code you can also ask the agent
+  to call the MCP tool `use_workspace`. The service checks that you can read the
+  target. The session then reads and recalls as `maple ∩ birch`, every later capture
+  carries `birch`, and the status line says
+  `vaelius: session uses maple ∩ birch — capture limited to people in both`.
+  Narrowing lasts until `/clear`. `vaelius-client session status` shows the label.
+- **The descriptor.** At session start the client fetches which workspaces the
+  session may read (`POST /enterprise/v3/workspaces/descriptor`) and keeps it in the
+  profile (`workspaces/<id>.json` and `session-labels.json`, 0600), never in the
+  scope file. It is refreshed after 15 minutes at the next prompt, and at once when
+  a search reports a newer epoch. After 24 hours without a refresh only the
+  session's own workspaces are readable. If you become a reader, capture turns off
+  with a status line. The hook itself never calls the service (measured p50 about
+  65 ms per call, most of it Python start-up).
 
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
@@ -585,6 +622,9 @@ vaelius-client --home /absolute/private/client-profile scope-status --cwd /absol
 
 ### Content from outside the repository
 
+In a labelled session this is the backstop for what the guardrail hook cannot see
+(programs that open files without naming them, other MCP servers, unscoped
+folders); an allowed read of another workspace only adds it to what captures carry.
 Each captured tool event is labelled with what it touched, and the label sticks to
 the rest of the session: once an agent reads a personal folder, a credentials file,
 a repository without a scope file, or uses an MCP server other than Vaelius, that

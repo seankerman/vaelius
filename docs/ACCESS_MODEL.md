@@ -1,11 +1,12 @@
 # Access model: workspaces, groups and session labels
 
-**Status: PR A is implemented (migration 048): groups, workspaces, access lists,
-repository linking and the single read predicate. PR B (session labels) and PR C
-(GitHub team sync) are not yet implemented.** Three pull requests implement the
+**Status: PR A (migration 048: groups, workspaces, access lists, repository
+linking and the single read predicate) and PR B (migration 049: fixed session
+labels, the read rule in the guardrail hook and the recall filter) are implemented.
+PR C (GitHub team sync) is not yet implemented.** Three pull requests implement the
 design in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)). The
 [privacy model](PRIVACY_MODEL.md) describes what the service enforces today; where
-PR A resolved a point left open here, the text below says so and the
+PR A or PR B resolved a point left open here, the text below says so and the
 [recorded decisions](#appendix-recorded-decisions) list it. Each implementation PR updates that document, the
 [data boundaries](DATA_BOUNDARIES.md), [client](CLIENT.md),
 [enterprise identity](ENTERPRISE_AUTH.md), [access review](ACCESS_REVIEW.md) and
@@ -282,12 +283,17 @@ allowed_mcp_servers = ["docs"]
 ### The audience descriptor
 
 The guardrail hook must decide without a network call per read, so the client
-keeps a descriptor per workspace, refreshed from the server
-(`GET /enterprise/v3/workspaces/{id}/descriptor`, needs `read`):
+keeps a descriptor per session label, refreshed from the server. **(decision, PR B)**
+The route is `POST /enterprise/v3/workspaces/descriptor` with the session label
+`{workspace, narrowed, private, sharing}` as the body (needs `read` and a role in
+every workspace it names), because a narrowed session's list depends on the
+narrowed set, not on one workspace. A narrowed entry may be a workspace name or id,
+or a linked remote:
 
 ```json
 {"workspace": {"id": "maple", "name": "maple"}, "epoch": 812,
  "role": "writer", "item_default": "shared", "contributions_default": "shared",
+ "session": {"workspace": "maple", "narrowed": [], "private": false},
  "contains_session_audience": [{"id": "handbook", "name": "handbook"},
                                {"id": "platform-docs", "name": "platform-docs"}],
  "readable": [{"id": "birch", "name": "birch"}, {"id": "handbook", "name": "handbook"},
@@ -301,14 +307,18 @@ is a superset of this workspace's audience (section 7). `epoch` changes whenever
 anything that feeds the descriptor changes (entries, group membership, settings).
 
 - **Where it lives (decision).** In the client profile
-  (`workspaces/<id>.json`, mode 0600), **not** in the checked-in `.vaelius`. The
+  (`workspaces/<id>.json` for a workspace's own label, and per session in
+  `session-labels.json`, mode 0600), **not** in the checked-in `.vaelius`. The
   descriptor is per person (it lists what *that* person may read), it changes
   whenever an access list does, and anyone who can edit the repository can edit the
   scope file. An allow decision must not rest on repository-writable content. The
   scope file carries only `workspace` and `capture`.
-- **Refresh.** At SessionStart, then in the background whenever `refresh_after`
-  (15 minutes) has passed, and immediately when a capture response reports a newer
-  `epoch`.
+- **Refresh.** At SessionStart, then at the next prompt once `refresh_after`
+  (15 minutes) has passed, and immediately when a labelled search response reports
+  a newer `session_epoch`. **(decision, PR B)** The epoch is the sum of the tenant's
+  workspace epochs, which every entry, group-membership, link and settings change
+  moves; search responses carry it instead of capture receipts, because recall is
+  the request a session makes on every prompt.
 - **Expiry.** After `expires_at` (24 hours) without a refresh, the hook allows reads
   only inside the session's own workspace and denies other workspaces' folders with
   a message saying the descriptor could not be refreshed (fail safe).
@@ -469,11 +479,15 @@ shared adds a scope file to it.
   message names the folder, the two workspaces and the way forward, for example:
 
   ```text
-  vaelius: denied — ~/src/birch belongs to workspace "birch", which fewer people can
-  read than this session's workspace "maple". Ask the person to run
-  `vaelius-client use birch` if this session should use it; capture will then be
-  limited to people in both.
+  vaelius: denied — ~/src/birch (workspace "birch") is visible to fewer people than
+  this session (maple). Start a session there, or ask the person to run
+  `vaelius-client session use birch`; capture is then limited to people in both.
   ```
+
+  (As implemented, one line.) A workspace the person cannot read, an unknown one
+  and a scope file that does not parse get their own one-line denials. After the
+  descriptor expires the message says it could not be refreshed. Edit tools are
+  not policed by the label; Bash paths use the origin-label command parser.
 
 - **Recall.** Every recall request (search, context injection, MCP tools) carries the
   session label `{workspace, narrowed, private}`. The server computes the set of
@@ -483,6 +497,21 @@ shared adds a scope file to it.
   audience, and the person's own private items only in a private session.
   Preferences (the person's own standing instructions) are always delivered, as
   today. Clients that do not send a label keep today's #32 behavior.
+  **(decisions, PR B)** The label travels as `session_label` in the body of the
+  recall routes (search, evidence, context, timeline, project history and episode)
+  and, for the MCP connection, as the `X-Vaelius-Session-Label` header the header
+  helper derives from the connection's folder. The header helper cannot tell which
+  conversation uses the connection, so MCP recall uses the label a session starting
+  in that folder gets; a later narrowing or private session only widens what may be
+  recalled, so this is never wider than the session's own label. A share qualifies
+  when its grantee is a group whose members contain the session audience (or the
+  person alone, which makes the session private); the person's own private items
+  never qualify through a share. The filter is a fourth term of the one predicate in
+  all three layers (`_session_admits`, `search_permissions.SESSION`,
+  `search_session_admits`), computed on every request; nothing is cached on the
+  server. The label replaces the cross-project `scope = "all"` search option of #28:
+  with a label, recall reaches every workspace in the superset list, the current one
+  first; the MCP tool no longer offers `scope`, and unlabelled HTTP requests keep it.
 - **Backstop.** The #32 floating taint stays, demoted to the cases the hook cannot
   see: programs that open files without naming them (`make`, test runners,
   scripts), MCP servers other than Vaelius, non-public web addresses and unknown
@@ -490,10 +519,15 @@ shared adds a scope file to it.
 
 ### Explicit narrowing
 
-- The person runs `vaelius-client use <workspace | path | private>`, or tells the
-  agent to call the Vaelius MCP tool `use_workspace` (served by the Vaelius MCP
-  server, so it is never captured). The server checks that the person can read the
-  target and returns the new descriptor.
+- The person runs `vaelius-client session use <workspace | path | remote | private>`
+  (`vaelius-client use` is a shorthand), or tells the agent to call the Vaelius MCP
+  tool `use_workspace` (served by the Vaelius MCP server, so it is never captured).
+  The server checks that the person can read the target and returns the new
+  descriptor. **(decision, PR B)** Without `--session`, the command narrows the
+  session active most recently in the current folder's scoped folder (or the one
+  named by `CLAUDE_CODE_SESSION_ID` when run from the agent's shell). The MCP
+  tool's result is applied by the client's PostToolUse hook for that session,
+  which then refreshes the descriptor for the full narrowed label.
 - The session audience becomes the **intersection**: `audience(A) ∩ audience(B)`, or
   `{me}` for `private`. The target is added to the session's narrowed (and carried)
   set, every later capture carries it, and the status line says so:
@@ -629,8 +663,10 @@ through the existing `raw_granted` prefilter plus a `raw_source_grants` probe ov
 `(tenant, source_project)` for lexical candidates, and pgvector's iterative HNSW scan
 (already enabled, `hnsw.iterative_scan`) for vector candidates. Recall's session
 filter (section 7) is the same shape with `R` replaced by the session's superset
-list. Superset lists are computed per (workspace, narrowed set, epoch) with set
-difference over `workspace_access` and cached server-side until the epoch changes.
+list. Superset lists are computed per request with one set-difference statement
+over `workspace_access` and `group_closure` (counting, per candidate workspace, the
+session audience members it covers); **(decision, PR B)** they are not cached, in
+keeping with "nothing about access is cached between requests" (section 2).
 
 `internal_project` (the `enterprise:` scope digest) stays as a coarse partition
 key for the knowledge pipeline, derived from `R`; it is never the authorization
@@ -767,7 +803,7 @@ Acceptance tests:
 
 ### PR B: fixed session labels
 
-Client: session label at SessionStart; descriptor fetch, cache, refresh and expiry;
+**Implemented** (migration 049). Client: session label at SessionStart; descriptor fetch, cache, refresh and expiry;
 the hook's read rule over `scope_of`; deny messages; `vaelius-client use` and the
 MCP tool `use_workspace`; status lines; carried set on captures; taint demoted to
 backstop. Server: descriptor route; superset computation and cache; recall filter by
@@ -891,3 +927,11 @@ Points the owner's brief left open, decided in this document:
 | Group admins (PR A) | A local group's admins are also its members; the creator is the first admin | 3 |
 | Partitions (PR A) | `internal_project` partitions narrow retrieval only and never decide access; a delegated credential searches only its delegated workspaces | 9 |
 | Legacy `team` request in a workspace with an organization entry (PR A) | Private, decided on the stored entry even while `widest_entry` suspends it | 5 |
+| Descriptor route (PR B) | `POST /enterprise/v3/workspaces/descriptor` with the session label, not a per-workspace `GET` | 5 |
+| Descriptor epoch (PR B) | Sum of the tenant's workspace epochs; labelled search responses carry it as `session_epoch` | 5 |
+| Session audience privacy (PR B) | Decided by the service: label `private`, a private sharing request, `contributions_default`, `item_default`, or an audience of the person alone | 7 |
+| Which session `use` narrows (PR B) | `--session`, else `CLAUDE_CODE_SESSION_ID`, else the session active most recently in this scoped folder | 7 |
+| MCP recall label (PR B) | The connection folder's label in `X-Vaelius-Session-Label`; never wider than the session's own | 7 |
+| Shares in a labelled recall (PR B) | Qualify when the grantee group's members contain the session audience; own private items only in a private session | 7 |
+| `scope = "all"` (PR B) | Folded into the label: labelled recall reaches the superset list; removed from the MCP tool | 7 |
+| Superset caching (PR B) | Computed per request, never cached | 9 |

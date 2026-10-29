@@ -57,15 +57,28 @@ class SearchScopeToolTests(unittest.TestCase):
         output = MemoryTools('maple', Backend()).call('search_memory', arguments)
         return output, calls[0][1]
 
-    def test_scope_defaults_to_the_project_and_all_is_explicit(self):
+    def test_the_session_label_replaces_the_scope_option(self):
         output, request = self.run_search({'query': 'Where is the dataset?'})
         self.assertEqual(request['project'], 'maple')
         self.assertNotIn('scope', request)
-        self.assertEqual(output['scope'], 'project')
-        output, request = self.run_search({'query': 'Where is the dataset?', 'scope': 'all'})
-        self.assertEqual((request['scope'], output['scope']), ('all', 'all'))
+        self.assertNotIn('scope', output)
         with self.assertRaises(ValueError):
-            self.run_search({'query': 'Where is the dataset?', 'scope': 'everything'})
+            self.run_search({'query': 'Where is the dataset?', 'scope': 'all'})
+
+    def test_use_workspace_checks_the_target_with_the_service(self):
+        from agenthub.mcp_tools import MemoryTools
+        calls = []
+
+        class Backend:
+            def request(self, path, value):
+                calls.append((path, value))
+                return {'workspace': {'id': 'maple', 'name': 'maple'},
+                        'session': {'workspace': 'maple', 'narrowed': ['birch'], 'private': False}}
+        output = MemoryTools('maple', Backend(), label={'workspace': 'maple'}).call('use_workspace',
+                                                                                    {'workspace': 'birch'})
+        self.assertEqual(calls, [('/enterprise/v3/workspaces/descriptor', {'workspace': 'maple', 'narrowed': ['birch']})])
+        self.assertEqual(output['vaelius_session_use'], {'target': 'birch', 'private': False, 'workspace': 'maple'})
+        self.assertEqual(output['status'], 'vaelius: session uses maple ∩ birch — capture limited to people in both')
 
     def test_cross_project_provenance_reaches_the_tool_output(self):
         card = {'id': 'doc-1', 'revision': 'rev-1', 'title': 'Dataset', 'lesson': 'Moved.',

@@ -205,7 +205,10 @@ class CloudPreferencesMixin:
                 or doc['active_revision_id']!=preference['revision_id']): return None
         sources=db.execute('''SELECT s.* FROM enterprise_sources s JOIN enterprise_dependencies d
             ON d.source_id=s.id WHERE d.document_id=%s''',(document_id,)).fetchall()
-        if not sources or not all(self._visible_source(db,ctx,s) for s in sources): return None
+        # Preferences are the person's own standing instructions: always delivered,
+        # whatever the session label (docs/ACCESS_MODEL.md section 7).
+        unlabelled=dict(ctx,session_label=None)
+        if not sources or not all(self._visible_source(db,unlabelled,s) for s in sources): return None
         return doc
 
     def curate_preference(self,ctx,source_id,candidate,*,replace_document=None,_processing=False):

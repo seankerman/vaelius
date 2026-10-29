@@ -184,6 +184,19 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
             WHERE e.tenant=%s AND e.member_kind='principal' ORDER BY e.group_id,e.member''', (tenant,)).fetchall()
         stale_groups = db.execute('''SELECT id,source,sync_state,last_synced FROM groups WHERE tenant=%s
             AND source!='local' AND sync_state!='current' ORDER BY id''', (tenant,)).fetchall()
+        # GitHub identity links and, per synced team, how many members are linked
+        # (and so grant access) and how many are pending a link (grant nothing).
+        identity_links = db.execute('''SELECT principal,provider,external_id,login,linked FROM identity_links
+            WHERE tenant=%s AND active=1 ORDER BY principal''', (tenant,)).fetchall()
+        github_groups = db.execute('''SELECT g.id,g.name,g.sync_state,g.last_synced,t.slug,
+                count(m.user_id) AS members,
+                count(l.principal) AS linked
+            FROM groups g JOIN github_teams t ON t.tenant=g.tenant AND t.group_id=g.id
+            LEFT JOIN github_team_members m ON m.tenant=t.tenant AND m.team_id=t.team_id
+            LEFT JOIN identity_links l ON l.tenant=m.tenant AND l.provider='github' AND l.active=1
+                AND l.external_id=m.user_id::text
+            WHERE g.tenant=%s AND g.source='github' AND g.active=1
+            GROUP BY g.id,g.name,g.sync_state,g.last_synced,t.slug ORDER BY g.name''', (tenant,)).fetchall()
         organization_entries = db.execute('''SELECT p.id,p.org_role FROM enterprise_projects p
             WHERE p.tenant=%s AND p.org_role>0 ORDER BY p.id''', (tenant,)).fetchall()
         repos = db.execute('''SELECT remote,workspace,linked_by,created FROM workspace_repos WHERE tenant=%s
@@ -212,7 +225,7 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
                 'contributions_default': None,
                 'identity_bindings': [], 'directory': [], 'groups': [], 'credentials': [],
                 'workspace_access': [], 'workspace_entries': [], 'group_memberships': [],
-                'repo_links': [], 'document_grants': [], 'connection_reader_grants': [],
+                'repo_links': [], 'identity_links': [], 'document_grants': [], 'connection_reader_grants': [],
                 'owned_connections': [], 'delegations': {'acts_for': [], 'represented_by': []},
                 'last_activity_at': None, '_flags': set()}
         return people[ident]
@@ -388,7 +401,20 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
         target = {'remote': row['remote'], 'workspace': row['workspace'], 'created': row['created']}
         entry = line('repo_link', row['linked_by'], target, parts=(row['remote'],))
         person(row['linked_by'])['repo_links'].append(dict(target, line_id=entry['line_id'], flags=entry['flags']))
+    for row in identity_links:
+        target = {'provider': row['provider'], 'user_id': int(row['external_id']), 'login': row['login'],
+                  'linked_at': row['linked']}
+        entry = line('identity_link', row['principal'], target, parts=(row['provider'], row['external_id']))
+        person(row['principal'])['identity_links'].append(dict(target, line_id=entry['line_id'],
+                                                               flags=entry['flags']))
     workspace_summary = {
+        'github_groups': [{'group': row['id'], 'name': row['name'], 'team': row['slug'],
+                           'sync_state': row['sync_state'], 'last_synced': row['last_synced'],
+                           'members': row['members'], 'linked_members': row['linked'],
+                           'pending_identity_link': row['members'] - row['linked'],
+                           'flags': sorted(({'pending_identity_link'} if row['members'] > row['linked'] else set())
+                                           | ({'group_stale'} if row['sync_state'] != 'current' else set()))}
+                          for row in github_groups],
         'organization_entries': [{'workspace': row['id'], 'role': roles.get(row['org_role']),
                                   'suspended': widest != 'organization', 'flags': ['org_wide_entry']}
                                  for row in organization_entries],
@@ -620,6 +646,14 @@ def revoke_group_membership(store, principal, group, *, actor, request_id=None):
     return {'status': 'applied' if removed else 'noop'}
 
 
+def revoke_identity_link(store, principal, *, actor, request_id=None):
+    """Deactivate a principal's GitHub identity link; their synced team memberships stop counting."""
+    with store.delivery_lock(), store.open() as state, state.db:
+        ctx = {'tenant': store.tenant_id, 'actor': actor, 'principal': actor, 'request_id': request_id}
+        removed = store._github_deactivate_links(state.db, principal, ctx, 'access_review')
+    return {'status': 'applied' if removed else 'noop'}
+
+
 def revoke_delegation(store, principal, acting_for, *, actor, request_id=None):
     with store.open() as state:
         row = state.db.execute('''SELECT actions,projects,active FROM enterprise_delegations
@@ -727,6 +761,8 @@ def apply_revocation(store, item, *, actor, control_admin=None, reason='access_r
     if kind == 'workspace_access':
         return {'status': 'revoke_entry_or_membership',
                 'action_required': 'revoke the workspace_entry or group_membership lines that give this access'}
+    if kind == 'identity_link':
+        return revoke_identity_link(store, principal, **common)
     if kind == 'repo_link':
         return {'status': 'requires_workspace_admin',
                 'action_required': 'a workspace admin unlinks the repository (vaelius-client workspace unlink)'}
@@ -988,11 +1024,13 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
             AND (principal=%s OR acting_for=%s)''', (tenant, principal, principal)).fetchone()[0]
         releases = db.execute('''SELECT count(*) FROM backend_releases WHERE tenant=%s
             AND readers::jsonb ? %s''', (tenant, principal)).fetchone()[0]
+        links = [dict(r) for r in db.execute('''SELECT provider,external_id,login FROM identity_links WHERE tenant=%s
+            AND principal=%s AND active=1 ORDER BY provider''', (tenant, principal))]
     bindings = [item for item in (_control_bindings(store) or ()) if item['principal'] == principal]
     plan = {'principal_active': bool(row['active']), 'settings_admin': bool(row['settings_admin']),
             'refresh_families': sessions, 'access_tokens': tokens, 'workspace_entries': projects,
             'local_group_memberships': local_groups,
-            'delegations': delegations, 'release_reader_grants': releases,
+            'delegations': delegations, 'release_reader_grants': releases, 'identity_links': links,
             'identity_bindings': [{'binding_kind': b['kind'], 'issuer': b['issuer'], 'subject': b['subject']}
                                   for b in bindings]}
     result = {'tenant': tenant, 'principal': principal, 'dry_run': not apply, 'plan': plan}
@@ -1036,6 +1074,10 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
                        request_id)
             for group in local_groups:
                 _audit(store, db, actor, 'group_membership', 'offboarding', group + ':' + principal, request_id)
+            # GitHub identity links end too (audited), so synced memberships stop counting now.
+            changes['identity_links_deactivated'] = store._github_deactivate_links(
+                db, principal, {'tenant': tenant, 'actor': actor, 'principal': actor, 'request_id': request_id},
+                'offboarding')
             changes['workspace_entries_removed'] = entries
             changes['group_memberships_removed'] = edges
             changes['release_reader_grants_removed'] = _remove_release_reader(store, db, principal, actor=actor,
@@ -1043,6 +1085,7 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
             done = changes['principal_deactivated'] or any(
                 changes[key] for key in ('refresh_families_revoked', 'access_tokens_deactivated',
                                          'delegations_revoked', 'workspace_entries_removed',
+                                         'identity_links_deactivated',
                                          'group_memberships_removed', 'release_reader_grants_removed'))
             _audit(store, db, actor, 'offboarding', 'applied' if done else 'already_offboarded', principal,
                    request_id)

@@ -170,6 +170,11 @@ def registry_from_settings(settings,home):
     from agenthub.governance import notice_from_settings
     ingest_limits=limits_from_settings(settings.get('ingest_limits'))
     capture_notice=notice_from_settings(settings.get('capture_notice'))
+    github=None
+    if settings.get('github') is not None:
+        # GitHub App team sync (docs/ACCESS_MODEL.md section 3); secrets are owner-only files.
+        from agenthub.github_sync import GitHubApp
+        github=GitHubApp(settings['github'])
     model=None
     objects=None
     if settings.get('objects'):
@@ -192,6 +197,7 @@ def registry_from_settings(settings,home):
             dsn=make_conninfo(dsn,host=override['host'],port=override['port'])
         store=CloudStore(path,dsn,tenant,registry=registry)
         store.credential_lifetimes=lifetimes
+        store.github=github
         store.ingest_limits=ingest_limits;store.capture_notice_config=capture_notice
         store.curation_enabled=processing.get('curation_enabled',False)
         store.retrieval_corpus=configuration.get('corpus','sources')
@@ -218,8 +224,10 @@ def registry_from_settings(settings,home):
     arguments={'max_stores':settings.get('max_stores',16),'store_factory':factory}
     if settings.get('authorization'):
         from agenthub.oauth_provider import OAuthRegistry
-        return OAuthRegistry(settings['control_dsn'],home,authorization=settings['authorization'],**arguments)
-    return TenantRegistry(settings['control_dsn'],home,**arguments)
+        registry=OAuthRegistry(settings['control_dsn'],home,authorization=settings['authorization'],**arguments)
+    else:registry=TenantRegistry(settings['control_dsn'],home,**arguments)
+    registry.github_app=github
+    return registry
 
 def app_from_profile(profile):
     from agenthub.backend_ops import build_identity
@@ -233,6 +241,10 @@ def app_from_profile(profile):
     objects=objects_from_settings(settings)
     from agenthub.broker_config import broker_from_settings
     brokers={name:broker_from_settings(value) for name,value in settings.get('identity_brokers',{}).items()}
+    if registry.github_app is not None:
+        # Due reconciles and the staleness sweep; the sweep needs only the database.
+        from agenthub.github_sync import GitHubReconciler
+        GitHubReconciler(registry,registry.github_app).start()
     return create_app(registry,build_ids=identity['build_ids'],brokers=brokers,allowed_hosts=settings.get('allowed_hosts',['127.0.0.1','localhost']),
         allowed_origins=settings.get('allowed_origins',[]),document_factory=lambda store:DocumentStore(store,objects),
         https_only=deployment['mode']=='production')

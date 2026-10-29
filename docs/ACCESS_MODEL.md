@@ -1,9 +1,10 @@
 # Access model: workspaces, groups and session labels
 
 **Status: PR A (migration 048: groups, workspaces, access lists, repository
-linking and the single read predicate) and PR B (migration 049: fixed session
-labels, the read rule in the guardrail hook and the recall filter) are implemented.
-PR C (GitHub team sync) is not yet implemented.** Three pull requests implement the
+linking and the single read predicate), PR B (migration 049: fixed session
+labels, the read rule in the guardrail hook and the recall filter) and PR C
+(migration 050: GitHub App team sync and the device-flow identity link) are
+implemented. The repository-read check of section 4 is deferred (decision, PR C).** Three pull requests implement the
 design in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)). The
 [privacy model](PRIVACY_MODEL.md) describes what the service enforces today; where
 PR A or PR B resolved a point left open here, the text below says so and the
@@ -168,8 +169,8 @@ edit time. Checks never walk the graph at query time.
 
 ### GitHub teams (PR C)
 
-- **Identity link.** A person links their GitHub account once, at enrollment or
-  later, with `vaelius-client link github`. The **server** starts a GitHub
+- **Identity link.** A person links their GitHub account once, at enrollment
+  (`--link-github`) or later, with `vaelius-client github link`. The **server** starts a GitHub
   device-flow authorization for the App's client id (device flow enabled in the
   App's settings), the client shows the user code
   and verification address, the person approves in the browser, and the server polls
@@ -178,17 +179,41 @@ edit time. Checks never walk the graph at query time.
   proves the person controls that login; typing a login never links one. One GitHub
   account links to at most one principal per tenant. Unlinking is self-service or by
   a tenant administrator, and audited.
+  **(decisions, PR C)** The client never sees the device code or the token: it
+  holds an opaque flow id, and the service polls GitHub (at most once per GitHub
+  interval, so `slow_down` is honored). Linking a second account replaces the first
+  (`relinked`). An attempt to link an account held by another principal is refused
+  (`409`) and audited (`refused_linked_elsewhere`). Delegated credentials cannot
+  link. The token is discarded, not revoked at GitHub, because revocation needs the
+  App's client secret, which the service deliberately does not hold; GitHub expires
+  it.
 - **Sync.** The App needs organization *Members: read* and repository
-  *Metadata: read*. It subscribes to `membership`, `team`, `organization` and
+  *Metadata: read* (automatic for every App; installation tokens are minted with
+  `members: read` only). It subscribes to `membership`, `team`, `organization` and
   `installation` webhooks. A webhook is only a **hint**: on any delivery for a team
   the server fetches that team's current member list
   (`GET /orgs/{org}/teams/{team_slug}/members`, which includes child-team members)
   and replaces the group's membership with it. State-based sync makes out-of-order
   or duplicate deliveries harmless. Deliveries are verified with the webhook secret
   (`X-Hub-Signature-256`) and de-duplicated by delivery id.
-- **Reconcile.** Every 6 hours, and on demand (`vaelius groups sync`), the server
-  lists every team of every installation and replaces all memberships. Teams that
-  disappeared become inactive groups.
+  **(decisions, PR C)** The route is `POST /enterprise/v3/github/webhook`; a bad or
+  missing signature is `401`, a replayed delivery id `409` (ids kept 30 days; a
+  delivery that fails to apply is forgotten so GitHub's redelivery works). A
+  `membership` delivery re-reads that team; `team` and `installation` `created` /
+  `unsuspend` re-read the installation; `organization` `member_removed` removes the
+  user from every team snapshot from the delivery itself, since a removal can only
+  narrow; `installation` `deleted` / `suspend` marks the groups `failed`. Groups are
+  `gh-<team id>` with the name `gh_<org>_<slug>` (local groups may not use the
+  `gh-` or `gh_` prefixes), and a parent team's group contains its child teams'
+  groups. The snapshot (`github_team_members`) is keyed by numeric user id; group
+  edges are rebuilt from it joined to active links of active principals.
+- **Reconcile.** Every 6 hours by default (`github.reconcile_seconds` in
+  `runtime.json`), and on demand (`vaelius github sync --now`), the server lists
+  every team of every installation and replaces all memberships. Teams that
+  disappeared become inactive groups. **(decision, PR C)** It runs in a background
+  thread of each API process; replicas claim due installations through the
+  database, so only one reconciles each interval. `vaelius github status` reports
+  installations, last sync, stale groups and the unlinked-member count.
 - **Unlinked members.** A GitHub member without a linked principal is kept as a
   pending member and grants nothing until they link.
 
@@ -207,7 +232,7 @@ A synced group has `sync_state`: `current`, `stale` or `failed`.
 
 | Condition | State | Effect |
 | --- | --- | --- |
-| Last successful GitHub reconcile older than `max_staleness` (tenant setting, default 24 hours) | `stale` | The group contributes **no members** to `group_closure` |
+| Last successful GitHub sync older than `max_staleness` (`github.max_staleness_seconds` in `runtime.json`, default 24 hours) | `stale` | The group contributes **no members** to `group_closure` |
 | Installation suspended or uninstalled, App credentials rejected, organization unreachable for longer than `max_staleness` | `failed` | Same |
 | SCIM group with an out-of-order event awaiting reconcile | `stale` | Same (today's behavior) |
 | Next successful sync | `current` | Membership is rebuilt from the source |
@@ -217,6 +242,10 @@ Because a synced group never counts as a workspace's last admin, admins keep acc
 and can see the state: the workspace and group views, the access report and the
 service status show `group_stale` with the last successful sync time. Every state
 change is audited (`group_sync`, with `applied`, `stale` or `failed`).
+**(decision, PR C)** Membership is materialized, so staleness is applied by a sweep
+rather than at query time: it needs only the database, runs every minute in each
+API process and on every sync and status call, and so works while GitHub is
+unreachable. Access can therefore outlive the window by at most about a minute.
 
 ## 4. Repository linking
 
@@ -244,11 +273,14 @@ change is audited (`group_sync`, with `applied`, `stale` or `failed`).
   `manage`, the capture links it, audited as `repo_link` / `automatic`, and the
   capture receipt carries a `notice` the client shows on the status line. A
   non-admin's capture from an unlinked remote is still rejected.
-- **Later (PR C):** for a remote in a GitHub organization where the App is installed, the
-  server checks that the capturing person's linked GitHub account can read the
+- **Deferred (decision, PR C):** for a remote in a GitHub organization where the App is installed, the
+  server would check that the capturing person's linked GitHub account can read the
   repository (`GET /repos/{owner}/{repo}/collaborators/{username}/permission`,
   cached for 15 minutes). A person without a linked account, or without read access,
-  is rejected with `403 repo_access_unverified`.
+  is rejected with `403 repo_access_unverified`. PR C does not ship this check:
+  it would put a GitHub call (or a 15-minute cache of one) on the capture path, and
+  the owner scoped PR C to team sync and the identity link. The identity link it
+  needs is in place, and the App already holds *Metadata: read*.
 
 ## 5. The scope file
 
@@ -835,10 +867,13 @@ Acceptance tests:
 
 ### PR C: GitHub App team sync and device-flow identity link
 
+**Implemented** (migration 050), except acceptance test 6, which is deferred
+(section 4). Tests use a fake GitHub API (`packages/server/tests/test_github_sync.py`).
+
 Server: GitHub App configuration (App id, private key file, webhook secret file, all
 re-read on change like the introspection secret); device-flow link; webhook receiver;
 6-hourly reconcile; `sync_state` and `max_staleness`; repository-read verification
-on capture. Client: `vaelius-client link github`.
+on capture (deferred). Client: `vaelius-client github link`.
 
 Acceptance tests:
 
@@ -935,3 +970,11 @@ Points the owner's brief left open, decided in this document:
 | Shares in a labelled recall (PR B) | Qualify when the grantee group's members contain the session audience; own private items only in a private session | 7 |
 | `scope = "all"` (PR B) | Folded into the label: labelled recall reaches the superset list; removed from the MCP tool | 7 |
 | Superset caching (PR B) | Computed per request, never cached | 9 |
+| Identity-link commands (PR C) | `vaelius-client github link`/`status`/`unlink`, and `--link-github` at enrollment; operator `vaelius github status` and `vaelius github sync [--now]` | 3 |
+| Device flow (PR C) | Run by the service; the client holds only an opaque flow id; the token is used for `GET /user` once and discarded | 3 |
+| Relink (PR C) | Linking another account replaces the link; an account held by another principal is refused and audited | 3 |
+| Webhook handling (PR C) | `401` bad signature, `409` replay (30-day ids); deliveries are hints, state is re-read; `member_removed` applies from the delivery | 3 |
+| Staleness (PR C) | `max_staleness_seconds` in `runtime.json` (default 24 h); applied by a database-only sweep every minute and on each sync | 3 |
+| Reconcile (PR C) | `reconcile_seconds` in `runtime.json` (default 6 h); background thread per API process, claimed through the database | 3 |
+| Group naming (PR C) | `gh-<team id>`, named `gh_<org>_<slug>`; the prefixes are reserved | 3 |
+| Repository-read check (PR C) | Deferred; not on the capture path yet | 4 |

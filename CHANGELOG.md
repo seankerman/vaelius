@@ -39,6 +39,24 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Added
 
+- GitHub team sync (access model PR C, migration 050). A GitHub App installed on
+  the organization turns teams into read-only `github` groups (`gh-<team id>`,
+  named `gh_<org>_<slug>`), nested by parent team. Signed webhooks
+  (`POST /enterprise/v3/github/webhook`: constant-time HMAC check, `401` on a bad
+  signature, `409` on a replayed delivery id) trigger a re-read of current state;
+  a reconcile every `reconcile_seconds` (default 6 h) fixes drift; a group with no
+  successful sync for `max_staleness_seconds` (default 24 h) contributes no
+  members. Installation tokens are minted with organization *Members: read* only.
+  Operator commands `vaelius github status` and `vaelius github sync [--now]`.
+  Setup: [enterprise identity](docs/ENTERPRISE_AUTH.md#github-app-team-sync).
+- GitHub identity link: `vaelius-client github link` (or `--link-github` at
+  enrollment) runs the GitHub device flow through the service, which stores only
+  the numeric user id and login and discards the token. Team membership counts
+  only for linked principals; renames keep the link; link, relink and unlink are
+  audited; offboarding and access-review revocation deactivate it. The access
+  report adds `identity_link` lines and a `github_groups` summary with
+  `pending_identity_link`.
+
 - Fixed session labels (PR B of [the access model](docs/ACCESS_MODEL.md#7-fixed-session-labels),
   migration 049). A Claude Code session started in a workspace folder with capture on
   takes that workspace's audience as its label. The PreToolUse guardrail hook denies

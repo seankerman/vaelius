@@ -78,12 +78,11 @@ def _seed_identity(store,tenant,profile):
     for project in ('cloud-fixtures','enrolled-test'):
         with store.open() as state:
             exists=state.db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=? AND id=?',(tenant,project)).fetchone()
-        if not exists:store.create_project(tenant,project)
-        for principal in ('alice','bob'):
-            with store.open() as state:
-                member=state.db.execute('SELECT active FROM enterprise_memberships WHERE tenant=? AND project=? AND principal=?',(tenant,project,principal)).fetchone()
-            # Repeat setup never restores a revoked membership.
-            if member is None:store.set_membership(tenant,project,principal,True)
+        # Members are added only when the workspace is created: repeat setup never
+        # restores a revoked membership.
+        if not exists:
+            store.create_project(tenant,project)
+            for principal in ('alice','bob'):store.set_membership(tenant,project,principal,True)
     credentials=Path(profile)/'credentials';credentials.mkdir(exist_ok=True,mode=0o700)
     for principal in ('alice','bob','settings-admin'):
         path=credentials/(tenant+'-'+principal+'.token')

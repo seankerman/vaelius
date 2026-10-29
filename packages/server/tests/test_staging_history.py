@@ -95,7 +95,7 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
         # Team visibility lists originals; downloading them needs an owner grant.
         with self.assertRaises(Denied):self.service.fetch(self.bob,sources[0]['source_id'],version=original['versions'][0]['version'])
         from agenthub import raw_access
-        raw_access.grant(self.store,self.alice,'connection','native-history','project','maple')
+        raw_access.grant(self.store,self.alice,'connection','native-history','group','maple-members')
         for item,source in zip(original['versions'],sources):
             stream,headers=self.service.fetch(self.bob,source['source_id'],version=item['version'])
             with stream:actual=stream.read()

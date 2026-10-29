@@ -298,7 +298,7 @@ class Exchange(PostgresFixture, unittest.TestCase):
         self.assertEqual(response.headers['cache-control'], 'no-store')
         value = response.json();token = value['credential']
         self.assertEqual((value['tenant'], value['principal'], value['enrollment']), ('acme', 'alice', 'synthetic-device'))
-        self.assertEqual(value['actions'], ['feedback', 'ingest', 'read', 'share', 'source_read', 'withdraw'])
+        self.assertEqual(value['actions'], ['feedback', 'ingest', 'manage', 'read', 'share', 'source_read', 'withdraw'])
         self.assertAlmostEqual(value['expires_at'], time.time() + 3600, delta=30)
         self.assertEqual(len(self.sts.calls), 1);call = self.sts.calls[0]
         self.assertTrue(call['verified']);self.assertEqual(call['body'], 'Action=GetCallerIdentity&Version=2011-06-15')

@@ -393,7 +393,7 @@ class RawContentPostgresTests(PostgresFixture, unittest.TestCase):
         raw_access.revoke(self.store, owner, 'source', source, 'principal', 'bob')
         with self.assertRaises(Denied):
             self.store.general_source(bob, source)
-        raw_access.grant(self.store, owner, 'connection', 'protected-agent', 'project', 'maple')
+        raw_access.grant(self.store, owner, 'connection', 'protected-agent', 'group', 'maple-members')
         self.assertEqual(self.store.general_source(bob, source)['source_id'], source)
         carol = self.credential('carol', ['read', 'source_read'])
         with self.assertRaises(Denied):

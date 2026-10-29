@@ -146,6 +146,12 @@ def migrate_snapshot(snapshot, store, *, expected_sha256, objects, allow_missing
                     omitted.append({'table': table, 'reason': 'not_present_in_selected_schema'})
                     continue
                 names = [r[1] for r in source.execute('PRAGMA table_info(' + table + ')')]
+                if table == 'enterprise_memberships':
+                    # Memberships became `<project>-members` groups (migration 048).
+                    rows = [dict(r) for r in source.execute('SELECT tenant,project,principal,active FROM enterprise_memberships')]
+                    _import_memberships(db, rows)
+                    copied[table] = {'count': len(rows), 'sha256': _row_digest(rows), 'mapped_to': 'group_edges'}
+                    continue
                 target_names = columns(db, table)
                 if set(names) - set(target_names):
                     raise ValueError('migration_column_not_supported:' + table)
@@ -171,6 +177,7 @@ def migrate_snapshot(snapshot, store, *, expected_sha256, objects, allow_missing
                 if (table in copied and 'legacy_actions' not in
                         {r[1] for r in source.execute('PRAGMA table_info(' + table + ')')}):
                     db.execute(sql.SQL('UPDATE {} SET legacy_actions=1').format(sql.Identifier(table)))
+            _import_workspaces(db, store.tenant_id)
             for item in locators:
                 db.execute('INSERT INTO cloud_migrated_source_objects VALUES(?,?,?,?,?,?)',
                     (item['source_id'], item['key'], item['sha256'], item['length'], item['representation'], int(item['original_complete'])))
@@ -194,6 +201,35 @@ def migrate_snapshot(snapshot, store, *, expected_sha256, objects, allow_missing
         raise
     finally:
         source.close()
+
+
+def _import_memberships(db, rows):
+    """Active snapshot memberships become principal members of `<project>-members`."""
+    now = time.time()
+    for row in rows:
+        if not row['active']:
+            continue
+        group = row['project'] + '-members'
+        db.execute('''INSERT INTO groups(tenant,id,name,source,workspace,created_by,created)
+            VALUES(?,?,?,'local',?,'migration',?) ON CONFLICT DO NOTHING''',
+            (row['tenant'], group, group, row['project'], now))
+        db.execute('''INSERT INTO group_edges(tenant,group_id,member_kind,member,added_by,created)
+            VALUES(?,?,'principal',?,'migration',?) ON CONFLICT DO NOTHING''', (row['tenant'], group, row['principal'], now))
+
+
+def _import_workspaces(db, tenant):
+    """Imported projects become workspaces as in migration 048: a members group with a
+    writer entry, no admin and no organization entry, and every imported item private."""
+    now = time.time()
+    for row in db.execute('SELECT id FROM enterprise_projects WHERE tenant=?', (tenant,)).fetchall():
+        project = row['id']
+        group = project + '-members'
+        db.execute('''INSERT INTO groups(tenant,id,name,source,workspace,created_by,created)
+            VALUES(?,?,?,'local',?,'migration',?) ON CONFLICT DO NOTHING''', (tenant, group, group, project, now))
+        db.execute('''INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
+            VALUES(?,?,'group',?,'writer','migration',?) ON CONFLICT DO NOTHING''', (tenant, project, group, now))
+    db.execute('UPDATE enterprise_sources SET private=1 WHERE tenant=? AND private=0', (tenant,))
+    db.execute('SELECT access_refresh_groups(?,NULL)', (tenant,))
 
 
 def rollback_same_authority(store, *, migration_id, previous_build, expected_database_identity):

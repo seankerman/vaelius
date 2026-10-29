@@ -121,10 +121,12 @@ class DiscoveryIssuerSelection(unittest.TestCase):
     def test_owner_self_service_scopes_are_requested_when_offered(self):
         document = self.document()
         document['vaelius_authorization_servers'][0]['scopes_supported'] += ['vaelius:withdraw', 'vaelius:share',
-                                                                            'vaelius:moderate']
-        # Withdraw and share (forget, change sharing, grants) are requested; moderation never is.
+                                                                            'vaelius:manage', 'vaelius:moderate']
+        # Withdraw, share and manage (workspaces, bounded by the role in each) are
+        # requested; moderation never is (it follows the workspace admin role).
         self.assertEqual(self.discover(document, issuer=self.A)['scope'],
-                         'openid vaelius:feedback vaelius:ingest vaelius:read vaelius:withdraw vaelius:share')
+                         'openid vaelius:feedback vaelius:ingest vaelius:read vaelius:withdraw vaelius:share '
+                         'vaelius:manage')
 
     def test_issuer_must_be_advertised_by_the_service(self):
         with self.assertRaisesRegex(ValueError, 'oauth_issuer_not_advertised'):

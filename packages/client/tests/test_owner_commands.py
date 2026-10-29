@@ -71,22 +71,26 @@ class OwnerCommandTests(unittest.TestCase):
         self.assertEqual(calls[0][1]['project'], 'demo')
 
     def test_sharing_with_a_selection_changes_sources_not_the_personal_setting(self):
-        calls, _ = self.run_cli('sharing', '--set', 'team', '--originals', 'private', '--source', 's-1', '--yes')
+        # The access model takes `shared|private`; legacy `team`/`organization`
+        # are kept as aliases that map to `shared`.
+        calls, _ = self.run_cli('sharing', '--set', 'shared', '--source', 's-1', '--yes')
         self.assertEqual([path for path, _ in calls], ['/enterprise/v3/my-data/sharing'] * 2)
-        self.assertEqual(calls[0][1], {'source_ids': ['s-1'], 'sharing': 'team', 'originals': 'private',
-                                       'confirm': False})
+        self.assertEqual(calls[0][1], {'source_ids': ['s-1'], 'sharing': 'shared', 'confirm': False})
+        calls, _ = self.run_cli('sharing', '--set', 'organization', '--source', 's-1', '--yes')
+        self.assertEqual(calls[0][1], {'source_ids': ['s-1'], 'sharing': 'shared', 'confirm': False})
 
     def test_share_unshare_and_mine(self):
-        calls, _ = self.run_cli('share', '--session', 'abc', '--with-project', 'birch', '--originals')
+        # Grantee kinds are now `principal` or `group`; `--with-project` is gone.
+        calls, _ = self.run_cli('share', '--session', 'abc', '--with-group', 'maple-team', '--originals')
         self.assertEqual(calls, [('/enterprise/v3/my-data/grant', {'scope': 'session', 'ids': ['abc'],
-            'grantee_kind': 'project', 'grantee': 'birch', 'originals': True, 'confirm': False})])
+            'grantee_kind': 'group', 'grantee': 'maple-team', 'originals': True, 'confirm': False})])
         calls, output = self.run_cli('unshare', '--source', 's-1', '--with-principal', 'bob')
         self.assertEqual(calls, [('/enterprise/v3/my-data/revoke', {'scope': 'source', 'ids': ['s-1'],
             'grantee_kind': 'principal', 'grantee': 'bob', 'confirm': True})])
         calls, _ = self.run_cli('share', '--list')
         self.assertEqual(calls, [('/enterprise/v3/my-data/grants', {})])
-        calls, _ = self.run_cli('mine', '--sessions', '--sharing', 'team')
-        self.assertEqual(calls[0][1], {'limit': 50, 'view': 'sessions', 'state': 'active', 'sharing': 'team'})
+        calls, _ = self.run_cli('mine', '--sessions', '--sharing', 'shared')
+        self.assertEqual(calls[0][1], {'limit': 50, 'view': 'sessions', 'state': 'active', 'sharing': 'shared'})
         with self.assertRaises(SystemExit):
             self.run_cli('share', '--session', 'abc')
 

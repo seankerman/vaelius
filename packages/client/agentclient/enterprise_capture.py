@@ -4,7 +4,7 @@ import uuid
 
 from agentclient.cleaning import SECRET_KEYS, REDACTED_SECRET
 from agentclient.secret_detection import redact_text
-from agentclient.general_contract import ORIGIN_LEVELS, VERSION, validate_event
+from agentclient.general_contract import ORIGIN_LEVELS, VERSION, validate_event, validate_remote
 
 SELF_TOOLS = {'agentnetwork_memory', 'mcp__agentnetwork__agentnetwork_memory'}
 # MCP server names under which hosts register the Vaelius service. Claude Code
@@ -72,7 +72,7 @@ def turn_of(event):
 
 
 def normalize_capture(event, project, connection, *, source_type='agent', origin='host_hook', sharing='private',
-                      originals='private', origin_label=None):
+                      originals='private', origin_label=None, remote=None, workspace_key=False):
     kind = event.get('hook_event_name', '')
     tool = str(event.get('tool_name', ''))
     blocks = [];role = 'unknown';channel = '';complete = False;disposition = 'accepted'
@@ -142,9 +142,35 @@ def normalize_capture(event, project, connection, *, source_type='agent', origin
         # requests here, so a service that ignored the label would still not widen them.
         value['origin_label'] = origin_label
         sharing, originals = (lower_level(level, origin_label['ceiling']) for level in (sharing, originals))
-    for key, level in (('sharing', sharing), ('originals', originals)):
-        if level in ('team', 'organization'): value[key] = level
-        elif level != 'private': raise ValueError('invalid_sharing_request')
+    # The access model drops the originals ladder: nothing is ever sent for it,
+    # and sharing originals is now an explicit per-item grant on the service.
+    if originals not in ORIGIN_LEVELS:
+        raise ValueError('invalid_sharing_request')
+    if workspace_key:
+        # The workspace key is the explicit opt-in to the access model. Only
+        # `private` (owner only) is honored on the wire; any other request
+        # becomes `organization`, which the service reads as "inherit the
+        # workspace audience". The scope-file parser has already applied the
+        # one-time warning for other values, so this is a safety net.
+        if sharing == 'private':
+            pass
+        elif sharing in ('team', 'organization'):
+            value['sharing'] = 'organization'
+        else:
+            raise ValueError('invalid_sharing_request')
+    else:
+        if sharing in ('team', 'organization'):
+            value['sharing'] = sharing
+        elif sharing != 'private':
+            raise ValueError('invalid_sharing_request')
+    if remote is not None:
+        # Normalized elsewhere; validate again at the wire boundary.
+        value['remote'] = validate_remote(remote)
+    # The workspace alias of `project`: always sent so the server never has to
+    # guess, and the `workspace == project` check in general_contract catches
+    # drift. The service rejects a capture whose `remote` is not linked to this
+    # workspace with 409 `repo_not_linked` (handled by the outbox).
+    value['workspace'] = value['project']
     return validate_event(value)
 
 

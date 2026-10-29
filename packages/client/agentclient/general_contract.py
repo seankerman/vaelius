@@ -6,6 +6,9 @@ carry a repository scope file's request; the service caps them by the person's o
 setting, project and tenant policy and connection visibility, so they never grant access.
 An optional `origin_label` carries what the event touched (`agentclient.origin`):
 its `ceiling` can only lower the stored levels, never raise them.
+Optional `workspace` (an alias of `project`; both must agree) and `remote` (the
+repository's normalized remote, `normalize_remote`) name where the capture comes
+from; the service rejects a remote that is not linked to the named workspace.
 Connection enrollment is a trusted server operation, independently of content.
 """
 import base64
@@ -32,6 +35,46 @@ ORIGIN_REASONS = ('outside_repo', 'shell_outside_repo', 'personal_content', 'cre
                   'mcp_server', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call')
 ORIGIN_MAX_PROJECTS = 16
 ORIGIN_PROJECT = re.compile(r'[A-Za-z0-9_-]{1,120}')
+# A normalized repository remote: host/path, lower case, without scheme, user,
+# port or a trailing `.git` or `/`. Paths may have more than two segments.
+REMOTE = re.compile(r'[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?:/[a-z0-9._~+-]{1,128}){1,16}')
+REMOTE_BYTES = 512
+_SCP_REMOTE = re.compile(r'(?:[^@/\s]+@)?([^:/\s]+):(?!//)(.+)')
+_URL_REMOTE = re.compile(r'(?:https?|ssh|git|git\+ssh|ssh\+git)://(?:[^@/\s]+@)?([^:/\s]+)(?::[0-9]*)?/(.+)', re.I)
+
+
+def normalize_remote(url):
+    """`host/path` for a Git remote URL, or None when it names no hosted repository.
+
+    `https://example.com/Example-Org/Maple.git`, `ssh://git@example.com:22/example-org/maple`
+    and `git@example.com:example-org/maple.git` all become `example.com/example-org/maple`.
+    Local paths and `file://` remotes name no shared repository and give None.
+    """
+    if not isinstance(url, str) or not 1 <= len(url) <= 2048 or any(c.isspace() for c in url.strip()):
+        return None
+    url = url.strip()
+    match = _URL_REMOTE.fullmatch(url)
+    if match is None and '://' not in url and not url.startswith(('/', '.', '~')):
+        match = _SCP_REMOTE.fullmatch(url)
+        if match is not None and len(match.group(1)) == 1:
+            return None  # a Windows drive letter (C:/...), not an scp-style host
+    if match is None:
+        return None
+    host, path = match.group(1).lower(), match.group(2).lower().strip('/')
+    while path.endswith('.git') or path.endswith('/'):
+        path = path[:-4] if path.endswith('.git') else path[:-1]
+    path = '/'.join(segment for segment in path.split('/') if segment)
+    value = host + '/' + path
+    if len(value) > REMOTE_BYTES or not REMOTE.fullmatch(value) or '..' in value.split('/'):
+        return None
+    return value
+
+
+def validate_remote(value):
+    if not isinstance(value, str) or len(value) > REMOTE_BYTES or not REMOTE.fullmatch(value) \
+            or normalize_remote('https://' + value) != value:
+        raise ValueError('invalid_remote')
+    return value
 
 
 def canonical(value):
@@ -58,7 +101,8 @@ def text(value, limit=256, empty=False):
 def validate_event(value):
     object_fields(value, {'version', 'connection', 'external_id', 'revision', 'source_type',
         'project', 'conversation', 'turn', 'event', 'blocks', 'occurred_at',
-        'actor', 'source_url', 'disposition', 'redactions', 'origin'}, ('sharing', 'originals', 'origin_label'))
+        'actor', 'source_url', 'disposition', 'redactions', 'origin'},
+        ('sharing', 'originals', 'origin_label', 'workspace', 'remote'))
     if value['version'] != VERSION or value['source_type'] not in SOURCE_TYPES:
         raise ValueError('unsupported_general_version_or_type')
     # A scope-file request, never a grant: the service caps it by every ceiling.
@@ -69,6 +113,10 @@ def validate_event(value):
             raise ValueError('invalid_sharing_request')
     if 'origin_label' in value:
         validate_origin_label(value['origin_label'])
+    if 'workspace' in value and value['workspace'] != value['project']:
+        raise ValueError('workspace_project_mismatch')
+    if 'remote' in value:
+        validate_remote(value['remote'])
     for key in ('connection', 'external_id', 'project', 'conversation', 'turn', 'actor'):
         text(value[key], empty=key in {'conversation', 'turn', 'actor'})
     text(value['revision'], 16)
@@ -181,7 +229,9 @@ def split_event(value):
 def validate_response(path, value):
     route = path.removeprefix('/enterprise/v2/').split('/')[0]
     if route == 'parts':
-        object_fields(value, {'disposition', 'digest', 'received_parts', 'complete', 'source_id'})
+        # `notice` is a status line for the person (for example an automatic repository link).
+        object_fields(value, {'disposition', 'digest', 'received_parts', 'complete', 'source_id'}, ('notice',))
+        if 'notice' in value: text(value['notice'], 300)
         if (value['disposition'] not in {'accepted', 'duplicate', 'incomplete', 'redacted', 'excluded', 'unsupported'}
                 or type(value['complete']) is not bool
                 or type(value['received_parts']) is not int or value['received_parts'] < 0):

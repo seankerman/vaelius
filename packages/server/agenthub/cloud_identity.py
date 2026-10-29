@@ -291,7 +291,7 @@ class CloudIdentityMixin:
             binding = self.identity_bindings.resolve(external_identity, tenant)
             if binding['principal'] != principal:
                 raise Denied()
-        allowed={'ingest','read','source_read','feedback','curate','correct','withdraw','share','moderate','policy','audit','settings','legal_hold'}
+        allowed={'ingest','read','source_read','feedback','curate','correct','withdraw','share','manage','moderate','policy','audit','settings','legal_hold'}
         if not isinstance(enrollment,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,120}',enrollment):
             raise ValueError('invalid_enrollment')
         if not actions or set(actions)-allowed:raise ValueError('invalid_actions')
@@ -652,7 +652,7 @@ class CloudIdentityMixin:
                 'processing_connection':connection['id']}
             try:self.current_identity(db,ctx)
             except Denied:continue
-            if 'ingest' in ctx['actions'] and self._project_member(db,ctx,connection['project']):return ctx
+            if 'ingest' in ctx['actions'] and self._project_member(db,ctx,connection['project'],2):return ctx
         raise Denied()
 
     def bind_directory_user(self, ctx, external_id, principal):
@@ -674,8 +674,12 @@ class CloudIdentityMixin:
             self._directory_admin(current.db,ctx)
             if not current.db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=%s AND id=%s',
                                      (ctx['tenant'],project)).fetchone(): raise Denied()
-            current.db.execute('''INSERT INTO cloud_directory_group_projects(external_id,project)
-                VALUES(%s,%s) ON CONFLICT DO NOTHING''',(external_id,project))
+            # The SCIM group is nested in the workspace's `<id>-members` group.
+            group=self._scim_group(current.db,ctx['tenant'],external_id)
+            current.db.execute('''INSERT INTO group_edges(tenant,group_id,member_kind,member,added_by,created)
+                VALUES(%s,%s,'group',%s,%s,%s) ON CONFLICT DO NOTHING''',
+                (ctx['tenant'],project+'-members',group,ctx['actor'],time.time()))
+            self._refresh_groups(current.db,ctx['tenant'],[group])
 
     def apply_directory_event(self, ctx, *, resource, value, sequence, key, reconcile=False, deleted=False):
         from agenthub.enterprise import Conflict, Denied
@@ -742,36 +746,38 @@ class CloudIdentityMixin:
         if not principal or not principal['settings_admin']:raise Denied()
 
     @staticmethod
-    def _reconcile_directory_memberships(db,tenant):
-        # Materialize only normalized effective grants into canonical memberships.
-        # Explicit grants are preserved separately, so group offboarding does not
-        # revoke an unrelated operator grant or leave a directory grant behind.
-        db.execute('DELETE FROM cloud_directory_memberships')
-        groups = db.execute("SELECT * FROM cloud_directory_resources WHERE kind='group' AND active=1 AND requires_reconcile=0").fetchall()
-        for group in groups:
-            members = json.loads(group['payload_json'])['members']
-            projects = [r['project'] for r in db.execute('SELECT project FROM cloud_directory_group_projects WHERE external_id=%s',(group['external_id'],))]
-            for external in members:
-                user = db.execute('''SELECT u.principal FROM cloud_directory_users u
+    def _scim_group(db,tenant,external_id):
+        """The `scim` group for one directory group (created on first use), by external id."""
+        ident='scim-'+hashlib.sha256(external_id.encode()).hexdigest()[:24]
+        db.execute('''INSERT INTO groups(tenant,id,name,source,external_id,sync_state,active,created)
+            VALUES(%s,%s,%s,'scim',%s,'stale',1,%s) ON CONFLICT DO NOTHING''',(tenant,ident,ident,external_id,time.time()))
+        return ident
+
+    def _reconcile_directory_memberships(self,db,tenant):
+        """Rewrite every `scim` group from the directory state: its members are the bound,
+        active principals of its SCIM members. A group awaiting reconcile (an
+        out-of-order event) is `stale` and an inactive one is inactive: both
+        contribute no members (agenthub.workspace_access, migration 048)."""
+        groups=[]
+        for row in db.execute("SELECT * FROM cloud_directory_resources WHERE kind='group'").fetchall():
+            ident=self._scim_group(db,tenant,row['external_id'])
+            payload=json.loads(row['payload_json'])
+            db.execute('''UPDATE groups SET display=%s,active=%s,sync_state=%s,last_synced=%s
+                WHERE tenant=%s AND id=%s''',(str(payload.get('display',''))[:200],int(row['active']),
+                'stale' if row['requires_reconcile'] else 'current',time.time(),tenant,ident))
+            db.execute("DELETE FROM group_edges WHERE tenant=%s AND group_id=%s AND member_kind='principal'",(tenant,ident))
+            for external in payload.get('members',[]):
+                user=db.execute('''SELECT u.principal FROM cloud_directory_users u
                     JOIN enterprise_principals p ON p.id=u.principal AND p.tenant=%s
                     WHERE u.external_id=%s AND p.active=1''',(tenant,external)).fetchone()
-                if not user: continue
-                for project in projects:
-                    db.execute('INSERT INTO cloud_directory_memberships(project,principal) VALUES(%s,%s) ON CONFLICT DO NOTHING',
-                        (project,user['principal']))
-        db.execute('UPDATE enterprise_memberships SET active=0 WHERE tenant=%s',(tenant,))
-        for table in ('cloud_explicit_memberships','cloud_directory_memberships'):
-            for row in db.execute('SELECT project,principal FROM '+table):
-                db.execute('''INSERT INTO enterprise_memberships(tenant,project,principal,active)
-                    VALUES(%s,%s,%s,1) ON CONFLICT(tenant,project,principal) DO UPDATE SET active=1''',
-                    (tenant,row['project'],row['principal']))
+                if user:
+                    db.execute('''INSERT INTO group_edges(tenant,group_id,member_kind,member,added_by,created)
+                        VALUES(%s,%s,'principal',%s,'directory',%s) ON CONFLICT DO NOTHING''',
+                        (tenant,ident,user['principal'],time.time()))
+            groups.append(ident)
+        if groups:self._refresh_groups(db,tenant,groups)
 
     def set_membership(self,tenant,project,principal,active):
         if tenant != self.tenant_id: raise ValueError('wrong_tenant')
         with self.delivery_lock(),self.open() as current,current.db:
-            if active:
-                current.db.execute('INSERT INTO cloud_explicit_memberships(project,principal) VALUES(%s,%s) ON CONFLICT DO NOTHING',
-                    (project,principal))
-            else:
-                current.db.execute('DELETE FROM cloud_explicit_memberships WHERE project=%s AND principal=%s',(project,principal))
-            self._reconcile_directory_memberships(current.db,tenant)
+            self._set_member_edge(current.db,tenant,project,principal,active)

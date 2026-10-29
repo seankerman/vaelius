@@ -364,11 +364,27 @@ A repository can declare how Vaelius treats it with a checked-in TOML file named
 `.vaelius` at its root:
 
 ```toml
-project = "example-repo"   # the service project name
-capture = "on"             # on | read-only | off
-sharing = "private"        # private | team | organization  (redacted passages)
-originals = "private"      # private | team | organization  (unredacted originals)
+workspace = "example-repo"   # the Vaelius workspace name (access-model)
+capture = "on"               # on | read-only | off
+# sharing = "private"        # optional: owner-only; omit to inherit the workspace audience
 ```
+
+The access model (`docs/ACCESS_MODEL.md`) decides who can read a capture from
+the workspace's **access list** (people, groups and the optional organization
+entry), not from a per-item sharing ladder. Writing `workspace =` is the
+explicit opt-in: items inherit the workspace audience unless the person opts
+them out as private. The service requires migration 048 (PR A on the server);
+clients that send `workspace` and `remote` against an earlier service are
+rejected with 400 `invalid_general_fields` for the extra fields.
+
+Legacy keys are still read so existing repositories keep working:
+
+| Key | Mapping |
+| --- | --- |
+| `project` | Treated as the workspace with that id. If `workspace` is also present and names a different id, the file is invalid and fails closed (capture and recall off) exactly like any other invalid file. |
+| `sharing` | A request and therefore an upper bound. In a file **without** `workspace` keep today's meaning on the wire (`private` -> omitted, `team` -> `team`, `organization` -> `organization`). In a file **with** `workspace`, only `sharing = "private"` is honored (sent as omission); any other value is ignored with a one-time warning. When not private the client sends `sharing = "organization"`, which the service reads as "inherit the workspace audience". |
+| `originals` | Ignored with a one-time warning and never sent on the wire. Sharing originals is now an explicit `vaelius-client share --originals` grant to a specific principal or group. |
+| `mode` | Legacy names map as before: `default` -> `on`, `read-only` -> `read-only`, `disabled` -> `off`. |
 
 | `capture` | Capture | Automatic recall |
 | --- | --- | --- |
@@ -401,31 +417,61 @@ Precedence, from strongest:
 
 An unreadable or invalid scope file fails closed: no capture and no recall there.
 
-`sharing` and `originals` are **requests**. They are sent with each captured event,
-and the service caps them by your own sharing setting (below), the operator's
-project and tenant ceilings and the connection's visibility, so editing the file
-can never widen access beyond what you and the operator allow. Originals are never
-shared above passages. See the [privacy model](PRIVACY_MODEL.md) and
+`sharing` is a **request** and never grants anything: the workspace's access
+list decides. In a workspace file only `private` (owner only) is honored and is
+sent as omission on the wire. A workspace file without `sharing` captures with
+`sharing = "organization"` on the wire, which the service reads as "inherit the
+workspace audience"; the server never promotes it past the access list. In a
+legacy (`project =`) file `sharing` keeps today's meaning on the wire, so an
+unmigrated repository captures exactly as it did before. See the
+[privacy model](PRIVACY_MODEL.md) and
 [shared conversation passages](DATA_BOUNDARIES.md#shared-conversation-passages-and-originals).
-`private` is never sent, so older services keep working for private capture; a
-service before migration 045 rejects `organization` and `originals`.
+
+### Repository remote on every capture
+
+Every capture now carries a normalized Git `remote` (`host/path`, lower case,
+no scheme/user/port, no trailing `.git` or `/`) alongside `workspace`. The
+client reads it from the scope root's Git remotes: the one named `origin`, else
+the only remote, else none (a scoped folder that is not a Git repository, or a
+repository with several remotes and no `origin`, has none, which is still
+accepted on the person's writer role alone). The server rejects a capture
+whose remote is not linked to the named workspace with HTTP 409
+`repo_not_linked`; the client keeps that event queued and the status line
+names the admin fix, for example:
+
+```
+vaelius: example.com/example-org/maple is not linked to workspace "maple" --
+a workspace admin can run `vaelius-client workspace link maple
+example.com/example-org/maple` (the event stays queued).
+```
+
+The admin fix retries about every fifteen minutes, so a lasting mismatch does
+not keep retrying forever and the queued events ship on the next successful
+drain. A parts receipt may also carry an `notice` (for example when an admin's
+first capture links a remote automatically); it is shown on the status line
+once per receipt. Minimum service version: migration **048** (PR A). Earlier
+services reject the extra `workspace` and `remote` fields with 400
+`invalid_general_fields`.
 
 ### Your own sharing setting
 
-Your setting is the most any of your captured content is shared, in every project
-and whatever a repository asks for. It starts at `private`:
+Your setting is `contributions_default`, the state new items of yours are
+captured in. It has two values under the access model (`shared` means items
+inherit the workspace audience; `private` means owner only). New principals
+start at `shared`; a delegated credential cannot change it:
 
 ```sh
 vaelius-client --home /absolute/private/client-profile sharing                       # show it
-vaelius-client --home /absolute/private/client-profile sharing --set team            # project members
-vaelius-client --home /absolute/private/client-profile sharing --set organization    # everyone in your organization
+vaelius-client --home /absolute/private/client-profile sharing --set shared          # inherit the workspace audience
 vaelius-client --home /absolute/private/client-profile sharing --set private         # only you
 ```
 
-Lowering it hides your already shared content on the next search. Raising it
-applies to what is captured from then on; content captured while it was lower
-stays at that level. Only you can change it (a delegated credential cannot), and
-each change is audited. The session status line shows it.
+`--set team` and `--set organization` are kept as deprecated aliases of
+`shared`. With `--set private --apply-to-existing` the client first fetches a
+preview with a `confirm_token`, so your agent must show the preview and get
+your agreement first, then applies with `--confirm <token>` (or `--yes` to
+preview and apply in one step). Only you can change it, and each change is
+audited; the session status line shows it.
 
 ### Your own content: find, delete, re-share and share
 
@@ -447,15 +493,55 @@ or a host conversation ID, `--source ID` (repeatable), `--project NAME`, and
 
 ```sh
 vaelius-client --home /absolute/private/client-profile mine --sessions
-vaelius-client --home /absolute/private/client-profile mine --sharing organization
+vaelius-client --home /absolute/private/client-profile mine --sharing shared
 vaelius-client --home /absolute/private/client-profile forget --session current
 vaelius-client --home /absolute/private/client-profile forget --session current --confirm TOKEN
 vaelius-client --home /absolute/private/client-profile forget --project maple --until 2026-01-01 --yes
 vaelius-client --home /absolute/private/client-profile sharing --set private --session current --yes
-vaelius-client --home /absolute/private/client-profile share --session current --with-project maple
+vaelius-client --home /absolute/private/client-profile share --session current --with-group maple-team
 vaelius-client --home /absolute/private/client-profile share --source SOURCE --with-principal alice --originals --yes
 vaelius-client --home /absolute/private/client-profile unshare --source SOURCE --with-principal alice
 ```
+
+Grantees are now a principal (`--with-principal NAME`) or a group
+(`--with-group NAME`); `--with-project` has been dropped by the access model.
+The selection form of `--sharing` and `--set` takes `shared|private` (and the
+old `team`/`organization` names stay as aliases of `shared`).
+
+### Workspaces and groups
+
+Workspace and group management move from the operator CLI to the client:
+
+```sh
+vaelius-client --home /absolute/private/client-profile workspace list
+vaelius-client --home /absolute/private/client-profile workspace create maple --item-default shared
+vaelius-client --home /absolute/private/client-profile workspace show maple
+vaelius-client --home /absolute/private/client-profile workspace settings maple --name maple --item-default private
+vaelius-client --home /absolute/private/client-profile workspace set-entry maple \
+    --subject-kind principal --subject alice --role admin
+vaelius-client --home /absolute/private/client-profile workspace set-entry maple \
+    --subject-kind organization --role reader
+vaelius-client --home /absolute/private/client-profile workspace remove-entry maple \
+    --subject-kind principal --subject alice
+vaelius-client --home /absolute/private/client-profile workspace link maple \
+    https://example.com/Example-Org/Maple.git
+vaelius-client --home /absolute/private/client-profile workspace unlink maple \
+    example.com/example-org/maple
+vaelius-client --home /absolute/private/client-profile group list
+vaelius-client --home /absolute/private/client-profile group create maple-team --workspace maple
+vaelius-client --home /absolute/private/client-profile group show maple-team
+vaelius-client --home /absolute/private/client-profile group add-member maple-team \
+    --member-kind principal --member bob --role member
+vaelius-client --home /absolute/private/client-profile group remove-member maple-team \
+    --member-kind principal --member bob
+vaelius-client --home /absolute/private/client-profile group delete maple-team
+```
+
+Workspace-admin operations need the `manage` credential action (`vaelius:manage`
+on provider OAuth; a credential issued before migration 048 that holds `share`
+also holds `manage`). A delegated credential cannot carry it. See
+`docs/ACCESS_MODEL.md` sections 2, 3 and 8 for the full access list, group
+source and role model.
 
 `forget`, `sharing` with a selection and `share` change nothing on their own: they
 print a preview (how many sources, sessions and projects, what is held, what would
@@ -533,12 +619,15 @@ everything else (tags, team, search filters, nested keys) is ignored:
 
 | Field | Mapping |
 | --- | --- |
-| `project` | project name |
+| `workspace` | workspace name (new; takes precedence over `project`) |
+| `project` | legacy alias of `workspace`; disagreement is invalid |
 | `capture` | as above |
 | `mode` | `default` → `on`, `read-only` → `read-only`, `disabled` → `off` (used when `capture` is absent) |
-| `sharing`, `originals` | as above |
+| `sharing` | workspace file: `private` honored, else inherit; legacy file: as before |
+| `originals` | ignored, with a one-time warning on the status line |
 
-A legacy file without `project` only adjusts an explicitly enrolled project.
+A legacy file without `workspace` or `project` only adjusts an explicitly
+enrolled project.
 
 ## Capture notice and status
 

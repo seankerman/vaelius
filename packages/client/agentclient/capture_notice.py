@@ -5,6 +5,11 @@ The service supplies the organization's own wording and policy link
 its built-in notice. Displays and acknowledgements are recorded in the profile's
 `notice-acknowledgements.json`, next to `config.json`, so capture never has to
 rewrite `config.json` (and can never race a concurrent `pause`).
+
+The notice wording now follows the workspace access model
+(`docs/ACCESS_MODEL.md`): a person's own setting is `contributions_default`
+(`shared` or `private`) and items inherit the workspace's audience; the per-item
+`private`/`team`/`organization` ladder goes away.
 """
 import fcntl
 import hashlib
@@ -15,18 +20,35 @@ import tempfile
 import time
 
 DEFAULT_NOTICE = (
-    'This project is enrolled in Vaelius shared memory. While capture is on, your prompts, '
+    'This workspace is enrolled in Vaelius shared memory. While capture is on, your prompts, '
     'the assistant\'s replies, and tool calls with their results are sent to your organization\'s '
     'Vaelius service after local secret redaction. Who can read them is decided by the service: '
-    'private sources only by you, team sources by members of this project, organization sources '
-    'by everyone in your organization. Pause with `vaelius-client pause`; withdraw an item you '
+    'items inherit the workspace\'s audience (the people and groups on its access list) unless you '
+    'opt a specific item out as private. Pause with `vaelius-client pause`; withdraw an item you '
     'captured with the withdraw_memory tool.')
 CAPTURED = ['user_prompts', 'assistant_replies', 'tool_calls', 'tool_results']
 FILE = 'notice-acknowledgements.json'
 CONTROLS = 'Pause: vaelius-client pause. Resume: vaelius-client resume.'
-SHARING_CONTROL = 'vaelius-client sharing --set private|team|organization'
-AUDIENCE = {'private': 'only you', 'team': 'members of this project',
-            'organization': 'everyone in your organization'}
+SHARING_CONTROL = 'vaelius-client sharing --set shared|private'
+# The two states the person's own `contributions_default` can hold under the
+# access model. Older services (`max_sharing`) are translated: `private`
+# stays private, anything else is treated as `shared`.
+AUDIENCE = {'shared': 'the workspace audience (people and groups on its access list)',
+            'private': 'only you'}
+
+
+def normalize_contributions_default(value):
+    """Collapse a legacy or new value to the two-state `contributions_default`.
+
+    `private` and `shared` stay as themselves; the legacy `team` and
+    `organization` map to `shared` (the person's contributions inherit the
+    workspace audience), anything else returns None.
+    """
+    if value in AUDIENCE:
+        return value
+    if value in ('team', 'organization'):
+        return 'shared'
+    return None
 
 
 def default_notice():
@@ -36,7 +58,7 @@ def default_notice():
 
 
 def fetch(config, project, *, timeout=0.5):
-    """Server wording for this project's capture connection, else the built-in notice."""
+    """Server wording for this workspace's capture connection, else the built-in notice."""
     try:
         from agentclient.transport import enterprise_client, capture_connection
         request = {}
@@ -67,7 +89,7 @@ def read(home):
 
 
 def record(home, scope, notice, how):
-    """Record that the notice for `scope` ('enrollment' or a project) was shown/acknowledged."""
+    """Record that the notice for `scope` ('enrollment' or a workspace) was shown/acknowledged."""
     home = Path(home)
     with (home / 'notice.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -78,10 +100,9 @@ def record(home, scope, notice, how):
         entries[key] = {'notice_version': notice.get('notice_version'), 'source': notice.get('source'),
                         'policy_url': notice.get('policy_url'), 'acknowledged': how, 'at': time.time(),
                         'readers': readers.get('description') if isinstance(readers.get('description'), str) else None}
-        if readers.get('passage_sharing_limit') in AUDIENCE:
-            entries[key]['passage_sharing_limit'] = readers['passage_sharing_limit']
-        if readers.get('personal_sharing') in AUDIENCE:
-            value['personal_sharing'] = {'level': readers['personal_sharing'], 'at': time.time()}
+        personal = normalize_contributions_default(readers.get('personal_sharing'))
+        if personal is not None:
+            value['personal_sharing'] = {'level': personal, 'at': time.time()}
         with tempfile.NamedTemporaryFile(mode='w', dir=home, prefix='notice-', suffix='.tmp', delete=False) as stream:
             json.dump(value, stream, indent=2, sort_keys=True)
             stream.write('\n')
@@ -96,52 +117,50 @@ def seen(home, project):
 
 
 def recorded(home, project):
-    """The last notice shown for a project, as a notice-shaped dict for `status`."""
+    """The last notice shown for a workspace, as a notice-shaped dict for `status`."""
     entry = read(home).get('projects', {}).get(project) or {}
     if not isinstance(entry.get('readers'), str):
         return {}
-    readers = {'description': entry['readers']}
-    if entry.get('passage_sharing_limit') in AUDIENCE:
-        readers['passage_sharing_limit'] = entry['passage_sharing_limit']
-    return {'readers': readers}
+    return {'readers': {'description': entry['readers']}}
 
 
 def personal_sharing(home):
-    """The person's own sharing setting as last reported by the service, else None."""
+    """The person's own `contributions_default` as last reported by the service, else None."""
     entry = read(home).get('personal_sharing') or {}
     return entry.get('level') if entry.get('level') in AUDIENCE else None
 
 
 def remember_personal_sharing(home, level):
     """Keep the setting the service just confirmed, for the per-session status line."""
-    if level not in AUDIENCE:
-        raise ValueError('invalid_max_sharing')
+    canonical = normalize_contributions_default(level)
+    if canonical is None:
+        raise ValueError('invalid_contributions_default')
     home = Path(home)
     with (home / 'notice.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         value = read(home)
-        value['personal_sharing'] = {'level': level, 'at': time.time()}
+        value['personal_sharing'] = {'level': canonical, 'at': time.time()}
         with tempfile.NamedTemporaryFile(mode='w', dir=home, prefix='notice-', suffix='.tmp', delete=False) as stream:
             json.dump(value, stream, indent=2, sort_keys=True)
             stream.write('\n')
             temporary = Path(stream.name)
         os.chmod(temporary, 0o600)
         temporary.replace(_path(home))
-    return level
+    return canonical
 
 
 def text(notice, project=None):
     """Plain message for the person: what is captured, who reads it, how to stop."""
-    lines = ['Vaelius capture notice' + (' for project ' + project if project else '') + ':', notice['notice']]
+    lines = ['Vaelius capture notice' + (' for workspace ' + project if project else '') + ':', notice['notice']]
     readers = notice.get('readers')
     if isinstance(readers, dict) and isinstance(readers.get('description'), str):
-        lines.append('Readers for this project: ' + readers['description'] + '.')
-    if isinstance(readers, dict) and readers.get('personal_sharing') in AUDIENCE:
-        limit = readers.get('passage_sharing_limit')
-        lines.append('Your sharing setting: ' + readers['personal_sharing'] + '. Your conversation passages here '
-                     'are shared with at most ' + AUDIENCE.get(limit, 'only you') + ', and only as far as the '
-                     "repository's scope file asks; unredacted originals stay yours unless it also asks for them. "
-                     'Change: ' + SHARING_CONTROL + '.')
+        lines.append('Readers for this workspace: ' + readers['description'] + '.')
+    if isinstance(readers, dict):
+        personal = normalize_contributions_default(readers.get('personal_sharing'))
+        if personal is not None:
+            lines.append('Your sharing setting: ' + personal + '. Items you capture inherit ' +
+                         AUDIENCE[personal] + ' unless you share them explicitly. '
+                         'Change: ' + SHARING_CONTROL + '.')
     if notice.get('policy_url'):
         lines.append('Policy: ' + notice['policy_url'])
     lines.append(CONTROLS)
@@ -149,28 +168,33 @@ def text(notice, project=None):
 
 
 def status(state, project, notice=None, *, sharing='private', personal=None):
-    """One line per session: is capture on or off for this project, and how to change it."""
+    """One line per session: is capture on or off for this workspace, and how to change it."""
     if state == 'on':
         readers = (notice or {}).get('readers') or {}
-        who = readers.get('description') if isinstance(readers.get('description'), str) else 'set by server policy'
-        # A scope file's request; the person's setting and operator policy decide what is shared.
-        passages = (' Conversation passages: ' + sharing + ' sharing requested by the repository scope file; '
-                    'your setting and the service decide.' if sharing in ('team', 'organization') else '')
-        # A freshly fetched notice carries the setting; later sessions use the remembered one.
-        personal = readers.get('personal_sharing') if readers.get('personal_sharing') in AUDIENCE else personal
+        who = readers.get('description') if isinstance(readers.get('description'), str) else 'the workspace audience'
+        # A scope file with the new `workspace` key never sends sharing requests
+        # on the wire. A legacy file may still request team/organization; the
+        # service applies the person's setting and the workspace access list.
+        passages = ''
+        if sharing in ('team', 'organization'):
+            passages = (' Legacy scope-file sharing request: ' + sharing + '; '
+                        'the service applies your setting and the workspace access list.')
+        personal_fetched = normalize_contributions_default(readers.get('personal_sharing'))
+        if personal_fetched is not None:
+            personal = personal_fetched
         mine = (' Your sharing setting: ' + personal + ' (' + SHARING_CONTROL + ').') if personal in AUDIENCE else ''
-        return ('Vaelius capture ON for project ' + project + ': prompts, assistant replies and tool '
+        return ('Vaelius capture ON for workspace ' + project + ': prompts, assistant replies and tool '
                 'calls/results are shared (readers: ' + who + ').' + passages + mine + ' Pause: vaelius-client pause.')
     if state == 'read-only':
-        return ('Vaelius capture OFF (read-only scope file) for project ' + project +
+        return ('Vaelius capture OFF (read-only scope file) for workspace ' + project +
                 ': nothing is captured; shared memory recall stays on.')
     if state == 'paused':
-        return 'Vaelius capture OFF (paused) for project ' + project + '. Resume: vaelius-client resume.'
-    return 'Vaelius capture OFF for project ' + project + ' (capture disabled for this project).'
+        return 'Vaelius capture OFF (paused) for workspace ' + project + '. Resume: vaelius-client resume.'
+    return 'Vaelius capture OFF for workspace ' + project + ' (capture disabled for this workspace).'
 
 
 def on_enrollment(profile):
-    """Shown once at login: nothing is captured until a project is enrolled."""
+    """Shown once at login: nothing is captured until a workspace is enrolled."""
     try:
         config = json.loads((Path(profile) / 'config.json').read_text())
         notice = fetch(config, None, timeout=2)
@@ -180,4 +204,4 @@ def on_enrollment(profile):
         record(profile, 'enrollment', notice, 'displayed_at_enrollment')
     except OSError:
         pass
-    return text(notice) + '\nNothing is captured until you enroll a project (vaelius-client enroll-project).'
+    return text(notice) + '\nNothing is captured until you enroll a workspace (vaelius-client enroll-project).'

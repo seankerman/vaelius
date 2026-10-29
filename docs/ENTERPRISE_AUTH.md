@@ -15,10 +15,11 @@ minutes, with fixed-origin endpoints and no redirect/proxy fallback.
 An operator binds `(issuer, subject, tenant)` to an existing principal. Email never
 grants membership. PostgreSQL stores only access-token digests and application
 scope/expiry metadata. The backend never receives a provider refresh token. Current
-principal, tenant, delegation and source/document permissions remain canonical;
-indexed `search_permissions` and restricted search-reader roles are unchanged.
-Directory offboarding must update Vaelius principal/binding/group grants and the
-identity provider. Logging out does not withdraw previously retained sources or
+principal, tenant, delegation and workspace/source/document permissions remain
+canonical; the indexed `search_permissions` audience filter and the restricted
+search-reader role are unchanged. Directory offboarding must update Vaelius
+principals and their workspace entries, local-group memberships and bindings, and
+the identity provider. Logging out does not withdraw previously retained sources or
 remove an independently authorized backend service's processing grants.
 
 [Access reviews and offboarding](ACCESS_REVIEW.md) covers the periodic access
@@ -50,7 +51,11 @@ actions answer `404`, the same as a missing resource.
 | `POST /enterprise/v3/my-data/grants` (MCP `list_memory_shares`) | `read` |
 | `POST /enterprise/v3/my-data/grant` (MCP `share_memories`) | `share` or `policy` (own sources only; not delegated with `share`) |
 | `POST /enterprise/v3/my-data/revoke` (MCP `unshare_memories`) | `share`, `withdraw` or `policy` (own grants only) |
-| `POST /enterprise/v3/moderation/withdraw` | `moderate` (and active membership of the project) |
+| `POST /enterprise/v3/moderation/withdraw` | `manage` and the workspace `admin` role (credentials issued before migration 048 that hold `moderate` are still accepted) |
+| `POST /enterprise/v3/workspaces`, `/workspaces/show`, `/groups`, `/groups/show` | `read` |
+| `POST /enterprise/v3/workspaces/create`, `/groups/create` | `manage` |
+| `POST /enterprise/v3/workspaces/settings`, `/entries/set`, `/entries/remove`, `/repos/link`, `/repos/unlink`, `/groups/members/add`, `/groups/members/remove`, `/groups/delete` | `manage` and the workspace `admin` role, or `settings` as a settings administrator (audited as `workspace_admin_override`) |
+| `POST /enterprise/v3/tenant-policy` | `settings` and the tenant settings administrator flag |
 | `POST /enterprise/v2/release` | `policy` and `read` |
 | Directory events and SCIM | `settings` (and the tenant administrator flag) |
 | `GET /enterprise/v1/processing-status` | `audit` |
@@ -73,22 +78,74 @@ the presented credential or returns text meant for every user:
 A malformed request body is reported (`400`) only after authentication; an
 unauthenticated caller gets the same `401`/`404` for any route.
 
-### `share` and `moderate`
+### `share`, `manage` and `moderate`
 
-`share` lets a person raise the stored sharing level of their own sources and
-grant them to named people or projects ([owner controls](PRIVACY_MODEL.md#owner-controls)).
-It is part of default interactive enrollment and of the default provider and AWS
-sign-in scopes (`vaelius:share`), together with `withdraw`, which the owner needs to
-delete and to lower levels. Credentials and refresh sessions issued before
-migration 047 that hold `withdraw` also hold `share` (`legacy_actions` bit 2); their
-stored action lists are not rewritten. Delegations cannot include `share`. An
-operator restricts it tenant-wide with `enterprise_organizations.owner_sharing =
-'lower_only'`, which keeps lowering, deleting and revoking.
+`share` lets a person clear the `private` flag on their own sources and grant
+them to a named principal or group
+([owner controls](PRIVACY_MODEL.md#owner-controls)). It is part of default
+interactive enrollment and of the default provider and AWS sign-in scopes
+(`vaelius:share`), together with `withdraw`, which the owner needs to delete
+sources and to make them private. Credentials and refresh sessions issued
+before migration 047 that hold `withdraw` also hold `share` (`legacy_actions`
+bit 2); their stored action lists are not rewritten. Delegations cannot
+include `share`. An operator restricts it tenant-wide with
+`enterprise_organizations.owner_sharing = 'lower_only'`, which keeps lowering,
+deleting and revoking.
 
-`moderate` lets a project member withdraw (hide) anyone's sources in that project;
-it never deletes and never reads originals. It is never a default, cannot be
-delegated, is reported as privileged in [access reviews](ACCESS_REVIEW.md), and is
-granted explicitly through `enrollment_actions` or a provider's `actions`.
+`manage` creates and administers workspaces. It gates every mutating
+`/enterprise/v3/workspaces/*`, `/groups/*` and `/repos/*` route; the business
+method also checks the workspace `admin` role (or the settings-admin
+break-glass override). It is part of default interactive enrollment and of the
+default provider and AWS sign-in scopes (`vaelius:manage`). The AWS STS
+defaults are `feedback, ingest, manage, read, share, source_read, withdraw`.
+Credentials and refresh sessions issued before migration 048 that hold `share`
+(explicitly or through the pre-047 `withdraw`-implies-`share` legacy bit) also
+hold `manage` (`legacy_actions` bit 4), following the pattern of bits 1 and 2;
+stored action lists are not rewritten. **Delegations never carry `manage`**:
+a delegated credential cannot create or administer a workspace.
+
+`moderate` lets a workspace admin withdraw (hide) anyone's sources in their
+workspace; it never deletes and never reads originals. **Moderation now
+follows the admin role.** A caller needs the workspace `admin` role and a
+credential holding `manage`. `moderate` is no longer part of default
+enrollment or default provider scopes; credentials and refresh sessions issued
+before migration 048 that still hold `moderate` keep working (the route
+accepts either `manage` or `moderate` at the action gate, and the business
+method's role check runs after). It cannot be delegated and is reported as
+privileged in [access reviews](ACCESS_REVIEW.md).
+
+### Delegations are workspace-scoped
+
+`enterprise_delegations.projects` lists the **delegated workspaces** (the ids
+are unchanged by migration 048; see
+[access-model section 8](ACCESS_MODEL.md#8-roles-and-credential-actions)). A
+delegated credential acts only in those workspaces, with its stored actions ∩
+the role the **represented person** holds in each workspace, and never through
+the organization entry. The `manage` and `share` actions are never carried,
+and raising sharing is refused for delegated credentials.
+
+### SCIM groups
+
+Directory groups pushed over SCIM become `scim` groups in Vaelius
+(`groups.source = 'scim'`), with group id `scim-` + the first 24 hex of a
+SHA-256 of the external id. A SCIM group awaiting reconcile has
+`sync_state = 'stale'` and **contributes nobody** to `group_closure` until the
+next good sync, so a sync outage never leaves a removed person in. Nesting a
+SCIM group inside a `local` group is how a workspace carries a directory
+mapping: migration 048 produces one `<project>-members` local group per
+workspace, with each SCIM group that was mapped to that project nested inside
+it.
+
+### Settings-admin break-glass override
+
+A tenant settings administrator (the `settings_admin` flag plus the `settings`
+action) can manage any workspace's access list, repository links, settings,
+and groups through the `settings` alternative on the `workspace/*` and
+`groups/*` routes. Each such change is audited as `workspace_admin_override`.
+The override never grants content access; adding themselves as a reader is an
+ordinary, audited entry change. Tenant policy itself (`workspace_creation`,
+`widest_entry`, `owner_sharing`) is set here on
+`POST /enterprise/v3/tenant-policy`, and is also audited.
 
 ### `feedback` and `curate`
 
@@ -102,9 +159,9 @@ rewritten, so renewal still reports the same actions and clients' scope checks k
 passing. Grants issued after the upgrade state their actions explicitly:
 
 - Interactive enrollment without operator `enrollment_actions` now grants
-  `ingest, read, feedback, correct, withdraw, share`. Add `curate` there (or to a
-  delegation) for users who should submit reviewed notes; `curate` is reported as
-  privileged in [access reviews](ACCESS_REVIEW.md).
+  `ingest, read, feedback, correct, withdraw, share, manage`. Add `curate` there
+  (or to a delegation) for users who should submit reviewed notes; `curate` is
+  reported as privileged in [access reviews](ACCESS_REVIEW.md).
 - Provider OAuth tokens need the `vaelius:feedback` scope to report outcomes (the
   plugin already requests it) and `vaelius:curate` to curate.
 - Delegations may now include `curate`. Updating a delegation makes its action list
@@ -161,9 +218,10 @@ tenant; do not infer the tenant from an email or caller header.
 
 For Keycloak, configure a public `vaelius-plugin` client with PKCE required, exact
 loopback callback, disabled password/direct grant and scopes `vaelius:read`,
-`vaelius:source_read`, `vaelius:ingest`, `vaelius:feedback`, `vaelius:withdraw` and
-`vaelius:share` (the last two let people forget and share their own content; the
-plugin requests them when offered). Include scopes in the
+`vaelius:source_read`, `vaelius:ingest`, `vaelius:feedback`, `vaelius:withdraw`,
+`vaelius:share` (the last two let people forget and share their own content)
+and `vaelius:manage` (so they can create and administer their own workspaces);
+the plugin requests the optional ones when offered. Include scopes in the
 token. Use two audience mappers: the Vaelius resource URI and the confidential
 `vaelius-api` introspection client. Include the subject in introspection. Configure
 refresh rotation (`revokeRefreshToken`, max reuse zero), short access lifetime,
@@ -310,7 +368,7 @@ login and explicit service credentials.
 | `issuer` | `aws-sts:identity-center` | Issuer recorded in bindings and credentials |
 | `token_ttl_seconds` | `3600` | Vaelius credential lifetime, 60–43200 |
 | `max_clock_skew_seconds` | `300` | Accepted difference from the signed `X-Amz-Date`, 30–900 |
-| `actions` | `feedback, ingest, read, share, source_read, withdraw` | Actions granted to issued credentials |
+| `actions` | `feedback, ingest, manage, read, share, source_read, withdraw` | Actions granted to issued credentials |
 
 `providers` may be omitted when `aws_sts` is present. Unknown keys and invalid
 values stop startup. Run control-plane migrations: they add the
@@ -349,8 +407,9 @@ Security properties:
   accounts and requests rejected before STS write no rows, so unauthenticated
   traffic cannot grow the audit table.
 
-Limits: STS returns no group claims, so project access still comes from Vaelius
-membership or directory grants. Only people with AWS access can use this path.
+Limits: STS returns no group claims, so workspace access still comes from
+Vaelius access-list entries (direct, through a local or SCIM group, or through
+the organization entry). Only people with AWS access can use this path.
 Each sign-in and renewal needs STS to be reachable. A custom
 `allowed_role_patterns` with `require_identity_center: false` accepts session
 names chosen by whoever assumes that role. Use it only where the role's trust

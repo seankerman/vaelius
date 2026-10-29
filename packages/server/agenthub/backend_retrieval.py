@@ -40,7 +40,7 @@ class RetrievalMixin:
                 if (prior['original_document']!=document_id or prior['original_revision']!=expected_revision or json.loads(prior['readers'])!=readers):raise Conflict()
                 return {'document_id':prior['document_id'],'disposition':'duplicate'}
             doc=self._document_allowed(db,ctx,document_id)
-            if not doc or doc['active_revision_id']!=expected_revision or not self._project_member(db,ctx,project):raise Denied()
+            if not doc or doc['active_revision_id']!=expected_revision or not self._project_member(db,ctx,project,2):raise Denied()
             sources=db.execute('SELECT s.* FROM enterprise_sources s JOIN enterprise_dependencies d ON d.source_id=s.id WHERE d.document_id=?',(document_id,)).fetchall()
             if not sources or any(s['owner']!=ctx['actor'] or s['external_project']!=project for s in sources):raise Denied()
             for reader in readers:
@@ -106,9 +106,7 @@ class RetrievalMixin:
                 sources=db.execute('''SELECT s.* FROM enterprise_dependencies x
                     JOIN enterprise_sources s ON s.id=x.source_id
                     WHERE x.document_id=?''',(document_id,)).fetchall()
-                capped=prior['level_capped']==1 and not all(
-                    source['owner']==ctx['actor'] or self._passage_shared(db,ctx,source) for source in sources)
-                if sources and ((all(self._visible_source(db,ctx,source) for source in sources) and not capped)
+                if sources and (all(self._visible_source(db,ctx,source) for source in sources)
                                 or self._release_allowed(db,ctx,document_id,sources)):
                     return prior
         if not table_exists(db,'backend_native_artifacts'):return None

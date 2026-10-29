@@ -148,7 +148,7 @@ def main(argv=None):
         'doctor','up','worker-run','status','stop','reindex',
         'source-index-reconcile',
         'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
-        *GOVERNANCE_COMMANDS,'sharing-policy'])
+        *GOVERNANCE_COMMANDS,'workspace','tenant-policy'])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',default='acme',type=tenant_id)
     parser.add_argument('--provider-free',action='store_true')
     parser.add_argument('--live',action='store_true');parser.add_argument('--ledger');parser.add_argument('--job-id')
@@ -163,12 +163,18 @@ def main(argv=None):
     parser.add_argument('--since',help='epoch seconds or ISO-8601 with offset');parser.add_argument('--until')
     parser.add_argument('--apply',action='store_true',help='principal-withdraw: apply; default is a dry run')
     parser.add_argument('--limit',type=int,default=200)
-    # Sharing ceilings (see docs/PRIVACY_MODEL.md).
-    parser.add_argument('--project',help='sharing-policy: project whose ceiling is set')
-    parser.add_argument('--max-sharing',choices=['private','team','organization','inherit'],
-        help='sharing-policy: ceiling; with --project, inherit uses the tenant default; without it sets that default')
-    parser.add_argument('--tenant-ceiling',choices=['private','team','organization'],
-        help='sharing-policy: hard ceiling for the whole tenant, above every project setting')
+    # Workspaces and tenant policy (see docs/ACCESS_MODEL.md).
+    parser.add_argument('--workspace',help='workspace: the workspace (name or id); omit to list every workspace')
+    parser.add_argument('--action',default='show',
+        choices=['show','set-entry','remove-entry','settings','link','unlink','create'],
+        help='workspace: what to do (create adds an operator-managed workspace with a members group)')
+    parser.add_argument('--subject-kind',choices=['principal','group','organization'])
+    parser.add_argument('--subject');parser.add_argument('--role',choices=['reader','writer','admin'])
+    parser.add_argument('--name');parser.add_argument('--item-default',choices=['shared','private'])
+    parser.add_argument('--active',choices=['yes','no']);parser.add_argument('--remote')
+    parser.add_argument('--workspace-creation',choices=['anyone','admins'],help='tenant-policy')
+    parser.add_argument('--widest-entry',choices=['none','people_and_groups','organization'],help='tenant-policy')
+    parser.add_argument('--owner-sharing',choices=['allowed','lower_only'],help='tenant-policy')
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
@@ -231,15 +237,19 @@ def main(argv=None):
             value=Meter(store).status()
         elif args.command=='readiness':store.require_ready();value={'ready':True,'tenant':args.tenant}
         elif args.command in GOVERNANCE_COMMANDS:value=governance_command(store,args,parser)
-        elif args.command=='sharing-policy':
-            if args.tenant_ceiling is not None:
-                if args.max_sharing is not None or args.project:parser.error('--tenant-ceiling stands alone')
-                value=store.set_tenant_sharing_ceiling(args.tenant_ceiling)
-            elif args.max_sharing is None:value=store.sharing_policy_status()
-            elif args.project:
-                value=store.set_project_sharing(args.project,None if args.max_sharing=='inherit' else args.max_sharing)
-            elif args.max_sharing=='inherit':parser.error('the tenant default needs private, team or organization')
-            else:value=store.set_tenant_sharing_default(args.max_sharing)
+        elif args.command=='tenant-policy':
+            value=store.tenant_policy(None,{key:item for key,item in (('workspace_creation',args.workspace_creation),
+                ('widest_entry',args.widest_entry),('owner_sharing',args.owner_sharing)) if item is not None})
+        elif args.command=='workspace':
+            if not args.workspace:
+                if args.action!='show':parser.error('--workspace required')
+                value=store.workspace_access_report()
+            elif args.action=='create':
+                store.create_project(args.tenant,args.workspace);value=store.operator_workspace('show',args.workspace)
+            else:
+                value=store.operator_workspace(args.action,args.workspace,subject_kind=args.subject_kind,
+                    subject=args.subject,role=args.role,name=args.name,item_default=args.item_default,
+                    active=None if args.active is None else args.active=='yes',remote=args.remote)
         elif args.command in ('tenant-disable','tenant-enable'):
             from agenthub.postgres import TenantRegistry
             operator=json.loads((profile/'operator.json').read_text());admin=TenantRegistry(operator['control_admin_dsn'],profile/'operator-state')

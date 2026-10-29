@@ -73,14 +73,16 @@ Two tiers, both rechecked at delivery:
 
 1. **Redacted passages** — search results, cited evidence spans and conversation
    context. Need `read`. Raw-representation passages are visible to their source
-   owner, and to others only as far as the source's sharing level reaches
+   owner, and to others when the source is **in their workspace audience**, or
+   through an explicit owner share
    ([below](#shared-conversation-passages-and-originals)). Other principals see
    derived knowledge and its citations through the normal search policy.
 2. **Retained originals** — the complete canonical source (`/enterprise/v2/sources/`,
    `/enterprise/v1/sources/`) and original document bytes (`source-documents/download`).
-   Need the credential action `source_read` **and** source ownership, the original's
-   own sharing level reaching the reader, or an explicit, active, owner-issued grant.
-   Document metadata (`describe`, `list`) stays at tier 1.
+   Need the credential action `source_read` **and** source ownership, or an
+   explicit, active, owner-issued originals share. There is no originals level
+   any more; sharing passages never shares originals. Document metadata
+   (`describe`, `list`) stays at tier 1.
 
 `source_read` is no longer part of default enrollment (`/enterprise/v3/auth/complete`
 without operator `enrollment_actions`) or of the default OAuth scope mapping (a
@@ -92,17 +94,20 @@ connection-reader checks, and a grantee still needs `source_read`:
 # Owner grants (requires the owner's credential with the policy action):
 python -m agenthub.raw_access grant --profile /absolute/private/profile --tenant acme \
   --token-file /absolute/private/owner.token --scope-kind connection --scope-id team-documents \
-  --grantee-kind project --grantee maple
+  --grantee-kind group --grantee maple-team
 python -m agenthub.raw_access revoke ...   # same arguments; the row is kept for audit
 python -m agenthub.raw_access list --profile ... --tenant acme --token-file ...
 ```
 
 A grant names one source, one capture session or one connection, and either a
-principal or a project (members of that project, which is how directory groups map
-into Vaelius). These operator-style commands grant originals only. Owners grant
-passages, and optionally originals, themselves with `vaelius-client share` or the
-MCP `share_memories` tool and the `share` action; no grant carries a source beyond
-its origin ([owner controls](PRIVACY_MODEL.md#owner-controls)).
+`principal` or a `group` (`project` grantees are refused with
+`project_grantee_retired_use_group`; migration 048 rewrites existing project
+grants into grants to that project's `<project>-members` local group). These
+operator-style commands grant originals only. Owners grant passages, and
+optionally originals, themselves with `vaelius-client share` or the MCP
+`share_memories` tool and the `share` action; no grant reaches a derived
+document, and no grant widens an `origin_private` source
+([owner controls](PRIVACY_MODEL.md#owner-controls)).
 
 ### Upgrade and migration
 
@@ -135,113 +140,120 @@ rollbacks.
 ## Shared conversation passages and originals
 
 The complete model, including who controls each setting, is in the
-[privacy model](PRIVACY_MODEL.md). In short: every captured source has a sharing
-level on one ladder, `private` < `team` < `organization`, for its redacted passages
-and, separately, for its unredacted original.
+[privacy model](PRIVACY_MODEL.md) and the design is in
+[the access model](ACCESS_MODEL.md). In short: every captured source belongs to
+one **workspace** and is either **private** (its owner only) or shared with the
+workspace audience (every principal the access list reaches as a reader).
+Originals are a separate tier, read with ownership or an **originals share**.
 
-By default a captured conversation passage is readable only by the person who
-captured it, even on a team or organization connection. A repository can ask for
-more with a checked-in scope file ([client side](CLIENT.md#repository-scope-files)):
+By default, a repository is captured when a checked-in scope file names the
+workspace ([client side](CLIENT.md#repository-scope-files)):
 
 ```toml
 # .vaelius at the repository root
-project = "example-repo"
-capture = "on"            # on | read-only | off
-sharing = "organization"  # private | team | organization  (redacted passages)
-originals = "private"     # private | team | organization  (unredacted originals)
+workspace = "example-repo"   # the Vaelius workspace this capture belongs to
+capture = "on"               # on | read-only | off
+# sharing = "private"        # optional owner opt-out; omit to inherit the audience
 ```
 
-The file is a **request, never a grant**: anyone who can edit the repository can
-edit it.
+The file is a **request, never a grant**: anyone who can edit the repository
+can edit it, and `workspace =` only works when the person already holds a role
+in that workspace. Legacy keys (`project`, `sharing`, `originals`) are read as
+an upper bound and are mapped as described in
+[the client guide](CLIENT.md#repository-scope-files) and
+[the access model](ACCESS_MODEL.md#5-the-scope-file).
+
+Every capture also carries a normalized Git **remote** (`host/path`, lower
+case, no scheme/user/port, no trailing `.git` or `/`). The server rejects a
+capture whose remote is not linked to the named workspace with HTTP 409
+`repo_not_linked`; the client keeps the event queued and the status line names
+the admin fix. An admin's first capture from an unlinked remote links it
+automatically (role `admin`, credential `manage`, non-delegated) and the
+parts receipt carries a one-line `notice`. A capture with no remote (a scoped
+folder that is not a Git repository) is accepted on the person's writer role
+alone.
 
 | Step | Rule |
 | --- | --- |
-| Ceilings | The author's own setting (`enterprise_principals.max_sharing`, default `private`, changed only by that person with `vaelius-client sharing --set`); the project ceiling (`enterprise_projects.max_sharing`, or the tenant's `default_max_sharing` for a project without one); the tenant ceiling (`enterprise_organizations.max_sharing`); the capture connection's visibility; an origin ceiling that has no effect yet. |
-| Ingest | Effective level = the minimum of the request and every ceiling at that moment. It is stored per source in `enterprise_sources.sharing` (and `originals_sharing`, never above `sharing`), next to the request. A capped request is audited (`sharing_request` / `capped_<level>`, `originals_request` / `capped_<level>`). |
-| Query | Every ceiling is applied again to the stored level. A reader other than the author can read a passage, its cited evidence and its conversation context only when, for every source it depends on, that current level reaches them (`team`: an active member of the project; `organization`: also any active, non-quarantined principal of the tenant) and every ordinary source rule passes. |
+| Request | The client sends `workspace`, the normalized `remote` and an optional `sharing`. `sharing` is omitted (owner-private) or `organization` (meaning "inherit the workspace audience"); legacy `team` is still accepted. `originals` is no longer sent. |
+| Ingest | The service resolves the workspace by name then id, checks that the credential ∩ the person's role in that workspace holds `ingest` (so the writer role or higher), and checks that `remote` is linked (section above). It stores the item with `private = 1` when (a) `sharing` is omitted, (b) `team` is requested against a workspace with an organization entry, (c) the capture connection is private, (d) the person's `contributions_default` is `private`, or (e) the workspace's `item_default` is `private`. Otherwise the item inherits the workspace audience. |
+| Query | A reader other than the owner reads a passage, its cited evidence and its conversation context only when the item is not private AND the reader is in the audience (`role(ws) ≥ reader`), OR they are the subject of an explicit share. The reader also needs to be in the audience of every **carried workspace** on the item (`origin_projects`), and (for items captured before migration 048 with origin ceiling `team`) a direct — non-organization — role in the workspace and in every carried workspace. |
 
 Consequences:
 
-- **Lowering** any ceiling (the author's setting, a project ceiling, the tenant
-  default or ceiling) hides shared passages and originals on the next request,
-  including results already delivered (delivery is rechecked).
-- **Raising** a ceiling never exposes a source stored at a lower level, even if its
-  scope file asked for more. Sources stored higher become visible again.
-- Every existing protection still applies on top: tenant isolation, withdrawal and
-  deletion, legal holds (a held deletion hides like a withdrawal), operator
-  quarantine (held sources stay owner-only), delegation project limits, connection
-  reader lists and freshness, and membership removal.
-- **Originals follow their own level**, which defaults to `private`. They also
-  need `source_read`; explicit owner grants keep working.
+- **Removing a principal entry or a group member** narrows items on the next
+  request. Lowering `widest_entry` suspends wider entries at query time, so it
+  hides immediately and raising restores.
+- **Adding an entry** widens the audience of every item in the workspace, past
+  and future, as on GitHub, Google Drive and Notion. Carried workspaces stop a
+  later widening of one workspace from exposing content that came from another.
+- **Shares** stand in for the audience check for one reader at a time and
+  obey `owner_sharing`.
+- **Originals** need `source_read` and either ownership or an originals share.
+- Every existing protection still applies on top: tenant isolation, withdrawal
+  and deletion, legal holds (a held deletion hides like a withdrawal), operator
+  quarantine (held sources stay owner-only), delegation limits, connection
+  reader lists and freshness.
 
-Who sees what for a passage Alice captured in project `maple` on an organization
-connection, with her own setting at `organization`:
+Who sees what for a passage Alice captured in workspace `maple` (access list:
+`principal:alice → admin`, `group:maple-team → writer`, `organization →
+reader`), with her own `contributions_default = shared`:
 
-| Reader | Stored `private` | Stored `team` | Stored `organization` | Stored `organization`, Alice lowers her setting to `team` |
-| --- | --- | --- | --- | --- |
-| Alice | passage + original | passage + original | passage + original | passage + original |
-| Bob, active `maple` member | nothing | passage, evidence, context | passage, evidence, context | passage, evidence, context |
-| Carol, another project only | nothing | nothing | passage, evidence, context | nothing |
-| A deactivated or quarantined principal, a delegated or capture-only credential | nothing | nothing | nothing | nothing |
+| Reader | Alice marks private | Default (audience) | Alice shares to `principal:carol` |
+| --- | --- | --- | --- |
+| Alice | passage + original | passage + original | passage + original |
+| Bob, `maple-team` member | nothing | passage, evidence, context | nothing (not shared to) |
+| Carol, in the org but not in `maple-team` | nothing | passage, evidence, context (through the organization entry) | passage, evidence, context (through the share) |
+| A quarantined, deactivated or delegated reader | nothing | nothing | nothing |
 
-Originals in that table require the original's own level (or a grant) as well.
+Originals in that table additionally require ownership, an originals share and
+`source_read`.
 
-Operators set and inspect the ceilings:
+Admins manage the access list, repository links and workspace settings from the
+client; operators and settings administrators can do the same as a break-glass
+override. The commands are in
+[the client guide](CLIENT.md#workspaces-and-groups) and
+[self-hosting](SELF_HOSTING.md).
 
-```sh
-vaelius sharing-policy --profile PROFILE --tenant TENANT --project maple --max-sharing team
-vaelius sharing-policy --profile PROFILE --tenant TENANT --project maple --max-sharing inherit
-vaelius sharing-policy --profile PROFILE --tenant TENANT --max-sharing organization   # project default
-vaelius sharing-policy --profile PROFILE --tenant TENANT --tenant-ceiling team        # hard ceiling
-vaelius sharing-policy --profile PROFILE --tenant TENANT                              # status and counts
-```
+Enforcement is one predicate, in three places: the Python oracle
+(`agenthub.workspace_access.WorkspaceAccessMixin`, used by
+`EnterpriseStore._document_allowed`), the indexed SQL filter
+(`agenthub.search_permissions.AUDIENCE`, computed once per request from the
+reader's workspaces `R` and delegated set `D`) and the row-level security
+functions `search_reader_in_audience` and `search_document_allowed`, applied by
+the restricted search-reader role. A parity test keeps all three in agreement,
+and a teammate's search runs the same number of SQL statements as the owner's.
 
-Status reports the ceilings, how many active principals chose each level and, per
-project, the number of active sources stored at each level (passages and originals)
-and how many requests were capped; never content or IDs. `explain` lists a source's
-passage readers under current policy in `raw_readers`.
-
-Enforcement is the compiled source policy used for all retrieval: the
-`search_source_policy_definitions` projection adds `"sharing": "team"` or
-`"sharing": "organization"` for shared sources, and the same clause (the current
-level from the author's setting, project and tenant ceilings, visibility and origin
-ceiling, then membership or the organization audience) is applied by the indexed
-predicate (`search_permissions.predicate` and `policy_condition(raw=True)`), the
-row-level security function `search_document_allowed` (through
-`search_passage_shared`), and the Python oracle
-(`_visible_source(raw=True)` and `_document_allowed`). A parity test checks that all
-three agree across levels and readers. A teammate's search runs the same number of
-SQL statements as the owner's.
-
-Retrieval is scoped to the current project; other projects' organization-shared
-content arrives as a separate, labelled tier. See
-[project-scoped retrieval](PRIVACY_MODEL.md#project-scoped-retrieval-and-the-organization-tier).
-
-Migration `042_project_sharing.sql` introduced team sharing; migration
-`045_sharing_levels.sql` adds the organization level, the person and tenant
-ceilings, the originals level and the document project, replaces the policy view
-and `search_document_allowed`, and changes no existing policy definition, so no
-projection rebuild is needed. It widens nothing (see
-[upgrading](PRIVACY_MODEL.md#upgrading-to-migration-045)). Clients that do not send
-a request capture as before. A client that requests `organization` or `originals`
-needs a service with migration 045; an older service rejects those fields.
+Migrations `042_project_sharing.sql` (team sharing), `045_sharing_levels.sql`
+(the ladder, person and tenant ceilings, originals level), `046_origin_labels`
+and `047_curated_derived_cap` prepared the ground; migration
+`048_workspaces.sql` replaces the ladder with workspace audiences and explicit
+shares. See [upgrading to migration 048](PRIVACY_MODEL.md#upgrading-to-migration-048).
+A client that sends `workspace` or `remote` against an earlier service is
+rejected with 400 `invalid_general_fields` for those fields.
 
 ## Origin labels and session taint
 
 A scope file decides capture for a whole session, but a single tool call can read
 far outside the repository: a document in the person's home folder, a mail or chat
 MCP server, a credentials file. Without a further check that content would be
-captured with the repository's sharing. The client therefore labels every captured
+captured with the workspace's audience. The client therefore labels every captured
 event with what it touched (`agentclient.origin`), deterministically, locally and
 without a model call, and the service enforces the label.
+
+The scoped-folder allowlist rules below (#40) are unchanged. What differs under
+the access model is who the labels reach: an item's audience is its workspace
+access list, and **carried workspaces** (what `origin_projects` holds) each
+need the reader to have at least `reader` in them too. An `origin_private`
+label still makes the item owner-only and no share can widen it.
 
 ### What an event touched
 
 | Touched | Label |
 | --- | --- |
 | Credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, ...), anywhere, including inside the project. Checked-in templates (`.env.example`, `.env.sample`, `.env.template`, ...) are not credentials | always `private`; no allowlist opens them |
-| A path inside a [scoped folder](#scoped-folders) of the **same project**: the current root, another checkout or worktree, a sibling folder whose scope file names the same `project`. Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
-| A path inside a scoped folder of a **different project** | tagged with that project: sharing no wider than that scope file requests, and for `team` only readers who are members of **every** tagged project |
+| A path inside a [scoped folder](#scoped-folders) of the **same workspace**: the current root, another checkout or worktree, a sibling folder whose scope file names the same `workspace` (legacy `project`). Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
+| A path inside a scoped folder of a **different workspace** | tagged as a carried workspace: a non-owner reader must be at least `reader` in that other workspace too, so the item is readable only by people in **every** workspace the session carried |
 | A path inside a scoped folder whose scope file is off or invalid | `private` |
 | Claude Code's own state, `~/.claude/projects/<folder>/` (saved tool output, task output, auto-memory, transcripts) | follows the folder the name encodes: the current session's folder is unrestricted, a scoped folder follows that folder's project as above, anything else is `private` |
 | Claude Code user configuration already loaded into sessions: `~/.claude/CLAUDE.md`, `~/.claude/reference/`, `~/.claude/plans/`, `~/.claude/settings*.json`, `~/.claude/plugins/` | no restriction |
@@ -253,7 +265,7 @@ without a model call, and the service enforces the label.
 | Public web fetches and searches | no restriction, recorded as origin `web` |
 | A fetch from a non-public address (`localhost`, private and link-local ranges, single-label and intranet-style names, `file:`) | `private` (`file:` follows the path rules) |
 | An MCP server other than Vaelius itself (mail, chat, document stores, issue trackers, ...) | `private`: those systems have permissions memory cannot reproduce |
-| Recalled or injected memory | the label the service attached to each item: an organization item restricts nothing; a team item of the current project restricts nothing when the scope file requests `team` or less, and otherwise keeps `team`; a team item of another project keeps `team` and adds its project to the tag set; a private or unlabelled item is `private`. The person's own preferences are standing instructions, like prompts, and do not restrict |
+| Recalled or injected memory | the label the service attached to each item: an item whose audience contains the current session audience adds nothing (and so does an item from the same workspace); an item from another workspace is added to the tag set as a carried workspace; a private or unlabelled item is `private`. The person's own preferences are standing instructions, like prompts, and do not restrict |
 | A tool the client does not recognise | `private` |
 
 Planning, delegation and question tools (`TodoWrite`, `Task`/`Agent`, `AskUserQuestion`,
@@ -302,14 +314,15 @@ file sits at an ignored place has no in-scope root for labelling: everything it
 reads outside temporary, tool and system folders makes it private.
 
 Reading another scoped folder changes the label only when its audience is
-narrower: the same `project` changes nothing and never shows a status line; a
-different project adds that project to the tag set as described above.
+narrower: the same `workspace` changes nothing and never shows a status line; a
+different workspace adds that workspace to the carried-workspace tag set as
+described above.
 
 **Claude Code state.** Claude Code names each `~/.claude/projects/<folder>` after
 the session's starting directory, replacing every character other than `A-Z`, `a-z`
 and `0-9` with `-` (so `/work/my_repo.v2` becomes `-work-my-repo-v2`). The client
 treats the folder of the current session (from the working directory, the scope
-root, or the hook's transcript path) as the project itself. Any other folder is
+root, or the hook's transcript path) as the workspace itself. Any other folder is
 matched back to an existing directory by that encoding and follows that directory's
 scope; a folder that matches no existing scoped directory is `private`.
 
@@ -327,11 +340,10 @@ characters, and never lists the home folder or a personal folder. Set
 ### Exceptions in the scope file
 
 `capture` may be a table that names places whose content may be shared with the
-repository's own sharing:
+repository's own workspace audience:
 
 ```toml
-project = "example-repo"
-sharing = "team"
+workspace = "example-repo"
 
 [capture]
 mode = "on"                                  # on | read-only | off (default on)
@@ -358,13 +370,13 @@ processes:
   the session (tool results, prompts, assistant replies, turn ends), carry at least
   that restriction; the most restrictive label wins and nothing widens it again;
 - events captured before it are unaffected;
-- a session that works in one project and then in another carries the first
-  project into the second one's tag set;
+- a session that works in one workspace and then in another carries the first
+  workspace into the second one's tag set;
 - only a **new session ID** starts clean: `/clear`, a new conversation. Resuming the
   same session keeps the label. **Compaction does not reset it**, because the
   summary that replaces the context is written from the restricted content;
 - reads while capture is paused, or while the working directory is outside every
-  project, still count: a session that read `~/Documents` and then moves into a
+  workspace, still count: a session that read `~/Documents` and then moves into a
   captured repository is restricted there;
 - when a label cannot be computed or recorded, the event is `private`.
 
@@ -373,7 +385,7 @@ resumed, for example:
 
 ```text
 vaelius: this session read personal files (~/Documents/...) — capture is now private
-vaelius: this session spans projects maple, birch — capture is now limited to team and to members of every project involved
+vaelius: this session spans workspaces maple, birch — capture is now limited to people who are readers in every workspace involved
 ```
 
 ### On the wire and in storage
@@ -385,24 +397,27 @@ Each event carries an optional `origin_label`:
  "projects": [], "inherited": false}
 ```
 
-`ceiling` is `private`, `team` or `organization`; `kinds` and `reason` come from
-fixed category lists in `agentclient.general_contract`; `projects` names up to 16
-other projects; `inherited` says the restriction comes from an earlier event of the
-session. Paths, commands, server names and display hints never leave the computer.
-Events that only touched the project carry no label. The client also lowers its own
-`sharing` and `originals` requests to the ceiling, so even a service that ignored the
-label would not widen the event beyond it.
+`ceiling` is `private`, `team` or `organization` (the wire ladder is kept for
+origin and provenance; the service maps `private` to `origin_private` and
+`team` to the legacy "members-only origin" rule); `kinds` and `reason` come
+from fixed category lists in `agentclient.general_contract`; `projects` names
+up to 16 carried workspaces by id; `inherited` says the restriction comes from
+an earlier event of the session. Paths, commands, server names and display
+hints never leave the computer. Events that only touched the session's own
+workspace carry no label. The client also omits `sharing` (owner-private) when
+the ceiling is `private`, so even a service that ignored the label would not
+widen the event.
 
 The service treats the label as a restriction it enforces, never a grant:
 
 | Step | Rule |
 | --- | --- |
-| Validate | `origin_label` must match the contract (fixed categories, at most 16 project names); anything else rejects the event. The source's own project is removed from `projects` |
-| Ingest | The ceiling, and the current ceiling of every project in `projects` (an unknown or inactive project counts as `private`), are terms of the sharing minimum. The label is stored per source as `origin_ceiling`, `origin_reason` and `origin_projects`, and a restricting label is audited (`origin_label` / its ceiling) |
-| Fixed | A trigger refuses any later change to the three origin columns, so no policy change, maintenance task or manual update can widen an origin |
-| Query | The policy definition of a restricted source carries `origin_ceiling` and `origin_projects`. Every layer (indexed predicate, row-level security function `search_passage_shared`, Python oracle) applies the stored ceiling and each tagged project's current ceiling again, and a `team` reader must be an active member of the source project and of every tagged project. Lowering a tagged project's ceiling or leaving that project hides the source at once; raising anything never exposes it beyond the stored origin |
-| Derived documents | Curated and derived documents otherwise follow their capture connection's visibility. For every source a document depends on, a reader other than that source's owner also needs the source's origin to reach them: the same origin level (stored ceiling capped by each tagged project's current ceiling), with `team` requiring membership of the source project and of every tagged project and `private` reaching nobody else. The same clause is in the indexed predicate (`ORIGIN_REACHES`), the row-level security function (`search_origin_reaches`, called from `search_document_allowed`) and the Python oracle (`_origin_reaches`), and a parity test checks all three. Person, project and tenant ceilings still do not apply to curated documents |
-| Delivery | Recalled items report `origin.projects`: the other projects their sources carry, so a client that restates them tags its own session the same way |
+| Validate | `origin_label` must match the contract (fixed categories, at most 16 workspace ids in `projects`); anything else rejects the event. The source's own workspace is removed from `projects` |
+| Ingest | A ceiling of `private` makes the item `origin_private` (owner only, no share can widen). Every entry in `projects` becomes a **carried workspace** on the item (`origin_projects`), and a non-owner reader must be at least `reader` in each of them. The label is stored as `origin_ceiling`, `origin_reason` and `origin_projects`, and a restricting label is audited (`origin_label` / its ceiling) |
+| Fixed | A trigger refuses any later change to the three origin columns, so no access-list change, maintenance task or manual update can widen an origin |
+| Query | The one predicate reads the stored origin: `origin_private` denies everyone but the owner, and each carried workspace is checked for `role(ws) ≥ reader`. Items captured before migration 048 with origin ceiling `team` keep the exact pre-048 meaning: a non-owner needs a **direct** (non-organization) role in the workspace and in every carried workspace. Removing a reader from a carried workspace hides the item at once; raising anything never exposes it beyond the stored origin |
+| Derived documents | Every derived document is capped (`level_capped = 1`): a reader needs to be in the audience of every source it depends on, including each source's carried workspaces. The same clause is in the Python oracle (`EnterpriseStore._document_allowed`), the indexed SQL filter (`search_permissions.AUDIENCE`) and the row-level security function (`search_document_allowed`), and a parity test checks all three |
+| Delivery | Recalled items report `origin.projects`: the carried workspaces their sources hold, so a client that restates them tags its own session the same way |
 
 Sources without an origin label have no origin keys in their policy definition, so
 existing definitions are unchanged (migration `046_origin_labels.sql` needs no
@@ -496,11 +511,12 @@ opens a file without naming it. The exact coverage and gaps are in
 
 ## Trust boundaries
 
-Raw agent originals require `source_read` and ownership, their own sharing level or
-an owner grant. Raw source passages require ownership, or a sharing level that the
-author's own setting, the operator's ceilings and the connection allow and that
-reaches the reader. A project or team label, or a repository scope file, does not
-itself grant access ([privacy model](PRIVACY_MODEL.md)). Reviewed derived knowledge and native
+Raw agent originals require `source_read` and ownership or an owner-issued
+originals share. Raw source passages require ownership, or that the reader is
+in the item's audience (the workspace access list, minus `private` or
+`origin_private`) or named by an explicit owner share. A workspace name or a
+repository scope file does not itself grant access
+([privacy model](PRIVACY_MODEL.md)). Reviewed derived knowledge and native
 document representations retain their source policy dependencies. Identity,
 delegation, connection freshness, lifecycle state and exact revision integrity are
 rechecked before evidence is delivered. The operator controls enrollment and

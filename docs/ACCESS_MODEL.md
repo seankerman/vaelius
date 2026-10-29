@@ -1,9 +1,12 @@
 # Access model: workspaces, groups and session labels
 
-**Status: design, approved by the owner. Not yet implemented.** Three pull requests
-implement it in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)).
-Until PR A lands, the [privacy model](PRIVACY_MODEL.md) describes what the service
-enforces. Each implementation PR updates that document, the
+**Status: PR A is implemented (migration 048): groups, workspaces, access lists,
+repository linking and the single read predicate. PR B (session labels) and PR C
+(GitHub team sync) are not yet implemented.** Three pull requests implement the
+design in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)). The
+[privacy model](PRIVACY_MODEL.md) describes what the service enforces today; where
+PR A resolved a point left open here, the text below says so and the
+[recorded decisions](#appendix-recorded-decisions) list it. Each implementation PR updates that document, the
 [data boundaries](DATA_BOUNDARIES.md), [client](CLIENT.md),
 [enterprise identity](ENTERPRISE_AUTH.md), [access review](ACCESS_REVIEW.md) and
 [data lifecycle](DATA_LIFECYCLE.md) pages for the part it ships.
@@ -36,8 +39,9 @@ made here is marked **(decision)** and listed again in
 - **One predicate**, *reader ∈ item audience*, is implemented in Python, in the
   indexed SQL search filter and in row-level security, with parity tests.
 - **Migration keeps every id and widens nothing**: no item becomes readable by
-  anyone who cannot read it today. The migration proves this and refuses to commit
-  otherwise.
+  anyone who cannot read it today. As implemented, every existing item becomes
+  private to its owner and members become writers, so nothing can widen
+  (section 11).
 
 ## 1. Terms
 
@@ -220,10 +224,11 @@ change is audited (`group_sync`, with `applied`, `stale` or `failed`).
   `https://example.com/Example-Org/Maple.git`, `ssh://git@example.com:22/example-org/maple`
   and the scp form `git@example.com:example-org/maple.git` all become
   `example.com/example-org/maple`. Paths may have more than two segments (subgroups).
-- **One repository links to one workspace**: the remote is the primary key of
-  `workspace_repos`. Linking a remote that is already linked elsewhere is refused.
-  Linking and unlinking need `admin` on the workspace and are audited
-  (`repo_link`, `repo_unlink`).
+- **One repository links to one workspace**: `(tenant, remote)` is the primary key
+  of `workspace_repos` (per tenant, so one tenant can neither block nor probe
+  another tenant's remotes). Linking a remote that is already linked elsewhere is
+  refused (`409`). Linking and unlinking need `admin` on the workspace (and the
+  credential action `manage`) and are audited (`repo_link`, `repo_unlink`).
 - **The client sends the remote with every capture** (`remote`, normalized as
   above). It uses the remote named `origin`, else the only remote, else none.
   **(decision)**
@@ -232,6 +237,12 @@ change is audited (`group_sync`, with `applied`, `stale` or `failed`).
   does for other rejected fields, and the status line says which admin action fixes
   it. A capture with no remote (a scoped folder that is not a Git repository) is
   accepted on the person's writer role alone.
+- **An admin's first capture links the repository (decision, resolving open
+  question 2).** When the remote is linked to no workspace and the capturing person
+  is an `admin` of the named workspace with a non-delegated credential holding
+  `manage`, the capture links it, audited as `repo_link` / `automatic`, and the
+  capture receipt carries a `notice` the client shows on the status line. A
+  non-admin's capture from an unlinked remote is still rejected.
 - **Later (PR C):** for a remote in a GitHub organization where the App is installed, the
   server checks that the capturing person's linked GitHub account can read the
   repository (`GET /repos/{owner}/{repo}/collaborators/{username}/permission`,
@@ -329,7 +340,10 @@ audience(item) =
   (including later captures in it) or a connection, as today's grants do, and
   cover passages and optionally originals. A share stands in for the workspace
   audience only; every ordinary source rule still applies. Shares are governed by
-  `owner_sharing` exactly as today.
+  `owner_sharing` exactly as today. **(decision)** A share covers the redacted
+  passage tier and, when it includes them, originals; it never reaches a curated
+  or derived document, which needs the inherited audience of every source (grants
+  before PR A never covered derived documents either).
 - **Carried workspaces** are what `origin_projects` is today: every other
   workspace whose content the session that produced the item had read (section 7).
   A reader other than the owner must be in each of their audiences, so later
@@ -512,6 +526,12 @@ effective actions in W = credential actions ∩ actions implied by role(W)
 | `writer` | reader's, plus `ingest`, `correct`, `curate`, `withdraw` and `share` on the person's **own** items |
 | `admin` | writer's, plus `moderate`, `manage` (access list, repository links, settings) |
 
+**Moderation follows the admin role (decision, resolving open question 1).** A
+workspace `admin` moderates with a credential holding `manage`; `moderate` is no
+longer a separately granted action for workspace purposes. Credentials that
+already carry `moderate` keep working (an admin holding `moderate` but not
+`manage` can still moderate), and `moderate` never becomes a default.
+
 - `source_read` is in `reader` because it only ever works together with ownership or
   an explicit share of originals; it is never a path to anyone else's content.
 - **Ownership survives role changes (decision).** A person can always find, read,
@@ -589,7 +609,7 @@ item.
 | `groups`, `group_edges` | Group objects and direct edges | Groups × direct members |
 | `group_closure(tenant, group_id, principal)` | Transitive principal members, rebuilt transactionally on change or sync. Index `(tenant, principal)` | Σ group sizes |
 | `workspace_entries` | The access lists | Entries |
-| `workspace_access(tenant, workspace, principal, role)` | Effective role from principal and group entries (not the org entry), maintained with the closure. Primary key `(tenant, principal, workspace)` | Σ non-org audience sizes (for example 1,000 workspaces × 50 people = 50,000 rows) |
+| `workspace_access(tenant, principal, workspace, principal_role, group_role)` | Effective role from principal entries and from group entries (never the org entry), maintained with the closure; kept apart so `widest_entry` applies at query time. Primary key `(tenant, principal, workspace)` | Σ non-org audience sizes (for example 1,000 workspaces × 50 people = 50,000 rows) |
 | `enterprise_projects.org_role` | The org entry's role, denormalized | One column |
 | `enterprise_sources.external_project` | The item's workspace (the id is unchanged, so no rewrite) | Existing |
 | `enterprise_sources.private`, `origin_projects`, `origin_ceiling` | The rest of the item audience | Existing or one small column |
@@ -649,93 +669,55 @@ content uses the existing purge per source.
 
 ## 11. Migration from the current model
 
-Migration `048_workspaces.sql` plus a Python step run in one transaction under
-the projection lock.
+Migration `048_workspaces.sql` runs in one transaction. **(decision, by the owner)**
+There was no production data to preserve when PR A shipped, so the migration is
+deliberately conservative and cheap instead of mapping every sharing level: it
+keeps every id and every item, and makes everything private until owners re-share
+it or administrators add entries. By construction no reader set can grow, so the
+per-policy reader-set comparison, the abort-if-wider guard and
+`vaelius migrate-access --dry-run` described in earlier drafts are not needed.
 
 ### Mapping
 
 | Today | After |
 | --- | --- |
 | Project | Workspace with the **same id**; `name` = id |
-| Explicit and directory members of project P | A `local` group `P-members` belonging to workspace P (managed by P's admins) holding the explicit members and nesting each `scim` group mapped to P; entry `group:P-members → writer` |
-| Project ceiling (or tenant default) `organization` | Also `organization → reader` |
-| Project ceiling `team` | Nothing more (members are the audience) |
-| Project ceiling `private` | `item_default = private` |
+| Explicit members of project P | Principal members of a `local` group `P-members` that belongs to workspace P (managed by P's admins) |
+| Directory group mapped to P (`cloud_directory_group_projects`) | A `scim` group with the same external id (id `scim-` + 24 hex digits of its SHA-256), nested in `P-members`; a group awaiting reconcile is `stale` and contributes nobody |
+| The members group | One entry `group:P-members → writer` |
+| Project ceiling `organization` | **No** organization entry; administrators add one if they want it |
+| Project ceiling (or tenant default) `private` | `item_default = private` |
 | Tenant ceiling `organization` / `team` / `private` | `widest_entry = organization` / `people_and_groups` / `none` |
-| Directory group | `scim` group, same external id |
-| `cloud_directory_group_projects` row | Nesting edge from the `scim` group into `P-members` |
-| Raw grant to project P | Grant to `group:P-members` |
-| Person `max_sharing` | `private` → `contributions_default = private`; `organization` → `shared`; `team` → `shared`, unless the person is a member of a workspace that gets an organization entry, then `private` **(decision)** |
-| Connection visibility | `private` stays private; `team` on a connection whose workspace gets an organization entry becomes `private` **(decision)**; otherwise inherits |
-| Who administers each workspace | Nobody gets an `admin` entry: an admin is also a reader, so that would widen access. Tenant administrators manage migrated workspaces, as operators manage projects today, until they add admins. The report lists them. **(decision)** |
+| Person `max_sharing` | `private` → `contributions_default = private`; otherwise `shared` |
+| Who administers each workspace | Nobody gets an `admin` entry. Tenant administrators manage migrated workspaces (break-glass, audited) until they add admins |
+| Every existing item | `private = 1` (owner only) |
+| Every existing raw grant or share | Dropped |
+| Credentials and refresh sessions holding `share` | Also hold `manage` (`legacy_actions` bit 4) |
+| Derived documents | All capped by the audience of every source (`level_capped = 1`) |
 
-### Items
-
-For every source the migration computes the **current effective level** under
-today's rules (stored level capped by every current ceiling, as
-`ProjectSharingMixin._current_level` does) and then:
-
-| Current effective level | New item |
-| --- | --- |
-| `private` | `private = 1` |
-| `team`, workspace without an org entry | inherits |
-| `team`, workspace with an org entry | `private = 1` plus a passage share to `group:P-members` |
-| `organization` | inherits |
-| Originals level `team` or `organization` | An originals share to `group:P-members` |
-
-Origin columns are never touched (the 046 trigger still guards them); an
-`origin_ceiling` of `private` reads as `origin_private`. Every derived document gets
-`level_capped = 1`. Policy definitions change, so the migration rebuilds the
-`search_policies` projection (`search_rebuild_permissions()`).
-
-### The invariant and its proof
-
-> **No item, passage, derived document or original becomes readable by anyone who
-> cannot read it immediately before the migration.**
-
-- **Test.** `test_access_migration.py` builds tenants covering every combination
-  of: stored level × person setting × project ceiling (own or inherited) × tenant
-  ceiling × connection visibility and reader list × origin ceiling × carried projects
-  × grants (principal, project; passages, originals; owner- or policy-issued; both
-  `owner_sharing` values) × quarantine × delegation × derived documents with
-  `level_capped` 0 and 1 × originals level × `source_read`. It records the full
-  reader × item relation through all three old layers, migrates, records it again
-  through all three new layers, and asserts `after ⊆ before` for every layer, plus
-  `after = before` except for an explicitly listed set of expected narrowings (for
-  example `level_capped = 0` documents and organization-level originals that become
-  member shares).
-- **Runtime guard.** The migration computes, for each distinct old policy
-  definition (not per item), the reader set before and after with the existing
-  `explain` enumerator, and **aborts the transaction** if any after-set is not a
-  subset of its before-set. It writes a content-free report: counts of items per
-  mapping row, items narrowed and why, people whose `contributions_default` became
-  `private`, connections narrowed. `vaelius migrate-access --dry-run` produces the
-  same report without committing.
+Origin columns are never touched (the 046 trigger still guards them). Policy
+definitions change (`private` replaces `sharing` and `visibility`), so the
+migration rebuilds the `search_policies` projection. SQLite snapshot imports
+(`agenthub.cloud_migration`) map memberships and items the same way.
 
 ### Kept, changed, dropped
 
-Reference counts are lines, from `git grep -c` at the base of this document.
-
 | Object | Fate |
 | --- | --- |
-| `enterprise_projects` | **Kept** as the workspace table (renaming it would touch every query for no behavior change); adds `name`, `created_by`, `created`, `org_role`, `item_default` |
-| `enterprise_memberships` (48 lines in 21 files; 43 in 18 non-test) | **Dropped**, replaced by `workspace_access`. A read-only view of the same name over `workspace_access` stays for one release for operator scripts |
-| `cloud_explicit_memberships` (11 lines, 4 files) | **Dropped**: rows become `P-members` edges |
-| `cloud_directory_memberships` (5 lines, 3 files) | **Dropped**: replaced by `group_closure` |
-| `cloud_directory_group_projects` (4 lines, 3 files) | **Dropped**: rows become nesting edges |
+| `enterprise_projects` | **Kept** as the workspace table; adds `name`, `created_by`, `created`, `org_role`, `item_default`, `epoch` |
+| `enterprise_memberships` | **Dropped**, replaced by `workspace_access`. A read-only view of the same name stays for one release for operator scripts |
+| `cloud_explicit_memberships`, `cloud_directory_memberships`, `cloud_directory_group_projects` | **Dropped**: rows became group edges |
 | `cloud_directory_users`, `cloud_directory_resources`, `cloud_directory_events` | **Kept**: the SCIM adapter's state |
-| `max_sharing` on principals, projects and organizations, `default_max_sharing` (140 lines in 23 files; 105 lines in 12 non-test files: `project_sharing.py`, migrations 042/045/046, `cloud_local.py`, `search_permissions.py`, `access_review.py`, `cloud_api.py`, research `cloud_live.py`, client `cli.py`, `cloud_contract.py`, `capture_notice.py`) | **Dropped** from every check; columns kept frozen for one release, then removed. Replaced by `contributions_default`, entries and `widest_entry` |
-| `enterprise_sources.sharing`, `sharing_requested`, `originals_sharing`, `originals_requested` | **Frozen** (history only), removed with the above. `private` is added |
+| `max_sharing` on principals, projects and organizations, `default_max_sharing` | **Dropped** from every check; columns kept frozen for one release |
+| `enterprise_sources.sharing`, `sharing_requested`, `originals_sharing`, `originals_requested` | **Frozen** (history only); `private` is added |
 | `enterprise_sources.origin_*` | **Kept**, unchanged, still fixed by trigger |
-| `raw_source_grants` (33 lines, 8 files) | **Changed**: `grantee_kind` adds `group`; `project` rows are rewritten to the members group and the kind is then refused |
-| `enterprise_sharing_changes` | **Kept**; `tier`/levels extended with `private`/`shared` for new changes |
-| `search_policies`, `search_source_policies`, `search_document_policies` | **Kept**; definitions change (rebuild) |
-| `search_passage_shared`, `search_origin_reaches` | **Dropped**, replaced by `search_reader_in_audience` |
+| `raw_source_grants` | **Changed**: `grantee_kind` is `principal` or `group`; `project` is refused |
+| `enterprise_sharing_changes` | **Kept**; levels extended with `shared` |
+| `search_passage_shared`, `search_origin_reaches` | **Dropped**, replaced by `search_reader_in_audience` (with `search_workspace_role`) |
 | `search_document_allowed`, `search_passage_granted` | **Changed** |
-| `search_permissions.SHARE`, `LEVEL`, `ORIGIN_TERMS`, `ORIGIN_MEMBERS`, `ORIGIN_REACHES`, `CEILINGS` | **Replaced** by one `AUDIENCE` clause |
-| `ProjectSharingMixin` (`project_sharing.py`): ceilings, `_current_level`, `_passage_shared`, `_level_reaches`, `_origin_reaches`, `set_project_sharing`, `set_tenant_sharing_*`, `sharing_policy_status` | **Replaced** by `workspace_access.py`; `_passage_readers` (explain) kept, re-implemented on the new predicate |
-| `_readable_scopes`, `_scope` (35 lines, 14 files) | **Changed**: derived from `R` |
-| `vaelius sharing-policy` command | **Replaced** by `vaelius workspace` and `vaelius tenant-policy` |
+| `search_permissions.SHARE`, `LEVEL`, `ORIGIN_*`, `CEILINGS` | **Replaced** by one `AUDIENCE` clause |
+| `ProjectSharingMixin` (`project_sharing.py`) | **Replaced** by `workspace_access.py` |
+| `vaelius sharing-policy` | **Replaced** by the operator commands `workspace` and `tenant-policy` |
 | `vaelius-client sharing --set LEVEL` | **Changed**: `--set shared|private` |
 | `delegations.projects`, `origin_projects`, `external_project` values | **Unchanged** (same ids) |
 
@@ -759,8 +741,10 @@ Acceptance tests:
    kind, group nesting depth, `private`, shares (principal, group), carried
    workspaces, `origin_private`, legacy `team` origin, quarantine, delegation and
    `widest_entry` value.
-2. Migration: the invariant test above passes; the runtime guard aborts on a
-   deliberately widened fixture.
+2. Migration: a pre-048 schema with representative rows migrates to same-id
+   workspaces whose members are writers through `P-members` (directory groups
+   nested), with no organization or admin entry, every item owner-only and every
+   grant dropped (section 11).
 3. Every mode in the section 2 table yields the expected reader set.
 4. Self-service: any principal with `manage` creates a workspace and is its admin;
    `workspace_creation = admins` refuses others; `widest_entry` suspends and restores
@@ -862,18 +846,18 @@ Acceptance tests:
   content and tighten automatically) are kept only as the backstop for reads the
   hook cannot see; the primary control is the explicit, fixed label.
 
-## 14. Open questions
+## 14. Open questions (resolved)
 
-1. **Should `moderate` follow the role alone?** It stays a non-default credential
-   action intersected with the `admin` role, as specified above. Making admin imply
-   it (adding it to default enrollment) would remove a manual step for every
-   workspace admin, at the cost of making a privileged action default.
-2. **First capture from an unlinked repository.** Section 4 rejects it until an
-   admin links the remote. An alternative is to let a workspace admin's own first
-   capture link it, with a confirmation; this is friendlier for new workspaces but
-   makes linking implicit.
-3. **`max_staleness` default.** 24 hours balances outage tolerance against how long
-   a removal can be missed when webhooks are lost. Some tenants may want 1 hour.
+1. **Should `moderate` follow the role alone?** Resolved: yes. Workspace admins
+   moderate (with `manage`); `moderate` is no longer a separate grant for workspace
+   purposes, and credentials that already carry it keep working (section 8).
+2. **First capture from an unlinked repository.** Resolved: an admin's first capture
+   from a repository linked nowhere links it automatically, audited, and the status
+   line says so; a non-admin's capture is still rejected (section 4).
+3. **`max_staleness` default.** Resolved: 24 hours, configurable in `runtime.json`.
+   Webhooks handle prompt removals; the reconcile is the fallback. It ships with
+   PR C, which adds GitHub sync; PR A already stores `sync_state` and `last_synced`
+   on every group.
 
 ## Appendix: recorded decisions
 
@@ -897,6 +881,13 @@ Points the owner's brief left open, decided in this document:
 | Unscoped, unknown paths | Allow; backstop makes the session private | 7 |
 | Ownership after demotion | Owner rights survive; widening needs `writer` | 8 |
 | New action | `manage`, default, legacy bit 4 from `share` | 8 |
-| Person and connection settings of `team` in an org-wide workspace | Become `private` at migration | 11 |
 | Admins after migration | None; tenant administrators manage migrated workspaces | 11 |
 | Migrated membership | One `P-members` local group per workspace, nesting the mapped `scim` groups | 11 |
+| Migrated items and grants (PR A, by the owner) | Every existing item private, every existing grant dropped, no organization entries, no reader-set guard | 11 |
+| Repository link key (PR A) | `(tenant, remote)` | 4 |
+| First capture from an unlinked repository (PR A) | An admin's capture links it, audited, with a status-line notice | 4 |
+| Moderation (PR A) | Follows the admin role with `manage`; older `moderate` credentials keep working | 8 |
+| Shares and derived documents (PR A) | Shares cover passages and originals, never derived documents | 6 |
+| Group admins (PR A) | A local group's admins are also its members; the creator is the first admin | 3 |
+| Partitions (PR A) | `internal_project` partitions narrow retrieval only and never decide access; a delegated credential searches only its delegated workspaces | 9 |
+| Legacy `team` request in a workspace with an organization entry (PR A) | Private, decided on the stored entry even while `widest_entry` suspends it | 5 |

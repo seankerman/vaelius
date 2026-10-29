@@ -831,7 +831,7 @@ class HybridRetrievalMixin:
         # readable outside the reader's own scopes; every other rule still applies.
         granted, granted_args = document_granted_condition(ctx)
         sql = sql.replace('<GRANTED>', granted)
-        compact, policy_args = predicate(ctx)
+        compact, policy_args = predicate(ctx, self._reader_workspaces(state.db, ctx))
         sql += compact
         args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, *granted_args, ctx['actor'], ctx['tenant'], *policy_args)
         from agenthub.draft_review import selected_documents

@@ -3,23 +3,21 @@
 Two tiers, both rechecked at delivery:
 
 * Redacted passages, search results, cited evidence and conversation context are
-  read with ``read``. Raw-representation passages stay owner-only unless the
-  source's sharing level reaches the reader (agenthub.project_sharing).
+  read with ``read`` by the owner and the item's audience
+  (agenthub.workspace_access).
 * Retained originals (the complete canonical source payload or object, the v1
   source body and original document bytes) additionally need the credential's
-  ``source_read`` action AND one of: source ownership; the original's own
-  sharing level (``originals_sharing``, default private, never above the
-  passage level) reaching the reader under every current ceiling; or an
-  explicit, active, owner-issued grant of the originals tier to the reading
-  principal or to a project it belongs to. Sharing passages never shares
-  originals.
+  ``source_read`` action AND either source ownership or an explicit, active
+  share of the originals tier to the reading principal or to a group it belongs
+  to. There is no originals level: sharing passages, or a workspace's audience,
+  never shares originals.
 
 Grants (table raw_source_grants) cover one source, one capture session or one
 connection, and carry the tiers they grant: redacted passages and/or originals.
 Owners manage them with the `share` action (agenthub.owner_controls); the
 operator-style commands below keep needing `policy`. Owner-issued grants stop
 applying while the operator restricts owner sharing (owner_sharing='lower_only'),
-and no grant carries a source beyond its origin (agenthub.project_sharing).
+and no grant carries a source beyond its carried workspaces and origin.
 
 Grants never bypass tenant, lifecycle, delegation or connection-reader checks.
 ``source_read`` is not part of default enrollment or default OAuth scope
@@ -29,7 +27,7 @@ import json
 import re
 import time
 
-GRANTEE_KINDS = ('principal', 'project')
+GRANTEE_KINDS = ('principal', 'group')
 SCOPE_KINDS = ('source', 'session', 'connection')
 
 
@@ -44,30 +42,18 @@ def original_allowed(store, db, ctx, source):
         return False
     if 'source_read' not in ctx['actions']:
         return False
+    if source.get('principal_quarantine') and source['owner'] != ctx['actor']:
+        return False
     if source['owner'] == ctx['actor']:
-        return True
-    if store._originals_shared(db, ctx, source):
         return True
     return _granted(store, db, ctx, source)
 
 
 def _granted(store, db, ctx, source):
-    """An active originals-tier grant from the source's owner reaches the reader."""
-    rows = db.execute('''SELECT g.grantee_kind,g.grantee,g.issued_with,o.owner_sharing FROM raw_source_grants g
-        JOIN enterprise_organizations o ON o.id=g.tenant
-        WHERE g.tenant=? AND g.revoked IS NULL AND g.originals=1 AND g.granted_by=?
-        AND ((g.scope_kind='source' AND g.scope_id=?)
-            OR (g.scope_kind='session' AND g.scope_id=(SELECT session FROM memories WHERE id=?))
-            OR (g.scope_kind='connection' AND g.scope_id IN
-                (SELECT connection FROM backend_source_revisions WHERE source_id=?)))''',
-        (ctx['tenant'], source['owner'], source['id'], source['id'], source['id'])).fetchall()
-    for row in rows:
-        if row['issued_with'] == 'share' and row['owner_sharing'] != 'allowed':
-            continue
-        if ((row['grantee_kind'] == 'principal' and row['grantee'] == ctx['actor'])
-                or (row['grantee_kind'] == 'project' and store._project_member(db, ctx, row['grantee']))):
-            return store._origin_reaches(db, ctx, source)
-    return False
+    """An active originals-tier share from the source's owner reaches the reader
+    (directly or through a group), with the carried-workspace and origin rules."""
+    return bool(store._share_rows(db, ctx, source, 'originals')) and store._origin_admits(
+        db, ctx, source, via_share=True)
 
 
 def _validate(scope_kind, scope_id, grantee_kind, grantee):
@@ -116,7 +102,7 @@ def grant(store, ctx, scope_kind, scope_id, grantee_kind, grantee):
             known = db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1',
                 (ctx['tenant'], grantee)).fetchone()
         else:
-            known = db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=? AND id=? AND active=1',
+            known = db.execute('SELECT 1 FROM groups WHERE tenant=? AND id=? AND active=1',
                 (ctx['tenant'], grantee)).fetchone()
         if not known:
             raise ValueError('unknown_raw_grantee')

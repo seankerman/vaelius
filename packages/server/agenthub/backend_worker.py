@@ -240,8 +240,10 @@ class Worker:
             connection['permission_observed']+connection['freshness_seconds']<time.time()):raise ValueError('observer_permission_expired')
         if not self.store._connection_executor_authorized(db,connection):raise ValueError('observer_enrollment_or_delegation_revoked')
         owner=db.execute('SELECT active FROM enterprise_principals WHERE tenant=? AND id=?',(connection['tenant'],connection['owner'])).fetchone()
-        membership=db.execute('SELECT active FROM enterprise_memberships WHERE tenant=? AND project=? AND principal=?',(connection['tenant'],connection['project'],connection['owner'])).fetchone()
-        if not owner or not owner[0] or not membership or not membership[0]:raise ValueError('observer_owner_revoked')
+        # The owner must still hold the writer role in the connection's workspace.
+        writer=self.store._project_member(db,{'tenant':connection['tenant'],'actor':connection['owner'],
+            'delegated_projects':None},connection['project'],2)
+        if not owner or not owner[0] or not writer:raise ValueError('observer_owner_revoked')
         fingerprint=_hash([connection['id'],connection['policy_version'],connection['reader_ids'],observer['internal_project']])
         if observer['permission_hash']!=fingerprint:raise ValueError('observer_policy_changed')
         dependencies=db.execute('''SELECT d.source_id,d.policy_version,s.active,s.policy_version current_version

@@ -36,99 +36,34 @@ def inspect_projection(db):
     """).fetchone())
 
 
-# The CURRENT level of one policy row (alias `policy`): the level stored at
-# ingest (min of the person setting, scope-file request, project and tenant
-# ceilings and connection visibility then), capped again by today's person
-# setting (`author`), project ceiling (or tenant default), tenant ceiling,
-# connection visibility, origin ceiling, and the current ceiling of every other
-# project whose content the source carries (`origin_projects`; an unknown or
-# inactive one counts as private). 0 private, 1 team, 2 organization. Absent
-# origin keys change nothing (agenthub.project_sharing, agentclient.origin).
-# The origin terms of a policy row (agentclient.origin, migration 046): the stored
-# origin ceiling and the current ceiling of every other project the source carries
-# (an unknown or inactive one counts as private). Needs aliases `project` and
-# `organization` for the source project.
-ORIGIN_TERMS = """coalesce(array_position(ARRAY['team','organization'],
-                            coalesce(policy.definition->>'origin_ceiling','organization')),0),
-                        coalesce((SELECT min(CASE WHEN other.id IS NULL THEN 0 ELSE coalesce(array_position(
-                                ARRAY['team','organization'],coalesce(other.max_sharing,organization.default_max_sharing)),0) END)
-                            FROM jsonb_array_elements_text(coalesce(policy.definition->'origin_projects','[]'::jsonb)) named(id)
-                            LEFT JOIN enterprise_projects other ON other.tenant=project.tenant AND other.id=named.id
-                                AND other.active=1),2)"""
-LEVEL = """least(
-                        coalesce(array_position(ARRAY['team','organization'],policy.definition->>'sharing'),0),
-                        coalesce(array_position(ARRAY['team','organization'],policy.definition->>'visibility'),0),
-                        coalesce(array_position(ARRAY['team','organization'],author.max_sharing),0),
-                        coalesce(array_position(ARRAY['team','organization'],
-                            coalesce(project.max_sharing,organization.default_max_sharing)),0),
-                        coalesce(array_position(ARRAY['team','organization'],organization.max_sharing),0),
-                        """ + ORIGIN_TERMS + """)"""
-# A member of the source project must also be an active member of every other
-# project whose content the source carries (`origin_projects`).
-ORIGIN_MEMBERS = """NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(
-                                coalesce(policy.definition->'origin_projects','[]'::jsonb)) named(id)
-                            WHERE NOT EXISTS(SELECT 1 FROM enterprise_memberships carried
-                                WHERE carried.tenant=membership.tenant AND carried.project=named.id
-                                AND carried.principal=membership.principal AND carried.active=1))"""
-# Every document, curated and derived ones included, reaches a reader other than
-# the source's owner only as far as the source's origin allows: organization
-# changes nothing, team needs an active member of the source project and of every
-# other project it carries, private reaches nobody else. Sources without an origin
-# take the first branch, so their authorization is exactly as before. Mirrored by
-# ProjectSharingMixin._origin_reaches and search_origin_reaches (migration 046).
-ORIGIN_REACHES = """((policy.definition->>'origin_ceiling' IS NULL AND policy.definition->'origin_projects' IS NULL)
-                        OR EXISTS(SELECT 1 FROM enterprise_projects project
-                            JOIN enterprise_organizations organization ON organization.id=project.tenant
-                            WHERE project.tenant=policy.definition->>'tenant' AND project.id=policy.definition->>'project'
-                            AND project.active=1 AND CASE least(""" + ORIGIN_TERMS + """)
-                            WHEN 2 THEN true
-                            WHEN 1 THEN EXISTS(SELECT 1 FROM enterprise_memberships membership
-                                WHERE membership.tenant=project.tenant AND membership.project=project.id
-                                AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
-                            ELSE false END))"""
-CEILINGS = """SELECT 1 FROM enterprise_projects project
-                    JOIN enterprise_organizations organization ON organization.id=project.tenant
-                    JOIN enterprise_principals author ON author.tenant=project.tenant
-                        AND author.id=policy.definition->>'owner'
-                    WHERE project.tenant=? AND project.id=policy.definition->>'project' AND project.active=1"""
-
-# One policy row shares its redacted passages with a reader who is not the owner:
-# the current level reaches them. team = an active member of the source project;
-# organization = also any active principal of the tenant that is not under an
-# operator quarantine. Mirrored by ProjectSharingMixin._passage_shared and by
-# search_passage_shared, called from search_document_allowed (migration 045). Lowering any ceiling hides passages
-# on the next request; raising one never exposes a source stored lower.
-SHARE = """(policy.definition->>'sharing' IN ('team','organization') AND EXISTS(
-                    """ + CEILINGS + """
-                    AND CASE """ + LEVEL + """
-                    WHEN 2 THEN EXISTS(SELECT 1 FROM enterprise_principals reader
-                            WHERE reader.tenant=? AND reader.id=? AND reader.active=1
-                            AND NOT EXISTS(SELECT 1 FROM enterprise_principal_quarantine held
-                                WHERE held.tenant=reader.tenant AND held.principal=reader.id))
-                        OR EXISTS(SELECT 1 FROM enterprise_memberships membership
-                            WHERE membership.tenant=? AND membership.project=project.id
-                            AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
-                    WHEN 1 THEN EXISTS(SELECT 1 FROM enterprise_memberships membership
-                            WHERE membership.tenant=? AND membership.project=project.id
-                            AND membership.principal=? AND membership.active=1 AND """ + ORIGIN_MEMBERS + """)
-                    ELSE false END))"""
+# The audience of one policy row (alias `policy`) for a reader who passes every
+# ordinary source rule: the owner; otherwise never for origin_private
+# (origin_ceiling 'private'); the inherited path needs the item not private and
+# its workspace in R (the reader's workspaces with a role >= reader); the share
+# path ({SHARE}, an SQL condition) stands in for that term only. Both paths need
+# every carried workspace (origin_projects) in R, and a legacy origin ceiling of
+# 'team' needs the workspace and every carried workspace in D (direct roles, not
+# the organization entry). R and D are computed once per request
+# (WorkspaceAccessMixin._reader_workspaces). Mirrors search_reader_in_audience
+# (migration 048) and WorkspaceAccessMixin._in_audience / _shared_with.
+CARRIED = "ARRAY(SELECT jsonb_array_elements_text(coalesce(policy.definition->'origin_projects','[]'::jsonb)))"
+AUDIENCE = """(policy.definition->>'owner'={A} OR (coalesce(policy.definition->>'origin_ceiling','')!='private'
+                    AND ((coalesce((policy.definition->>'private')::boolean,false)=false
+                            AND policy.definition->>'project'=ANY({R}::text[])) OR {SHARE})
+                    AND """ + CARRIED + """ <@ {R}::text[]
+                    AND (coalesce(policy.definition->>'origin_ceiling','')!='team' OR (
+                        policy.definition->>'project'=ANY({D}::text[]) AND """ + CARRIED + """ <@ {D}::text[]))))"""
 
 
-def share_condition(ctx):
-    tenant, actor = ctx['tenant'], ctx['actor']
-    return SHARE, (tenant, tenant, actor, tenant, actor, tenant, actor)
-
-
-
-# One source (alias {source}, its policy row {policy}) is granted to the reader by
-# an explicit owner grant (agenthub.owner_controls): an active grant of the
-# passage tier from the source's owner, for the source, its capture session or
-# its connection, to the reader or a project the reader is an active member of.
-# Never while the operator restricts owner sharing (owner-issued grants), in an
-# inactive project, or to a quarantined reader. A grant stands in for visibility
-# and the sharing level only: the origin (ORIGIN_REACHES) and every other ordinary
-# rule still apply. Mirrors search_passage_granted (migration 047) and
-# ProjectSharingMixin._passage_granted.
+# One source (alias {source}, its policy row {policy}) is shared with the reader by
+# an explicit share (agenthub.owner_controls): an active grant of the passage tier
+# from the source's owner, for the source, its capture session or its connection,
+# to the reader or a group the reader belongs to (group_closure). Never while the
+# operator restricts owner sharing (owner-issued grants), in an archived workspace,
+# or to a quarantined reader. A share stands in for the workspace audience only:
+# the carried-workspace and origin terms of AUDIENCE and every ordinary rule still
+# apply. Mirrors search_passage_granted (migration 048) and
+# WorkspaceAccessMixin._shared_with.
 SOURCE_GRANTED = """({source}.tenant={T} AND {source}.active=1 AND {source}.owner!={A}
                     AND NOT EXISTS(SELECT 1 FROM enterprise_principal_quarantine held_reader
                         WHERE held_reader.tenant={T} AND held_reader.principal={A})
@@ -146,26 +81,24 @@ SOURCE_GRANTED = """({source}.tenant={T} AND {source}.active=1 AND {source}.owne
                             OR (grant_row.scope_kind='connection'
                                 AND grant_row.scope_id={policy}.definition->>'connection'))
                         AND ((grant_row.grantee_kind='principal' AND grant_row.grantee={A})
-                            OR (grant_row.grantee_kind='project' AND EXISTS(
-                                SELECT 1 FROM enterprise_memberships grantee_member
-                                JOIN enterprise_projects grantee_project ON grantee_project.tenant=grantee_member.tenant
-                                    AND grantee_project.id=grantee_member.project AND grantee_project.active=1
-                                WHERE grantee_member.tenant={source}.tenant AND grantee_member.project=grant_row.grantee
-                                AND grantee_member.principal={A} AND grantee_member.active=1)))
+                            OR (grant_row.grantee_kind='group' AND EXISTS(
+                                SELECT 1 FROM group_closure grantee_member
+                                WHERE grantee_member.tenant={source}.tenant AND grantee_member.group_id=grant_row.grantee
+                                AND grantee_member.principal={A})))
                         ))"""
 
-# The reader holds at least one active passage grant (directly or through a
-# project membership). Uncorrelated, so PostgreSQL evaluates it once per query:
-# readers without grants never pay for the per-document check below.
+# The reader holds at least one active passage share (directly or through a group).
+# Uncorrelated, so PostgreSQL evaluates it once per query: readers without shares
+# never pay for the per-document check below.
 RECEIVES_GRANTS = """EXISTS(SELECT 1 FROM raw_source_grants received WHERE received.tenant={T}
                     AND received.revoked IS NULL AND received.passages=1
                     AND ((received.grantee_kind='principal' AND received.grantee={A})
-                        OR (received.grantee_kind='project' AND received.grantee IN (SELECT reader_member.project
-                            FROM enterprise_memberships reader_member WHERE reader_member.tenant={T}
-                            AND reader_member.principal={A} AND reader_member.active=1))))"""
+                        OR (received.grantee_kind='group' AND received.grantee IN (SELECT reader_group.group_id
+                            FROM group_closure reader_group WHERE reader_group.tenant={T}
+                            AND reader_group.principal={A}))))"""
 
-# A passage document (alias ed) every source of which is granted to the reader.
-# raw_granted is only a prefilter maintained by grants and passage indexing.
+# A passage document (alias ed) every source of which is shared with the reader.
+# raw_granted is only a prefilter maintained by shares and passage indexing.
 DOCUMENT_GRANTED = """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_owner IS DISTINCT FROM {A}
                     AND """ + RECEIVES_GRANTS + """
                     AND EXISTS(SELECT 1 FROM enterprise_dependencies granted_dep WHERE granted_dep.document_id=ed.id)
@@ -177,14 +110,29 @@ DOCUMENT_GRANTED = """(ed.representation='raw' AND ed.raw_granted=1 AND ed.raw_o
                             source='granted', policy='granted_policy', T='{T}', A='{A}') + """,false)))"""
 
 
-def _bind(template, ctx):
-    """Replace {T}/{A} placeholders, in order, with bound tenant/actor parameters."""
+def _bind(template, ctx, access=None):
+    """Replace {T}/{A}/{R}/{D} placeholders, in order, with bound parameters."""
     import re
     args = []
+    values = {'T': ctx['tenant'], 'A': ctx['actor']}
+    if access is not None:
+        values.update(R=list(access[0]), D=list(access[1]))
     def replace(match):
-        args.append(ctx['tenant'] if match.group(1) == 'T' else ctx['actor'])
+        args.append(values[match.group(1)])
         return '?'
-    return re.sub(r'\{([TA])\}', replace, template), tuple(args)
+    return re.sub(r'\{([TARD])\}', replace, template), tuple(args)
+
+
+def audience_condition(ctx, access, share=None):
+    """AUDIENCE with `share` (an SQL condition, its arguments) standing in for the
+    workspace term, or without one (the inherited path only)."""
+    template = AUDIENCE.replace('{SHARE}', '<SHARE>')
+    sql, args = _bind(template, ctx, access)
+    if share is None:
+        return sql.replace('<SHARE>', 'false'), args
+    head, tail = sql.split('<SHARE>')
+    count = head.count('?')
+    return head + '(' + share[0] + ')' + tail, args[:count] + tuple(share[1]) + args[count:]
 
 
 def source_granted_condition(ctx, source='src', policy='policy'):
@@ -195,24 +143,14 @@ def document_granted_condition(ctx):
     return _bind(DOCUMENT_GRANTED, ctx)
 
 
-def policy_condition(ctx, *, raw=False, granted=None):
-    """One policy expression for indexed document and raw-source authorization.
-
-    `raw=True` is the redacted passage tier (passages, cited evidence and
-    conversation context) for one source (alias `src`): the source owner, a reader
-    the current level reaches who also passes every ordinary rule below, or a
-    reader the source is explicitly granted to (agenthub.owner_controls), who
-    passes every ordinary rule except visibility. Retained originals never use
-    this; they need source_read and ownership, their own level or a grant
-    (agenthub.raw_access).
-
-    `granted` (document level, raw=False) is an SQL condition, with its
-    arguments, that stands in for the visibility rule.
-    """
+def _common(ctx):
+    """Every ordinary source rule of one policy row except the audience: tenant,
+    lifecycle, delegation, source ACL freshness, connection readers and freshness,
+    and the operator quarantine of held sources."""
     delegated = ctx.get('delegated_projects')
     delegated = sorted(delegated) if delegated is not None else None
     now = time.time()
-    common = """
+    return """
                     (policy.definition->>'active')::integer=1
                     AND policy.definition->>'tenant'=?
                     AND (?::text[] IS NULL OR policy.definition->>'project'=ANY(?::text[]))
@@ -224,67 +162,52 @@ def policy_condition(ctx, *, raw=False, granted=None):
                         AND connection.permission_observed+connection.freshness_seconds>=?
                         AND (connection.reader_ids::jsonb='[]'::jsonb OR connection.owner=? OR EXISTS(
                             SELECT 1 FROM jsonb_array_elements_text(connection.reader_ids::jsonb) reader
-                            WHERE reader.value=?))))"""
-    common_args = (ctx['tenant'], delegated, delegated, now, ctx['tenant'], now, ctx['actor'], ctx['actor'])
-    visibility = """(policy.definition->>'visibility'='organization'
-                        OR (policy.definition->>'visibility'='private' AND policy.definition->>'owner'=?)
-                        OR (policy.definition->>'visibility'='team' AND EXISTS(
-                            SELECT 1 FROM enterprise_memberships membership
-                            JOIN enterprise_projects project ON project.tenant=membership.tenant AND project.id=membership.project
-                            WHERE membership.tenant=? AND membership.project=policy.definition->>'project'
-                                AND membership.principal=? AND membership.active=1 AND project.active=1)))"""
-    visibility_args = (ctx['actor'], ctx['tenant'], ctx['actor'])
-    # Rules visibility never replaces: the operator quarantine, and the origin
-    # (migration 046), which reaches a non-owner only as far as it allows.
-    quarantine = """(coalesce((policy.definition->>'quarantined')::boolean,false)=false
-                        OR policy.definition->>'owner'=?)
-                    AND (policy.definition->>'owner'=? OR """ + ORIGIN_REACHES + """)"""
-    quarantine_args = (ctx['actor'], ctx['actor'], ctx['actor'])
-    if not raw:
-        if granted is not None:
-            visibility, visibility_args = ('(' + visibility + ' OR ' + granted[0] + ')',
-                                           visibility_args + tuple(granted[1]))
-        return '(' + common + """
-                    AND """ + visibility + """
-                    AND """ + quarantine + """
-                )""", common_args + visibility_args + quarantine_args
-    share, share_args = share_condition(ctx)
-    source_granted, source_granted_args = source_granted_condition(ctx)
+                            WHERE reader.value=?))))
+                    AND (coalesce((policy.definition->>'quarantined')::boolean,false)=false
+                        OR policy.definition->>'owner'=?)""", (
+        ctx['tenant'], delegated, delegated, now, ctx['tenant'], now, ctx['actor'], ctx['actor'], ctx['actor'])
+
+
+def policy_condition(ctx, access, *, raw=True):
+    """One policy expression for the redacted passage tier of one source (alias `src`).
+
+    The source owner, a reader in the item's audience, or a reader the source is
+    explicitly shared with (agenthub.owner_controls), who still passes the
+    carried-workspace and origin terms; every ordinary rule applies to all three.
+    Retained originals never use this (agenthub.raw_access). `access` is (R, D).
+    """
+    common, common_args = _common(ctx)
+    inherited, inherited_args = audience_condition(ctx, access)
+    shared, shared_args = audience_condition(ctx, access, source_granted_condition(ctx))
     return ('(' + common + """
-                    AND (policy.definition->>'owner'=? OR (""" + visibility + """
-                    AND """ + quarantine + """
-                    AND """ + share + """) OR (""" + quarantine + """ AND """ + source_granted + """))
-                )""", common_args + (ctx['actor'],) + visibility_args + quarantine_args + share_args
-            + quarantine_args + source_granted_args)
+                    AND (""" + inherited + """ OR """ + shared + """)
+                )""", common_args + inherited_args + shared_args)
 
 
-def predicate(ctx):
+def predicate(ctx, access):
     """Indexed document authorization; mirrors EnterpriseStore._document_allowed.
 
     One correlated pass over the document's policies checks every ordinary source
-    rule and the sharing rule: a passage is the owner's, shared with the reader
-    at its current level, or explicitly granted (which stands in for visibility);
-    a derived document registered after migration 047 (level_capped) needs every
-    dependency to be the reader's own or shared with the reader at its level.
+    rule and the audience: every source a document depends on is the reader's
+    own or has the reader in its audience; a passage may instead be shared with
+    the reader through every source it depends on, which still obeys the
+    carried-workspace and origin terms. `access` is (R, D).
     """
     granted = document_granted_condition(ctx)
-    condition,args=policy_condition(ctx,granted=granted)
-    share,share_args=share_condition(ctx)
-    # raw_shared is a stable prefilter: the level stored for the passage's own
-    # source (0 private, 1 team, 2 organization); raw_granted marks passages an
-    # active grant covers. They keep other people's private passages as cheap to
-    # exclude as before. The policy pass below still decides.
+    common, common_args = _common(ctx)
+    inherited, inherited_args = audience_condition(ctx, access)
+    shared, shared_args = audience_condition(ctx, access, granted)
+    # raw_shared (the passage's own source is not private) and raw_granted (an
+    # active share covers it) are stable prefilters that keep other people's
+    # private passages cheap to exclude. The policy pass below decides.
     return """AND (ed.representation!='raw' OR (? AND (ed.raw_owner=? OR ed.raw_shared>0 OR ed.raw_granted=1)))
-        AND (SELECT bool_and(required.dependency_count>0 AND """+condition+""" IS TRUE
-            AND ((CASE WHEN ed.representation='raw' THEN ed.raw_owner=?
-                       WHEN ed.level_capped=0 THEN true
-                       ELSE policy.definition->>'owner'=? END) IS TRUE
-                 OR """+share+""" IS TRUE OR """+granted[0]+"""))
+        AND (SELECT bool_and(required.dependency_count>0 AND (""" + common + """
+                AND (""" + inherited + """ OR (ed.representation='raw' AND """ + shared + """))) IS TRUE)
         FROM search_document_policies required
         LEFT JOIN search_policies policy ON policy.id=required.policy_id
         LEFT JOIN backend_connections connection ON connection.id=policy.definition->>'connection'
-        WHERE required.document_id=d.document_id)""",('read' in ctx['actions'],ctx['actor'],*args,ctx['actor'],
-                                                       ctx['actor'],*share_args,*granted[1])
+        WHERE required.document_id=d.document_id)""", ('read' in ctx['actions'], ctx['actor'], *common_args,
+                                                       *inherited_args, *shared_args)
 
 
 def validate_source_snapshots(store, db, ctx, expected):
@@ -298,7 +221,7 @@ def validate_source_snapshots(store, db, ctx, expected):
     # Redacted passage tier (owner, or shared at its level): `read` suffices. Retained
     # originals are a separate source_read + owner/grant check in agenthub.raw_access.
     store._need(ctx,'read')
-    condition,args=policy_condition(ctx,raw=True)
+    condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     ids=sorted(expected)
     for offset in range(0,len(ids),1000):
         batch=ids[offset:offset+1000]
@@ -364,7 +287,7 @@ def read_source_context(store,db,ctx,ids):
     ids=sorted(set(ids))
     if len(ids)>1000:raise ValueError('context_source_batch_bound')
     if not ids:return []
-    condition,args=policy_condition(ctx,raw=True)
+    condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     return [dict(row) for row in db.execute('''WITH requested AS MATERIALIZED (
         SELECT * FROM enterprise_sources WHERE id=ANY(?::text[])
     ) SELECT src.id,src.source_version AS version,src.external_project AS project,

@@ -255,7 +255,7 @@ class StatusTests(Profile):
     def test_signed_out_session_start_says_so_and_capture_keeps_queuing(self):
         from agentclient.credentials import LoginRequired
         result = self.hook('SessionStart', raises=LoginRequired())
-        self.assertIn('Vaelius capture ON for project demo', result['systemMessage'])
+        self.assertIn('Vaelius capture ON for workspace demo', result['systemMessage'])
         self.assertIn('Vaelius signed out', result['systemMessage'])
         # The only text for the model is the local in-scope folder line, never the service status.
         context = result['hookSpecificOutput']['additionalContext']

@@ -467,7 +467,7 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
 
     def test_capture_notice_uses_operator_wording_and_connection_readers(self):
         from agenthub.governance import notice_from_settings
-        self.store.sharing_setting(self.ctx, {'max_sharing': 'private'})  # the default this notice reports
+        self.store.sharing_setting(self.ctx, {'contributions_default': 'private'})
         text = 'Synthetic organization notice: your agent sessions are retained for project review.'
         self.store.capture_notice_config = notice_from_settings({'tenants': {'acme': {
             'text': text, 'policy_url': 'https://policy.example.invalid/memory'}}})
@@ -475,10 +475,12 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
         notice = self.store.capture_notice(self.ctx, {'project': 'maple', 'connection': 'agent-team'})
         self.assertEqual(notice['notice'], text)
         self.assertEqual(notice['source'], 'operator')
-        # The person's own setting (private by default) caps what the team connection shares.
-        self.assertEqual(notice['readers'], {'visibility': 'team', 'description': 'members of project maple',
-                                             'connection_active': True, 'personal_sharing': 'private',
-                                             'project_ceiling': 'organization', 'passage_sharing_limit': 'private'})
+        # The person's own default (private here) keeps what the connection captures private;
+        # the legacy keys repeat it for older clients.
+        self.assertEqual(notice['readers'], {'visibility': 'team', 'description': 'everyone who can read workspace maple',
+                                             'connection_active': True, 'contributions_default': 'private',
+                                             'item_default': 'shared', 'workspace_audience': 'workspace',
+                                             'personal_sharing': 'private', 'passage_sharing_limit': 'private'})
         self.assertEqual(notice['captured'], ['user_prompts', 'assistant_replies', 'tool_calls', 'tool_results'])
         with self.assertRaises(Denied):
             self.store.capture_notice(self.bob, {'connection': 'agent-team'})

@@ -242,8 +242,15 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Ge
         `raw=True` (redacted passages, evidence, context) also accepts an explicit
         share. Retained originals use _original_allowed (source_read + owner or share)."""
         if not self._source_rules(db,ctx,source) or "read" not in ctx["actions"]:return False
-        if self._in_audience(db,ctx,source):return True
-        return raw and self._shared_with(db,ctx,source)
+        shared=None
+        if not self._in_audience(db,ctx,source):
+            shared=raw and self._shared_with(db,ctx,source)
+            if not shared:return False
+        session=ctx.get("session_label")
+        if not session or session.get("private"):return True
+        # A session label (recall) admits only items whose audience contains the session's.
+        if shared is None:shared=raw and self._shared_with(db,ctx,source)
+        return self._session_admits(db,ctx,source,granted=bool(shared) and self._session_granted(db,ctx,source))
 
     def _original_allowed(self, db, ctx, source):
         from agenthub.raw_access import original_allowed
@@ -393,9 +400,15 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Ge
                  and all(self._granted_source(db,ctx,s) for s in dependencies))
         if not granted:
             # Every document: each source is the reader's own or has the reader in its audience.
-            if not all(self._visible_source(db,ctx,s) for s in dependencies):
+            unlabelled=dict(ctx,session_label=None)
+            if not all(self._visible_source(db,unlabelled,s) for s in dependencies):
                 if raw or not self._release_allowed(db,ctx,document_id,dependencies):return None
             if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
+        if ctx.get("session_label") and not ctx["session_label"].get("private"):
+            # The session label (search_permissions.SESSION): every source passes, through
+            # its workspace or through shares whose subjects contain the session audience.
+            shared=(granted and all(self._session_granted(db,ctx,s) for s in dependencies))
+            if not all(self._session_admits(db,ctx,s,granted=shared) for s in dependencies):return None
         return doc
 
     def refresh_documents(self, *, db=None, document_id=None):

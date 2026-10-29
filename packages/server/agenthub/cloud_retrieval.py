@@ -883,7 +883,9 @@ class HybridRetrievalMixin:
                     self.current_identity(state.db, ctx)
                     return []
             from agenthub.search_reader import restrict
-            reach = None if project is None else scope
+            # A session label decides which workspaces recall reaches (its superset
+            # list), so it replaces the cross-project `scope` option of #28.
+            reach = None if project is None else ('all' if ctx.get('session_label') else scope)
             reader = restrict(self, state, ctx, project, reach=reach)
             with reader:
                 predicates = ['TRUE', "d.lifecycle='active'"]
@@ -1005,7 +1007,7 @@ class HybridRetrievalMixin:
                     ([c['document_id'] for c in candidates],)).fetchone())
         if temporal_requested:
             with self.open() as state:
-                scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' else value.get('project'))
+                scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') else value.get('project'))
                 temporal=self.temporal_search(state,ctx,value,scopes,
                     candidate_ids=[c['document_id'] for c in candidates] if candidates is not None else None)
                 if temporal is not None:
@@ -1056,7 +1058,7 @@ class HybridRetrievalMixin:
         with self.open() as state:
             allowed=[candidate['document_id'] for candidate in candidates]
             from agenthub.processing.durable_memory import retrieve as durable_retrieve
-            scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' else value.get('project'))
+            scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') else value.get('project'))
             durable=durable_retrieve(state,value['query'],scopes[0],read_projects=scopes,authorized_document_ids=allowed) if scopes and self.retrieval_selection_policy=='baseline' else None
             durable_ids={row['document_id'] for row in durable} if durable is not None else None
             owners={}

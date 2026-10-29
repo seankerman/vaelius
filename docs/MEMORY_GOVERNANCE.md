@@ -51,7 +51,7 @@ Search items and single-document responses also carry a machine-readable
 | --- | --- |
 | `origin.project` | The source project; `null` when the sources span several projects. |
 | `origin.sharing` | The item's current sharing level (`private`, `team` or `organization`), the lowest over its sources ([privacy model](PRIVACY_MODEL.md)). Later layers use it so anything derived from recalled memory inherits the restriction. |
-| `tier` | `project` (the current project), `other_project` (another project the reader belongs to; only with `scope = "all"`) or `organization` (another project's organization-shared content). Items are delivered in that order. |
+| `tier` | `project` (the current project), `other_project` (another workspace the session label reaches; for unlabelled requests only with `scope = "all"`) or `organization` (another project's organization-shared content). Items are delivered in that order. |
 | `from` | Present for every item outside the current project (or every item when no project is current): project, author and capture date as one line. |
 
 Where it appears:

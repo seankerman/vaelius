@@ -238,6 +238,10 @@ class Context:
         self.personal = [self.home / p for p in PERSONAL]
         self.credentials = [self.home / p for p in CREDENTIALS]
         self.tooling = [self.home / p for p in TOOLING]
+        # Workspaces the session's fixed label lets it read (agentclient.session_label):
+        # the guardrail hook already denied every other scoped folder, so a read of one
+        # of these carries its workspace without narrowing the session. None: no label.
+        self.session_allowed = None
         self._places = {}
         self._dirs = {}
         self._requests = {}
@@ -490,6 +494,10 @@ class Context:
     def _other(self, path, info):
         """Another project's files: a project-set label, capped by that scope file's request."""
         project = info.get('project')
+        if (self.session_allowed is not None and project in self.session_allowed and not info.get('error')
+                and PROJECT.fullmatch(project)):
+            # Allowed by the session label (PR B): carried, never a narrower ceiling.
+            return Label(OPEN, ('other_project',), 'other_project', project, (project,))
         if info.get('error') or info.get('capture') == 'off' or not project or not PROJECT.fullmatch(project):
             return _restrict('other_project', 'other_project', self.hint(path))
         return Label(info['sharing'], ('other_project',), 'other_project', project, (project,))
@@ -601,7 +609,8 @@ def classify(event, context):
     server = event.get('mcp_server') or mcp_server(tool)
     context.transcript(event.get('transcript_path'))
     if self_tool(tool) or server in SELF_SERVERS:
-        return recalled(response, context.project, sharing=context.sharing)
+        return recalled(response, context.project, sharing=context.sharing,
+                        labelled=context.session_allowed is not None)
     if name in RESOURCE_TOOLS:
         server = str(arguments.get('server', '')).replace('-', '_').lower() or 'unknown'
     if server is not None:
@@ -656,7 +665,7 @@ def _glob_base(pattern):
 
 # Recalled memory ----------------------------------------------------------------
 
-def item_label(item, project, sharing_request=None):
+def item_label(item, project, sharing_request=None, *, labelled=False):
     """Label for one recalled item from the service's origin label.
 
     The service labels each item (`origin`) with its source project (None when
@@ -681,6 +690,11 @@ def item_label(item, project, sharing_request=None):
     if len(projects) != len(set(map(str, named))):
         return _restrict('recalled_memory', 'recalled_memory', 'shared memory')
     projects.discard(project)
+    if labelled and sharing in ('organization', 'team'):
+        # A labelled session's recall is filtered by the service to items whose audience
+        # contains the session's: it carries their workspaces and narrows nothing.
+        return Label(OPEN, ('recalled_memory',), 'recalled_memory' if projects else None,
+                     'shared memory' if projects else None, projects)
     if sharing == 'organization' and not carried:
         return Label(OPEN, ('recalled_memory',))
     if sharing == 'team' and not named:
@@ -694,7 +708,7 @@ def item_label(item, project, sharing_request=None):
     return _restrict('recalled_memory', 'recalled_memory', 'shared memory')
 
 
-def recalled(items, project, *, cards=False, sharing=None):
+def recalled(items, project, *, cards=False, sharing=None, labelled=False):
     """Label for recalled memory: injected `cards`, or a memory tool's result.
 
     Every injected card is a memory item, so one without a label is private. A
@@ -702,7 +716,7 @@ def recalled(items, project, *, cards=False, sharing=None):
     found = [item for item in items if isinstance(item, dict)] if cards and isinstance(items, list) else _cards(items)
     if not found:
         return Label(OPEN, ())
-    return combine([item_label(item, project, sharing) for item in found])
+    return combine([item_label(item, project, sharing, labelled=labelled) for item in found])
 
 
 def _cards(value, depth=0):
@@ -957,10 +971,10 @@ class SessionOrigins:
             self._write(state)
             return result
 
-    def get(self, session):
-        return self._read().get(_key(session))
+    def get(self, session, *, key=None):
+        return self._read().get(key or _key(session))
 
-    def apply(self, session, label, *, project=None, call_id=None, call_output=False):
+    def apply(self, session, label, *, project=None, call_id=None, call_output=False, key=None):
         """Record one event of `project` (the captured project, if any); returns its effective label.
 
         {'ceiling', 'kinds', 'reason', 'projects', 'inherited', 'newly_restricted',
@@ -970,8 +984,9 @@ class SessionOrigins:
         from one repository to another carries the first one's context along).
         `inherited` is true when the restriction comes only from earlier events."""
         now = time.time()
+        key = key or _key(session)
         if label['ceiling'] == OPEN and not label['projects'] and not call_id and not call_output:
-            entry = self.get(session)
+            entry = self.get(session, key=key)
             if (entry is None and project is None) or (
                     entry is not None and entry.get('ceiling', OPEN) == OPEN
                     and not set(entry.get('projects', [])) | set(entry.get('visited', [])) - {project}
@@ -981,7 +996,7 @@ class SessionOrigins:
                         'inherited': False, 'newly_restricted': False, 'hint': None}
 
         def change(state):
-            entry = state.setdefault(_key(session), {'ceiling': OPEN, 'projects': [], 'visited': [], 'calls': {}})
+            entry = state.setdefault(key, {'ceiling': OPEN, 'projects': [], 'visited': [], 'calls': {}})
             entry['updated'] = now
             calls = entry.setdefault('calls', {})
             own = label
@@ -1062,6 +1077,7 @@ PHRASES = {
     'recalled_memory': 'recalled memory with narrower sharing',
     'unknown_tool': 'used a tool Vaelius cannot classify ({hint})',
     'unknown_call': 'received a tool result Vaelius cannot place',
+    'explicit_private': 'was made private on request',
 }
 
 
@@ -1093,7 +1109,7 @@ SCOPE_LINE_MAX = 200
 SCOPE_SIBLINGS = 200  # folder entries examined next to the root
 
 
-def in_scope_line(scope, cwd, config=None):
+def in_scope_line(scope, cwd, config=None, *, labelled=False, allowed=None):
     """One informational line naming the session's scoped folders, or None.
 
     The current root plus scoped sibling folders next to it, while the line stays
@@ -1110,6 +1126,8 @@ def in_scope_line(scope, cwd, config=None):
     else:
         shown = str(root)
     head, tail = 'vaelius: in-scope folders: ', ' (reads elsewhere make this session private)'
+    if labelled:
+        tail = ' (narrower workspaces are denied; unscoped reads make this session private)'
     line = head + shown + tail
     if len(line) > SCOPE_LINE_MAX:
         return None
@@ -1126,6 +1144,8 @@ def in_scope_line(scope, cwd, config=None):
         info = context._scoped_dir(sibling)
         if not isinstance(info, dict) or info.get('root') != str(sibling) or info.get('error') or info.get('capture') == 'off':
             continue
+        if allowed is not None and info.get('project') not in allowed:
+            continue  # a labelled session does not read narrower workspaces
         candidate = head + ', '.join(pieces + ['../' + name]) + tail
         if len(candidate) > SCOPE_LINE_MAX:
             break

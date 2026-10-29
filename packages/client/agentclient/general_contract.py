@@ -32,7 +32,8 @@ ORIGIN_LEVELS = ('private', 'team', 'organization')
 ORIGIN_KINDS = ('project', 'web', 'allowed_path', 'allowed_mcp', 'local_tooling', 'outside_repo', 'other_project',
                 'mcp', 'shell', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call')
 ORIGIN_REASONS = ('outside_repo', 'shell_outside_repo', 'personal_content', 'credential_file', 'other_project',
-                  'mcp_server', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call')
+                  'mcp_server', 'private_network', 'recalled_memory', 'unknown_tool', 'unknown_call',
+                  'explicit_private')
 ORIGIN_MAX_PROJECTS = 16
 ORIGIN_PROJECT = re.compile(r'[A-Za-z0-9_-]{1,120}')
 # A normalized repository remote: host/path, lower case, without scheme, user,

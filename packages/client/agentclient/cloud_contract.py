@@ -25,8 +25,10 @@ def validate_response(path,value):
     elif route=='auth/revoke':
         if value!={'revoked':True}:raise ValueError('invalid_revocation_response')
     elif route=='search':
-        if not {'results','answerable'}<=set(value) or set(value)-{'results','answerable','coverage_gaps','retrieval','support'}:
+        if not {'results','answerable'}<=set(value) or set(value)-{'results','answerable','coverage_gaps','retrieval','support',
+                                                                    'session_epoch'}:
             raise ValueError('invalid_cloud_search')
+        if 'session_epoch' in value and type(value['session_epoch']) is not int:raise ValueError('invalid_cloud_search')
         if type(value['answerable']) is not bool or not isinstance(value['results'],list) or len(value['results'])>20:
             raise ValueError('invalid_cloud_search')
         if 'support' in value:
@@ -36,6 +38,16 @@ def validate_response(path,value):
             if not {'id','revision','title','lesson','evidence_status'}<=set(card) or len(json.dumps(card,ensure_ascii=True))>1300:
                 raise ValueError('invalid_cloud_card')
         if not value['results'] and value['answerable']:raise ValueError('unsupported_cloud_answer')
+    elif route=='workspaces/descriptor':
+        # The session label's advisory descriptor (agentclient.session_label).
+        lists=('contains_session_audience','readable')
+        if (not {'workspace','epoch','role','session','fetched_at','refresh_after','expires_at',*lists}<=set(value)
+                or not isinstance(value['workspace'],dict) or not isinstance(value['session'],dict)
+                or type(value['epoch']) is not int
+                or any(not isinstance(value[k],list) or len(value[k])>10000
+                       or any(not isinstance(item,dict) for item in value[k]) for k in lists)
+                or any(type(value[k]) not in (int,float) for k in ('fetched_at','refresh_after','expires_at'))):
+            raise ValueError('invalid_session_descriptor')
     elif route=='document-evidence':
         if len(json.dumps(value,ensure_ascii=True))>4000:raise ValueError('source_evidence_bound')
         if value.get('status')=='invalidated':

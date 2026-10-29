@@ -112,9 +112,8 @@ class WorkspaceFixture(PostgresFixture):
         self.assertEqual(show(rls), show(expected), ('row_level_security', msg))
 
 
-@unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
-class PredicateParityTests(WorkspaceFixture, unittest.TestCase):
-    def setUp(self):
+class ParityItems(WorkspaceFixture):
+    def parity_setup(self):
         self.workspace_setup()
         source = lambda result: result['source_id']
         self.items = {
@@ -143,11 +142,17 @@ class PredicateParityTests(WorkspaceFixture, unittest.TestCase):
         self.store.quarantine_principal('quinn', reason='synthetic review')
         self.drain()
 
-    def tearDown(self):
-        self.postgres_teardown()
-
     def expect(self, *names):
         return {self.items[name] for name in names}
+
+
+@unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
+class PredicateParityTests(ParityItems, unittest.TestCase):
+    def setUp(self):
+        self.parity_setup()
+
+    def tearDown(self):
+        self.postgres_teardown()
 
     def test_every_layer_agrees_on_roles_groups_private_shares_carried_origin_and_quarantine(self):
         everything = set(self.items.values())
@@ -469,3 +474,132 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
+class SessionLabelTests(ParityItems, unittest.TestCase):
+    """PR B: the superset list behind a session label and the recall filter in all three layers.
+
+    Audiences: maple {alice, bob, quinn (quarantined), carol, dave}; birch {alice, bob};
+    oak: the organization (every active principal but quinn)."""
+
+    def setUp(self):
+        self.parity_setup()
+
+    def tearDown(self):
+        self.postgres_teardown()
+
+    def label(self, ctx, workspace, **extra):
+        return self.store.session_filter(ctx, dict(workspace=workspace, **extra))
+
+    def superset(self, ctx, workspace, **extra):
+        found = self.label(ctx, workspace, **extra)['session_label']
+        return found['private'], found['workspaces']
+
+    def test_superset_is_extensional_on_current_membership(self):
+        self.assertEqual(self.superset(self.alice, 'maple'), (False, ['maple']),
+                         'birch is narrower; oak misses quinn, whom quarantine removes from the organization')
+        self.assertEqual(self.superset(self.alice, 'birch'), (False, ['birch', 'maple', 'oak']))
+        self.assertEqual(self.superset(self.alice, 'oak'), (False, ['oak']), 'an organization session')
+        self.assertEqual(self.superset(self.bob, 'birch'), (False, ['birch', 'maple', 'oak']))
+        self.assertEqual(self.superset(self.alice, 'maple', narrowed=['birch']), (False, ['birch', 'maple', 'oak']),
+                         'narrowing intersects: maple ∩ birch = {alice, bob}')
+        self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
+        self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'erin',
+                                          'role': 'reader'})
+        self.assertEqual(self.superset(self.alice, 'birch'), (False, ['birch', 'maple', 'oak']),
+                         'erin is in maple through platform > core now')
+        self.store.remove_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
+        self.assertEqual(self.superset(self.alice, 'birch'), (False, ['birch', 'oak']),
+                         'removing erin from the nested group takes maple out at once')
+
+    def test_private_sessions(self):
+        self.assertEqual(self.superset(self.alice, 'maple', private=True)[0], True)
+        self.assertEqual(self.superset(self.alice, 'maple', sharing='private')[0], True)
+        self.store.create_workspace(self.alice, {'name': 'solo'})
+        self.assertEqual(self.superset(self.alice, 'solo'), (True, ['birch', 'maple', 'oak', 'solo']),
+                         'an audience of the person alone is a private session: everything they can read')
+        self.store.sharing_setting(self.alice, {'contributions_default': 'private'})
+        self.assertTrue(self.superset(self.alice, 'maple')[0], 'contributions_default private')
+        self.store.sharing_setting(self.alice, {'contributions_default': 'shared'})
+        self.store.workspace_settings(self.alice, {'workspace': 'birch', 'item_default': 'private'})
+        self.assertTrue(self.superset(self.alice, 'birch')[0], 'item_default private')
+        with self.assertRaises(Denied):
+            self.label(self.alice, 'nowhere')
+
+    def test_recall_filter_agrees_in_every_layer(self):
+        cases = (
+            (self.alice, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
+             'own private items, origin-private items and a team origin carrying oak are left out'),
+            (self.alice, 'maple', {}, ('m_shared', 'm_team'), 'birch and oak are narrower than maple'),
+            (self.alice, 'maple', {'narrowed': ['birch']}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
+             'maple ∩ birch'),
+            (self.carol, 'maple', {}, ('m_shared', 'm_team'), 'a group share to platform does not contain maple'),
+            (self.erin, 'oak', {}, ('o_shared',), 'a share to erin alone does not contain the organization'),
+            (self.bob, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'), 'reader of birch'),
+            (self.alice, 'maple', {'private': True}, tuple(self.items), 'a private session reads everything'),
+        )
+        for ctx, workspace, extra, expected, message in cases:
+            with self.subTest(message):
+                self.assertLayers(self.label(ctx, workspace, **extra), self.expect(*expected), message)
+
+    def test_a_share_whose_group_contains_the_session_audience_is_recalled(self):
+        self.store.create_workspace(self.carol, {'name': 'pf'})
+        self.store.set_entry(self.carol, {'workspace': 'pf', 'subject_kind': 'group', 'subject': 'platform',
+                                          'role': 'writer'})
+        found = self.label(self.carol, 'pf')['session_label']
+        self.assertEqual((found['private'], found['groups']), (False, ['platform']))
+        self.assertLayers(self.label(self.carol, 'pf'),
+                          self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group'),
+                          'the platform share contains {carol, dave}')
+        self.assertLayers(self.label(self.dave, 'pf'),
+                          self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group'))
+
+    def test_widening_a_workspace_later_does_not_expose_carried_content(self):
+        # An item captured in a maple session that read birch carries birch.
+        self.assertLayers(self.erin, self.expect('o_shared', 'm_share_erin'))
+        self.store.set_entry(self.alice, {'workspace': 'maple', 'subject_kind': 'organization', 'role': 'reader'})
+        visible = self.layers(self.erin)[0]
+        self.assertIn(self.items['m_shared'], visible, 'maple is now organization-wide')
+        self.assertNotIn(self.items['m_birch'], visible, 'm_birch still needs birch')
+
+    def test_descriptor_lists_the_superset_and_refuses_unreadable_targets(self):
+        descriptor = self.store.session_descriptor(self.alice, {'workspace': 'birch'})
+        self.assertEqual(descriptor['session'], {'workspace': 'birch', 'narrowed': [], 'private': False})
+        self.assertEqual([w['id'] for w in descriptor['contains_session_audience']], ['birch', 'maple', 'oak'])
+        self.assertEqual([w['id'] for w in descriptor['readable']], ['birch', 'maple', 'oak'])
+        self.assertEqual(descriptor['role'], 'admin')
+        self.assertEqual(descriptor['refresh_after'] - descriptor['fetched_at'], 900)
+        self.assertEqual(descriptor['expires_at'] - descriptor['fetched_at'], 86400)
+        before = descriptor['epoch']
+        self.store.link_repo(self.alice, {'workspace': 'birch', 'remote': 'example.com/example-org/birch'})
+        narrowed = self.store.session_descriptor(self.alice, {'workspace': 'maple',
+                                                              'narrowed': ['example.com/example-org/birch']})
+        self.assertEqual(narrowed['session']['narrowed'], ['birch'], 'a linked remote names its workspace')
+        self.assertGreater(narrowed['epoch'], before, 'linking moves the epoch')
+        with self.assertRaises(Denied):
+            self.store.session_descriptor(self.erin, {'workspace': 'oak', 'narrowed': ['birch']})
+        with self.assertRaises(Denied):
+            self.store.session_descriptor(self.erin, {'workspace': 'maple'})
+        with self.assertRaises(ValueError):
+            self.store.session_descriptor(self.alice, {'workspace': 'maple', 'extra': 1})
+
+    def test_labelled_search_and_mcp_carry_the_filter(self):
+        from agenthub.mcp_tools import MemoryTools
+        from types import SimpleNamespace
+        query = {'version': 'enterprise-local-1', 'query': self.fixture['query'], 'project': 'maple'}
+        unlabelled = self.store.search(self.alice, query)
+        labelled = self.store.search(self.label(self.alice, 'maple'), query)
+        ids = lambda result: {card['id'] for card in result['results']}
+        self.assertTrue(ids(unlabelled))
+        allowed = self.layers(self.label(self.alice, 'maple'))[0]
+        documents = self.documents()
+        self.assertTrue({documents[i] for i in ids(labelled) if i in documents} <= allowed)
+        sent = []
+        tools = MemoryTools('maple', SimpleNamespace(request=lambda path, value=None: sent.append((path, value)) or
+                                                     {'results': []}), label={'workspace': 'maple'})
+        tools.call('search_memory', {'query': 'synthetic'})
+        self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple'})
+        self.assertNotIn('scope', sent[-1][1])
+        with self.assertRaises(ValueError):
+            tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})

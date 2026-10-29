@@ -300,11 +300,16 @@ def _origin_label(home, config, scope, event):
     try:
         if kind=='SessionEnd':
             # /clear ends the session: its context is gone, and a new session ID follows.
-            if event.get('reason')=='clear':taint.forget(session)
+            if event.get('reason')=='clear':
+                taint.forget(session)
+                from agentclient.session_label import SessionLabels
+                SessionLabels(home).forget(session)
             return None,None
         label=origin_labels.NEUTRAL
         if kind in TOOL_EVENTS:
-            label=origin_labels.classify(event,origin_labels.Context(scope,event.get('cwd'),config))
+            context=origin_labels.Context(scope,event.get('cwd'),config)
+            context.session_allowed=_label_allowed(home,session)
+            label=origin_labels.classify(event,context)
         effective=taint.apply(session,label,project=scope.get('project') if scope else None)
     except Exception:
         return {'ceiling':'private','kinds':['unknown_tool'],'reason':'unknown_tool','projects':[],'inherited':False},None
@@ -314,6 +319,72 @@ def _origin_label(home, config, scope, event):
     elif kind=='SessionStart':
         notice=origin_labels.status_line(taint.get(session))
     return origin_labels.wire(effective,scope.get('project') if scope else None),notice
+
+
+def _label_allowed(home, session):
+    """The workspaces a labelled session may read (agentclient.session_label), else None."""
+    from agentclient import session_label
+    try:
+        entry=session_label.SessionLabels(home).get(session)
+        if not entry:return None
+        return session_label.allowed(entry,private=session_label.session_private(home,session))[0]
+    except Exception:
+        return None
+
+
+def _session_label(home, config, scope, event, notices):
+    """Establish, refresh or narrow this session's fixed label; returns the entry or None.
+
+    SessionStart labels a session that starts in a workspace folder with capture on
+    (never a read-only, off or unscoped one) and fetches its descriptor; a prompt
+    refreshes a descriptor past `refresh_after`; an MCP `use_workspace` result applies
+    the narrowing the service checked. Failures leave the hook's fail-safe rules."""
+    from agentclient import session_label
+    kind=str(event.get('hook_event_name',''))
+    session=str(event.get('session_id',''))
+    if not session:return None
+    labels=session_label.SessionLabels(home)
+    entry=labels.get(session)
+    if kind=='SessionStart' and entry is None:
+        if (not scope or scope.get('capture')!='on' or scope.get('origin') not in session_label.LABELLED_ORIGINS
+                or not session_label.NAME.fullmatch(str(scope.get('project')))):
+            return None
+        try:cwd=str(local_cwd(event.get('cwd')))
+        except (ValueError,OSError):cwd=None
+        entry=labels.start(session,scope,cwd)
+    if entry is None:return None
+    try:
+        if kind=='SessionStart' or (kind=='UserPromptSubmit' and session_label.stale(entry)):
+            entry=session_label.refresh(home,config,session,entry) or entry
+        elif kind in TOOL_EVENTS:
+            from agentclient.enterprise_capture import self_tool
+            if self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
+                record=session_label.use_result(event.get('tool_response'))
+                if record:
+                    label=session_label.request_label(entry)
+                    if record.get('private'):label['private']=True
+                    else:label['narrowed']=list(dict.fromkeys([*label['narrowed'],str(record.get('target'))]))
+                    from agentclient.transport import enterprise_client
+                    descriptor=enterprise_client(config,timeout=2).request('/enterprise/v3/workspaces/descriptor',label)
+                    session_label.apply_use(home,session,entry,descriptor,private=bool(record.get('private')))
+                    entry=labels.get(session) or entry
+    except Exception:
+        pass
+    if kind in ('SessionStart','UserPromptSubmit'):
+        # A narrowing or role change is announced once; a session start always shows the label.
+        line=labels.take_announcement(session)
+        if kind=='SessionStart':line=line or session_label.status_line(entry)
+        if line:notices.append(line)
+    return entry
+
+
+def _explained_by_narrowing(home, event, entry):
+    """The taint only carries workspaces the person narrowed the session to."""
+    from agentclient import session_label
+    if not entry.get('narrowed'):return False
+    taint=origin_labels.SessionOrigins(home).get(str(event.get('session_id','')) or 'unknown-session') or {}
+    involved=set(taint.get('projects',[]))|set(taint.get('visited',[]))
+    return taint.get('ceiling')!='private' and involved<=session_label.own(entry)
 
 
 def _enterprise_hook(home, config, event, original, host='codex'):
@@ -394,9 +465,19 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
                 'origin':{'project':event['project'],'sharing':'private'}})
             if len(cards)>=3:break
         if query:
-            result=backend.request('/enterprise/v3/search',
-                {'version':VERSION,'query':query,'project':event['project'],'mode':'automatic',
-                 'limit':3,'session':event['session'] or 'unknown-session'})
+            request={'version':VERSION,'query':query,'project':event['project'],'mode':'automatic',
+                 'limit':3,'session':event['session'] or 'unknown-session'}
+            entry=event.get('session_label')
+            if entry:
+                from agentclient import session_label
+                request['session_label']=session_label.request_label(entry)
+                if session_label.session_private(home,event['session'] or 'unknown-session'):
+                    request['session_label']['private']=True
+            result=backend.request('/enterprise/v3/search',request)
+            if entry and result.get('session_epoch',0)>(entry.get('descriptor') or {}).get('epoch',0):
+                # The service's state moved: refresh the descriptor now (one request).
+                try:session_label.refresh(home,config,event['session'],entry)
+                except Exception:pass
             if result.get('answerable',False) or result.get('support')=='partial':
                 cards.extend(result.get('results',[]))
         if not cards:return {}
@@ -405,7 +486,8 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         if not cards:return {}
         context=prefix+json.dumps(cards,ensure_ascii=True)
         # Injected memory is now in the agent's context: it restricts what follows.
-        notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True,sharing=event.get('sharing')))
+        notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True,
+            sharing=event.get('sharing'),labelled=bool(event.get('session_label'))))
         try:
             backend.request('/enterprise/v1/receipts',{'version':VERSION,
                 'session':event['session'] or 'unknown-session',
@@ -542,6 +624,15 @@ def handle(home, event, *, host='codex', via='settings'):
             remote=discover_remote(scope_root)
         except Exception:
             remote=None
+    label_notices=[]
+    entry=None
+    if host=='claude-code':
+        entry=_session_label(Path(home),config,scope,event,label_notices)
+        if entry is not None:
+            from agentclient import session_label
+            if scope['capture']=='on' and not session_label.captures(entry):
+                # The service says the person is no longer a writer here (the status line says so).
+                scope=dict(scope,capture='read-only')
     metadata={'project':project,'kind':kind,'capture':scope['capture'],'sharing':scope['sharing'],
               'originals':scope.get('originals','private'),
               'workspace_key':bool(scope.get('workspace_key')),
@@ -550,17 +641,28 @@ def handle(home, event, *, host='codex', via='settings'):
     # What this event touched, made sticky for the rest of the session (agentclient.origin).
     label,origin_notice=_origin_label(Path(home),config,scope,event)
     if label:metadata['origin_label']=label
+    if entry is not None and kind=='UserPromptSubmit':metadata['session_label']=entry
     result=_enterprise_hook(Path(home),config,metadata,event,host=host)
+    label_line='\n'.join(label_notices)
+    if label_line:
+        result=dict(result,systemMessage='\n'.join(x for x in (label_line,result.get('systemMessage')) if x))
     # One-time scope-file warnings for workspace-model migrations.
     warning_notice=_scope_warnings(home,scope)
     if warning_notice:
         result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),warning_notice) if x))
+    if origin_notice and entry is not None and _explained_by_narrowing(Path(home),event,entry):
+        origin_notice=None  # the session-label line already says capture is limited to people in both
     if origin_notice:
         result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),origin_notice) if x))
     line=None
     if kind=='SessionStart' and config.get(origin_labels.SCOPE_NOTICE_KEY) is not False:
         # Plain information for the person and the agent: where reads stay in scope.
-        try:line=origin_labels.in_scope_line(scope,event.get('cwd'),config)
+        try:
+            allowed=None
+            if entry is not None:
+                from agentclient import session_label
+                allowed=session_label.allowed(entry)[0]
+            line=origin_labels.in_scope_line(scope,event.get('cwd'),config,labelled=entry is not None,allowed=allowed)
         except Exception:line=None
         if line:
             output=dict(result.get('hookSpecificOutput') or {'hookEventName':kind})

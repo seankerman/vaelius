@@ -457,10 +457,14 @@ class WireContractTest(unittest.TestCase):
         self.assertEqual(self.event(sharing='team', origin_label=team)['sharing'], 'team')
 
     def test_ceiling_lowers_both_requests_on_the_ladder(self):
+        # Only the sharing request travels on the wire now: the access model
+        # drops the originals ladder (see docs/ACCESS_MODEL.md), so the client
+        # never sends `originals` whatever the scope file or origin label asks.
         team = {'ceiling': 'team', 'kinds': ['recalled_memory'], 'reason': 'recalled_memory', 'projects': [],
                 'inherited': False}
         event = self.event(sharing='organization', originals='organization', origin_label=team)
-        self.assertEqual((event['sharing'], event['originals']), ('team', 'team'))
+        self.assertEqual(event['sharing'], 'team')
+        self.assertNotIn('originals', event)
         event = self.event(sharing='organization', originals='team', origin_label=dict(team, ceiling='private'))
         self.assertNotIn('sharing', event)
         self.assertNotIn('originals', event)

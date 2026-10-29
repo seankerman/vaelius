@@ -74,7 +74,8 @@ def resolve_scope(config, event):
         except ScopeFileError as error:
             request={'project':None,'capture':'off','sharing':'private','originals':'private','path':None,'error':str(error)}
     if project:
-        result={'project':project,'capture':'on','sharing':'private','originals':'private','origin':origin}
+        result={'project':project,'capture':'on','sharing':'private','originals':'private','origin':origin,
+                'workspace_key':False}
         if root:result['root']=root
         if request is not None:
             if request.get('error'):
@@ -82,6 +83,9 @@ def resolve_scope(config, event):
             elif request['project'] in (None,project):
                 result.update(capture=request['capture'],sharing=request['sharing'],
                               originals=request.get('originals','private'),scope_file=request['path'],
+                              workspace_key=bool(request.get('workspace_key')),
+                              root=request['root'],
+                              warnings=list(request.get('warnings',[])),
                               **_exceptions(request))
             else:
                 # Explicit enrollment under another name wins; the file is ignored.
@@ -91,17 +95,22 @@ def resolve_scope(config, event):
         if request['project']:
             result={'project':request['project'],'capture':request['capture'],'sharing':request['sharing'],
                 'originals':request.get('originals','private'),
-                'origin':'scope_file','scope_file':request['path'],'root':request['root'],**_exceptions(request)}
+                'origin':'scope_file','scope_file':request['path'],'root':request['root'],
+                'workspace_key':bool(request.get('workspace_key')),
+                'warnings':list(request.get('warnings',[])),
+                **_exceptions(request)}
         else:
             fallback=fallback_binding(dict(config,capture_disabled_projects=[]),sid,common)
             if not fallback:return None
             result={'project':fallback,'capture':request['capture'],'sharing':request['sharing'],
                 'originals':request.get('originals','private'),'origin':'capture_all','scope_file':request['path'],
-                'root':request['root'],**_exceptions(request)}
+                'root':request['root'],'workspace_key':bool(request.get('workspace_key')),
+                'warnings':list(request.get('warnings',[])),**_exceptions(request)}
     else:
         fallback=fallback_binding(dict(config,capture_disabled_projects=[]),sid,common)
         if not fallback:return None
-        result={'project':fallback,'capture':'on','sharing':'private','originals':'private','origin':'capture_all'}
+        result={'project':fallback,'capture':'on','sharing':'private','originals':'private','origin':'capture_all',
+                'workspace_key':False}
     if disabled_project(config,result['project']):result['capture']='off'
     return result
 
@@ -204,6 +213,67 @@ def _drain(home, backend, *, max_events, max_seconds):
     finally:outbox.close()
 
 
+# Notice-dedup for one-time delivery notices (parts receipts, repo-not-linked).
+# A notice is shown at most once every `_NOTICE_TTL` seconds for the same id,
+# so a 15-minute retry loop does not spam the status line but a lasting
+# condition is not silenced forever either.
+_NOTICE_FILE='client-notices.json'
+_NOTICE_TTL=3600  # one hour
+
+
+def _notice_file(home):return Path(home)/_NOTICE_FILE
+
+
+def _read_notice_log(home):
+    try:
+        value=json.loads(_notice_file(home).read_text())
+        return value if isinstance(value,dict) else {}
+    except (OSError,ValueError):return {}
+
+
+def _write_notice_log(home,value):
+    import tempfile
+    home=Path(home)
+    try:
+        with tempfile.NamedTemporaryFile(mode='w',dir=home,prefix='notice-log-',
+                                         suffix='.tmp',delete=False) as stream:
+            json.dump(value,stream,sort_keys=True)
+            temporary=Path(stream.name)
+        os.chmod(temporary,0o600)
+        temporary.replace(_notice_file(home))
+    except OSError:
+        return
+
+
+def _apply_notices(home, notices):
+    """Return the status lines for new notices, remembering what was shown."""
+    if not notices:return None
+    import fcntl
+    home=Path(home)
+    try:home.mkdir(parents=True,exist_ok=True,mode=0o700)
+    except OSError:return None
+    now=time.time()
+    try:
+        with (home/'notice-log.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            log=_read_notice_log(home)
+            shown=[]
+            changed=False
+            for notice in notices:
+                ident=notice.get('ident') or notice.get('text') or ''
+                if not ident:continue
+                last=log.get(ident,0)
+                if now-last<_NOTICE_TTL:continue
+                shown.append(notice['text'])
+                log[ident]=now
+                changed=True
+            # Age out entries older than a day to keep the file small.
+            log={k:v for k,v in log.items() if now-v<86400}
+            if changed:_write_notice_log(home,log)
+    except OSError:return None
+    return '\n'.join(shown) if shown else None
+
+
 def _noteworthy(effective):
     """Tell the person when capture becomes private or spans another project; a team
     ceiling from this project's own memory is ordinary and stays silent."""
@@ -247,6 +317,15 @@ def _origin_label(home, config, scope, event):
 
 
 def _enterprise_hook(home, config, event, original, host='codex'):
+    notices=[]
+    result=_enterprise_hook_impl(home,config,event,original,notices,host=host)
+    line=_apply_notices(home,notices)
+    if line:
+        result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),line) if x))
+    return result
+
+
+def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex'):
     from agentclient.enterprise_contract import VERSION
     from agentclient.transport import enterprise_client, capture_connection
     from agentclient.enterprise_capture import normalize_capture, turn_of
@@ -258,21 +337,27 @@ def _enterprise_hook(home, config, event, original, host='codex'):
             captured = normalize_capture(original, event['project'], capture_connection(config,event['project']),
                                          sharing=event.get('sharing','private'),
                                          originals=event.get('originals','private'),
-                                         origin_label=event.get('origin_label'))
+                                         origin_label=event.get('origin_label'),
+                                         remote=event.get('remote'),
+                                         workspace_key=bool(event.get('workspace_key')))
             outbox = Outbox(home)
             try:
                 outbox.queue_diagnostics(config)
                 outbox.put(captured)
                 # Delivery is best effort. Signed out or unreachable, the event stays
                 # queued for a later hook or `outbox-drain`; it is not a capture gap.
-                try:outbox.drain(enterprise_client(config, timeout=0.5), max_events=4, max_seconds=2)
+                try:
+                    drained=outbox.drain(enterprise_client(config, timeout=0.5), max_events=4, max_seconds=2)
+                    notices.extend(drained.get('notices',[]))
                 except Exception:pass
             finally: outbox.close()
         except Exception:
             _enterprise_gap(home, event, 'structured_capture_backpressure_or_invalid')
     if event['kind']=='SessionEnd':
         # Claude Code allows ~1.5 s here: deliver what is queued, capture nothing new.
-        try:_drain(home,enterprise_client(config,timeout=0.5),max_events=16,max_seconds=1)
+        try:
+            drained=_drain(home,enterprise_client(config,timeout=0.5),max_events=16,max_seconds=1)
+            notices.extend(drained.get('notices',[]))
         except Exception:pass
         return {}
     if event['kind']=='PostCompact':
@@ -289,7 +374,9 @@ def _enterprise_hook(home, config, event, original, host='codex'):
         backend=enterprise_client(config,timeout=0.5)
         if event['kind']=='SessionStart':
             # Catch up on anything queued while signed out or offline.
-            try:_drain(home,backend,max_events=16,max_seconds=2)
+            try:
+                drained=_drain(home,backend,max_events=16,max_seconds=2)
+                notices.extend(drained.get('notices',[]))
             except Exception:pass
         from agentclient.cleaning import clean_private
         query = clean_private(str(original.get('prompt','')))[0][:2000] if event['kind']=='UserPromptSubmit' else ''
@@ -369,6 +456,28 @@ def _notices(home, config, kind, scope):
     return '\n'.join(lines)
 
 
+def _scope_warnings(home, scope):
+    """Format a one-time status line for warnings from the scope file (shown once per root)."""
+    if not scope or not scope.get('warnings') or not scope.get('root'):
+        return None
+    from agentclient.scope_file import record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED
+    file_path=scope.get('scope_file') or scope['root']
+    lines=[]
+    for warning in scope['warnings']:
+        if not record_warning_once(home, scope['root'], warning):
+            continue
+        if warning == WARN_SHARING_IGNORED:
+            lines.append('vaelius: `sharing` in '+file_path+' is ignored because the file names a '
+                         '`workspace` -- the workspace access list decides who can read captures; '
+                         'add `sharing = "private"` to opt out entirely.')
+        elif warning == WARN_ORIGINALS_IGNORED:
+            lines.append('vaelius: `originals` in '+file_path+' is ignored and is no longer sent to the '
+                         "service; sharing an original is now an explicit `vaelius-client share --originals` grant.")
+        else:
+            lines.append('vaelius: '+file_path+' carries a scope-file warning ('+warning+').')
+    return '\n'.join(lines) if lines else None
+
+
 def _guardrail_line(config, event):
     """SessionStart line (person only) when a captured project runs without guardrails."""
     from agentclient.claude_guardrails import NOTICE_KEY, status_line
@@ -422,13 +531,30 @@ def handle(home, event, *, host='codex', via='settings'):
         from agentclient.scope_file import record_enrollment
         try:record_enrollment(home,scope)
         except OSError:pass
+    # Remote discovery is only meaningful for a scoped folder with a root;
+    # explicit enrollments without a scope-file root (`scope['root']`) are rare
+    # but legal (older sessions mapping).
+    remote=None
+    scope_root=scope.get('root')
+    if scope_root:
+        try:
+            from agentclient.scope_file import discover_remote
+            remote=discover_remote(scope_root)
+        except Exception:
+            remote=None
     metadata={'project':project,'kind':kind,'capture':scope['capture'],'sharing':scope['sharing'],
               'originals':scope.get('originals','private'),
+              'workspace_key':bool(scope.get('workspace_key')),
               'session':str(event.get('session_id','')),'turn':str(turn_of(event))}
+    if remote:metadata['remote']=remote
     # What this event touched, made sticky for the rest of the session (agentclient.origin).
     label,origin_notice=_origin_label(Path(home),config,scope,event)
     if label:metadata['origin_label']=label
     result=_enterprise_hook(Path(home),config,metadata,event,host=host)
+    # One-time scope-file warnings for workspace-model migrations.
+    warning_notice=_scope_warnings(home,scope)
+    if warning_notice:
+        result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),warning_notice) if x))
     if origin_notice:
         result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),origin_notice) if x))
     line=None

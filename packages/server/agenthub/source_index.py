@@ -124,12 +124,11 @@ class SourceIndex:
         self.store.refresh_documents(db=db,document_id=doc)
         try:occurred=stamp(row['occurred_at'])
         except (ValueError,TypeError,OverflowError):occurred=None
-        # raw_shared is the stored level of this source (0 private, 1 team,
-        # 2 organization): a stable prefilter, never the decision.
-        from agenthub.project_sharing import RANK
+        # raw_shared is 1 when this source is not private (it may reach its
+        # workspace audience): a stable prefilter, never the decision.
         db.execute('''UPDATE enterprise_documents SET representation='raw',raw_owner=?,source_time=?,
             source_captured=?,raw_shared=?,source_project=? WHERE id=?''',(row['owner'],occurred,row['created'],
-            RANK.get(row.get('sharing'),0),row['external_project'],doc))
+            0 if int(row.get('private') or 0) else 1,row['external_project'],doc))
         # raw_granted marks a passage an active owner grant covers (its source, its
         # session or its connection): again a prefilter, never the decision.
         from agenthub.owner_controls import refresh_grant_flags

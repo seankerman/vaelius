@@ -290,24 +290,30 @@ class GovernanceMixin:
             with self.open() as state:
                 row = state.db.execute('''SELECT project,visibility,reader_ids,active FROM backend_connections
                     WHERE id=? AND tenant=? AND owner=?''', (value['connection'], ctx['tenant'], ctx['actor'])).fetchone()
-                ceilings = self._ceilings(state.db, ctx['tenant'], row['project'], ctx['actor']) if row else None
+                ceilings = state.db.execute('''SELECT who.contributions_default,p.item_default,p.org_role,o.widest_entry
+                    FROM enterprise_projects p JOIN enterprise_organizations o ON o.id=p.tenant
+                    JOIN enterprise_principals who ON who.tenant=p.tenant AND who.id=?
+                    WHERE p.tenant=? AND p.id=?''', (ctx['actor'], ctx['tenant'], row['project'])).fetchone() if row else None
             if row is None or ('project' in value and row['project'] != value['project']):
                 from agenthub.enterprise import Denied
                 raise Denied()
             readers = len(json.loads(row['reader_ids'] or '[]'))
-            describe = {'private': 'only you',
-                        'team': 'members of project ' + row['project'],
-                        'organization': 'everyone in your organization'}[row['visibility']]
+            describe = ('only you' if row['visibility'] == 'private'
+                        else 'everyone who can read workspace ' + row['project'])
             if readers:
                 describe += ', limited to ' + str(readers) + ' listed reader' + ('s' if readers != 1 else '') + ' and you'
             result['readers'] = {'visibility': row['visibility'], 'description': describe,
                                  'connection_active': bool(row['active'])}
             if ceilings:
-                # The person's own setting and how widely passages can be shared at
-                # most; a scope-file request can only lower it further.
-                from agenthub.project_sharing import lowest
-                result['readers'].update(personal_sharing=ceilings['person'],
-                    project_ceiling=lowest(ceilings['project'], ceilings['tenant']),
-                    passage_sharing_limit=lowest(ceilings['person'], ceilings['project'], ceilings['tenant'],
-                                                 row['visibility']))
+                # The person's default for new items and the workspace audience new
+                # items inherit; `personal_sharing` and `passage_sharing_limit` repeat
+                # them on the legacy ladder for older clients.
+                private = 'private' in (ceilings['contributions_default'], ceilings['item_default']) \
+                    or row['visibility'] == 'private'
+                organization = ceilings['org_role'] > 0 and ceilings['widest_entry'] == 'organization'
+                result['readers'].update(contributions_default=ceilings['contributions_default'],
+                    item_default=ceilings['item_default'],
+                    workspace_audience='organization' if organization else 'workspace',
+                    personal_sharing='private' if ceilings['contributions_default'] == 'private' else 'organization',
+                    passage_sharing_limit='private' if private else ('organization' if organization else 'team'))
         return result

@@ -115,15 +115,15 @@ SELECTION={
     'whole_project':{'type':'boolean','description':'Select everything of yours in this project.'},
     'all_projects':{'type':'boolean','default':False,
         'description':'Select across every project instead of only this one.'}}
-LEVEL={'type':'string','enum':['private','team','organization']}
+LEVEL={'type':'string','enum':['private','shared']}
 GRANTEE={'with_principal':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$','description':'One person (principal ID).'},
-    'with_project':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$',
-        'description':'Every active member of this project, for example "share with my team".'}}
+    'with_group':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,128}$',
+        'description':'Every member of this group, for example "share with the platform team".'}}
 OWNER_TOOLS=('list_my_memories','forget_memories','change_memory_sharing','share_memories','unshare_memories',
     'list_memory_shares')
 TOOLS.extend([
     tool('list_my_memories','List what Vaelius holds that you created: your captured sources or sessions, with '
-        'each source\'s current sharing level and which setting holds it there. Only your own content.',
+        'whether each source is private or shared with its workspace, and why. Only your own content.',
         dict(SELECTION,sharing=LEVEL,view={'type':'string','enum':['sources','sessions'],'default':'sources'},
              state={'type':'string','enum':['active','all'],'default':'active'},
              limit={'type':'integer','minimum':1,'maximum':50},cursor={'type':'string','maxLength':200}),[]),
@@ -132,14 +132,13 @@ TOOLS.extend([
         'everything derived from them and their originals. Content under a legal hold is hidden and preserved '
         'instead, and reported as held. '+TWO_STEP,
         dict(SELECTION,confirm=CONFIRM),['confirm'],write=True,destructive=True),
-    tool('change_memory_sharing','Change who can read your own captured content: private (only you), team '
-        '(members of its project) or organization. Lowering applies on the next search. Raising is still capped '
-        'by your own setting, the project and tenant ceilings and the content\'s origin; the preview says '
+    tool('change_memory_sharing','Change who can read your own captured content: private (only you) or shared '
+        '(everyone who can read its workspace). Making private applies on the next search. Sharing needs the '
+        'writer role in the workspace, and content restricted by its origin stays private; the preview says '
         'which. '+TWO_STEP,
-        dict(SELECTION,sharing=LEVEL,originals=dict(LEVEL,description='Level for the unredacted originals; '
-             'never above sharing.'),confirm=CONFIRM),['sharing','confirm'],write=True,destructive=True),
+        dict(SELECTION,sharing=LEVEL,confirm=CONFIRM),['sharing','confirm'],write=True,destructive=True),
     tool('share_memories','Share a session or chosen sources of yours with one person or with the members of '
-        'one project, like a "specific people" link. Passages only unless include_originals. Content restricted '
+        'one group, like a "specific people" link. Passages only unless include_originals. Content restricted '
         'by its origin is never shared beyond it. '+TWO_STEP,
         dict({k:SELECTION[k] for k in ('session','source_ids')},**GRANTEE,
              include_originals={'type':'boolean','default':False},confirm=CONFIRM),['confirm'],write=True),
@@ -327,15 +326,13 @@ class MemoryTools:
             if name == 'forget_memories':
                 return backend.request('/enterprise/v3/my-data/forget', dict(selection, confirm=confirm))
             request = dict(selection, sharing=args['sharing'], confirm=confirm)
-            if 'originals' in args:
-                request['originals'] = args['originals']
             return backend.request('/enterprise/v3/my-data/sharing', request)
-        if ('session' in args) == ('source_ids' in args) or ('with_principal' in args) == ('with_project' in args):
+        if ('session' in args) == ('source_ids' in args) or ('with_principal' in args) == ('with_group' in args):
             raise ValueError('one_scope_and_one_grantee_required')
         request = {'scope': 'session' if 'session' in args else 'source',
                    'ids': [args['session']] if 'session' in args else args['source_ids'],
-                   'grantee_kind': 'principal' if 'with_principal' in args else 'project',
-                   'grantee': args.get('with_principal') or args.get('with_project')}
+                   'grantee_kind': 'principal' if 'with_principal' in args else 'group',
+                   'grantee': args.get('with_principal') or args.get('with_group')}
         if self.project:
             request['project'] = self.project
         if name == 'share_memories':

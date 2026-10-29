@@ -15,9 +15,9 @@ from agenthub.enterprise import Denied, Conflict, _digest
 from agenthub.postgres import TenantRegistry
 from agenthub.secret_files import MountedSecret
 
-ACTIONS={'ingest','read','source_read','feedback','curate','correct','withdraw','share','moderate','policy','audit','settings'}
+ACTIONS={'ingest','read','source_read','feedback','curate','correct','withdraw','share','manage','moderate','policy','audit','settings'}
 # Retained-original reads are least privilege: operators list source_read explicitly.
-# Project moderation is a role an operator grants explicitly, never a default scope.
+# Moderation follows the workspace admin role (with `manage`), so `moderate` is never a default scope.
 DEFAULT_ACTIONS=ACTIONS-{'source_read','moderate'}
 
 

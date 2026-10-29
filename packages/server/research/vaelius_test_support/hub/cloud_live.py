@@ -385,9 +385,9 @@ def verify(profile,report_path,*,live=False,config_path=None,ledger_path=None,ma
     store.create_project('acme',run)
     for principal in ('alice','bob'):store.set_membership('acme',run,principal,True)
     store.enroll_connection(alice,run,'cloud-live',run,['agent'],visibility='team',reader_ids=['alice','bob'])
-    # The capture is shared with the project team: the author opts in and the scope
-    # file requests team, so derived memory reaches bob (agenthub.project_sharing).
-    store.sharing_setting(alice,{'max_sharing':'team'})
+    # The capture is shared with the workspace: the author's default is shared and the
+    # scope file requests team, so derived memory reaches bob (agenthub.workspace_access).
+    store.sharing_setting(alice,{'contributions_default':'shared'})
     generation=run;config={**base,'paused':False,'accounting_home':str(accounting),'publication':{'enabled':False},
         'knowledge_backend':{'mode':'enterprise_local'},'observer':{**base.get('observer',{}),'enabled':True,'model':MODEL,'start_at':0,'min_interval_seconds':0},
         'episode_curation':{'enabled':True,'policy':'durable_memory','generation_id':generation,'settle_seconds':0},

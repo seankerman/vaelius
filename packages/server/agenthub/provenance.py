@@ -101,17 +101,16 @@ def derived_provenance(db, groups):
 def document_metadata(db, document_ids):
     """{id: (block, flagged, origin)}; temporal assertion IDs resolve to their document.
 
-    `origin` is the machine-readable origin label: the source project (None when
-    the sources span several), the CURRENT sharing level, the lowest over every
-    source, and `projects`, every other project whose content it carries (present
-    only when there is one). A passage's level is its stored level under every current ceiling
-    (agenthub.project_sharing); a curated or derived document registered after
-    migration 047 (level_capped) has the same level, an earlier one the capture
-    connection's visibility. Later layers can make anything derived from a
-    delivered item inherit this restriction.
+    `origin` is the machine-readable origin label: the source workspace (None when
+    the sources span several), the CURRENT audience on the private < team <
+    organization ladder that clients read (`private`: any source is private or
+    origin-private; `organization`: every source's audience is the whole
+    organization; otherwise `team`, a workspace audience), the lowest over every
+    source, and `projects`, every other workspace whose content it carries
+    (present only when there is one). Later layers can make anything derived
+    from a delivered item inherit this restriction.
     """
-    from agenthub.search_permissions import LEVEL
-    from agenthub.project_sharing import SHARING
+    from agenthub.workspace_access import SHARING
     ids = sorted({i for i in document_ids if isinstance(i, str)})
     if not ids or not _postgres(db):
         return {}
@@ -122,7 +121,7 @@ def document_metadata(db, document_ids):
             'SELECT assertion_id,document_id FROM knowledge_temporal_assertions WHERE assertion_id=ANY(?::text[])',
             (temporal,)).fetchall()}
     documents = sorted({assertions.get(i, i) for i in ids})
-    rows = db.execute(_METADATA_SQL.replace('<LEVEL>', LEVEL), (documents,)).fetchall()
+    rows = db.execute(_METADATA_SQL, (documents,)).fetchall()
     found = {}
     for row in rows:
         original = row['representation'] in ORIGINAL and row['sources'] == 1
@@ -160,10 +159,10 @@ _METADATA_SQL = '''WITH requested AS MATERIALIZED (
             CASE WHEN r.source_id IS NULL THEN 'agent'
                  WHEN jsonb_array_length(c.source_types::jsonb)=1 THEN c.source_types::jsonb->>0
                  ELSE r.payload::jsonb->>'source_type' END AS source_type,
-            CASE WHEN ed.representation!='raw' AND ed.level_capped=0
-                     THEN coalesce(array_position(ARRAY['team','organization'],s.visibility),0)
-                 WHEN project.id IS NULL OR author.id IS NULL THEN 0
-                 ELSE <LEVEL> END AS level
+            CASE WHEN project.id IS NULL OR author.id IS NULL OR s.private=1
+                     OR coalesce(s.origin_ceiling,'')='private' THEN 0
+                 WHEN search_audience_is_organization(policy.definition,s.tenant) THEN 2
+                 ELSE 1 END AS level
         FROM requested q JOIN enterprise_sources s ON s.id=q.source_id
         JOIN enterprise_documents ed ON ed.id=q.document_id
         LEFT JOIN memories m ON m.id=s.id

@@ -5,26 +5,30 @@ the represented person for delegated capture) in the caller's tenant, and needs
 no operator:
 
 * **find** (`mine`, `read`): the caller's sources or capture sessions, filtered
-  by project, session, capture date and current sharing level, with each
-  source's current effective level and the terms of the minimum that bind it;
+  by workspace (`project`), session, capture date and whether they are private,
+  with each source's current audience and what keeps it private;
 * **delete** (`forget`, `withdraw`): one or more sources, a capture session, or
   everything in a project or date range, through the canonical purge
   (`EnterpriseStore._expire_source_tx`): the same stores, the same deletion
   journal. A legal hold still wins: the source is hidden, preserved, and
   reported as held;
-* **change sharing** (`change_sharing`): set the stored level of the caller's
-  sources. Lowering needs `withdraw` or `share` and applies on the next request.
-  Raising needs `share`, is refused while the operator restricts owner sharing,
-  is never stored above the source's origin ceiling, and is capped again at
-  query time by every current ceiling; the response says which term capped it.
-  Every change is recorded in `enterprise_sharing_changes` and the audit log;
-* **grants** (`grant`, `revoke`, `grants`): name a principal or a project that
-  may read the passages (and, optionally, the originals) of a source, a capture
-  session or a connection. Granting needs `share` (or the operator `policy`
-  action); revoking needs `share`, `withdraw` or `policy`;
-* **moderation** (`moderate`, `moderate` action): a project member withdraws
-  (hides) other people's sources in that project. It never deletes, never reads
-  originals, and is audited; it is the hook for per-project roles.
+* **change sharing** (`change_sharing`): make the caller's sources `private`
+  (owner only) or `shared` (the workspace audience). Making private needs
+  `withdraw` or `share` and applies on the next request, whatever the caller's
+  current role (ownership survives role changes). Clearing private is a widening:
+  it needs `share`, the `writer` role in the source's workspace, a credential
+  that is not delegated and an operator setting that allows owner sharing, and
+  it never applies to an origin-private source. Every change is recorded in
+  `enterprise_sharing_changes` and the audit log;
+* **grants** (`grant`, `revoke`, `grants`): explicit shares naming a principal or
+  a group that may read the passages (and, optionally, the originals) of a
+  source, a capture session or a connection. Granting needs `share` and the
+  `writer` role in each covered workspace (or the operator `policy` action);
+  revoking needs `share`, `withdraw` or `policy`;
+* **moderation** (`moderate`): a workspace admin withdraws (hides) other people's
+  sources in that workspace. It needs the `admin` role there and a credential
+  holding `manage` (or the older `moderate` action). It never deletes, never
+  reads originals, and is audited.
 
 Bulk and widening operations are two-step: without `confirm` they return a
 preview with a `confirm_token` bound to the exact selection; the same request
@@ -40,14 +44,15 @@ import json
 import re
 import time
 
-from agenthub.project_sharing import RANK, SHARING, lowest, origin_ceiling, origin_projects
+from agenthub.workspace_access import ADMIN, WRITER, origin_ceiling, origin_projects
 
 MAX_SELECTION = 200
 MAX_LIST = 200
 SESSION_HANDLE = re.compile(r'[0-9a-f]{64}')
 NAME = re.compile(r'[A-Za-z0-9_-]{1,120}')
 SELECTORS = ('source_ids', 'session', 'project', 'since', 'until')
-TERMS = ('source', 'person', 'project', 'tenant', 'connection', 'origin')
+PRIVACY = ('private', 'shared')
+LEGACY_SHARED = ('team', 'organization')
 
 
 def _digest(value):
@@ -76,10 +81,13 @@ def _iso(epoch):
     return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def _level(value, name, *, optional=False):
+def _privacy(value, name, *, optional=False):
+    """'private' or 'shared'; the legacy levels team/organization mean shared."""
     if value is None and optional:
         return None
-    if value not in SHARING:
+    if value in LEGACY_SHARED:
+        return 'shared'
+    if value not in PRIVACY:
         raise ValueError('invalid_' + name)
     return value
 
@@ -198,27 +206,21 @@ class OwnerControlsMixin:
             ORDER BY s.created,s.id LIMIT ?''', (*args, limit + 1)).fetchall()
         return [dict(row) for row in rows[:limit]], len(rows) > limit, resolved
 
-    # Levels -----------------------------------------------------------------------
+    # Audience -----------------------------------------------------------------------
 
-    def _terms(self, db, source, cache):
-        """Current value of each term of the minimum for one source, and the effective level."""
-        key = (source['tenant'], source['external_project'], source['owner'])
+    def _why_private(self, db, row, cache):
+        """What keeps one source from its workspace audience (empty when shared)."""
+        key = (row['tenant'], row['external_project'])
         if key not in cache:
-            cache[key] = self._ceilings(db, *key) or {'person': 'private', 'project': 'private',
-                                                      'tenant': 'private', 'inactive': True}
-        ceilings = cache[key]
-        terms = {'source': source.get('sharing') or 'private', 'person': ceilings['person'],
-                 'project': 'private' if ceilings.get('inactive') else ceilings['project'],
-                 'tenant': ceilings['tenant'], 'connection': source['visibility'],
-                 'origin': self._origin_level(db, source)}
-        return terms, lowest(*terms.values())
-
-    @staticmethod
-    def _binding(terms, effective):
-        """The terms that hold the effective level where it is (none at organization)."""
-        if effective == 'organization':
-            return []
-        return [name for name in TERMS if terms[name] == effective]
+            cache[key] = db.execute('SELECT active FROM enterprise_projects WHERE tenant=? AND id=?', key).fetchone()
+        reasons = []
+        if int(row.get('private') or 0):
+            reasons.append('private')
+        if origin_ceiling(row) == 'private':
+            reasons.append('origin')
+        if not cache[key] or not cache[key]['active']:
+            reasons.append('workspace_archived')
+        return reasons
 
     # Find ---------------------------------------------------------------------------
 
@@ -229,7 +231,7 @@ class OwnerControlsMixin:
         value = dict(value or {})
         if set(value) - {*SELECTORS, 'sharing', 'state', 'view', 'limit', 'cursor'}:
             raise ValueError('invalid_request')
-        level = _level(value.get('sharing'), 'sharing', optional=True)
+        level = _privacy(value.get('sharing'), 'sharing', optional=True)
         state = value.get('state', 'active')
         view = value.get('view', 'sources')
         limit = value.get('limit', 50)
@@ -253,8 +255,8 @@ class OwnerControlsMixin:
                 where += ' AND (s.created,s.id)<(?,?)'
                 args += [float(match[1]), match[2]]
             items, cache, scanned, last, more = [], {}, 0, None, False
-            # Filtering by the current level is applied after the minimum is computed;
-            # each call scans a bounded number of rows and returns a cursor.
+            # Filtering by privacy is applied after the reasons are computed; each
+            # call scans a bounded number of rows and returns a cursor.
             batch = db.execute(f'''SELECT s.*,m.session,m.kind,left(coalesce(m.body,''),160) AS preview,
                     {PURGED.format('s')} AS purged,{DEFERRED.format('s')} AS deferred,
                     (SELECT count(*) FROM raw_source_grants g WHERE g.tenant=s.tenant AND g.granted_by=s.owner
@@ -270,10 +272,10 @@ class OwnerControlsMixin:
                     more = True
                     break
                 last = row
-                terms, effective = self._terms(db, row, cache)
-                if level and effective != level:
+                reasons = self._why_private(db, row, cache)
+                if level and ('private' if reasons else 'shared') != level:
                     continue
-                items.append(self._mine_item(row, terms, effective))
+                items.append(self._mine_item(row, reasons))
             if level and scanned == len(batch) and len(batch) == 2000:
                 more = True
         result = {'principal': ctx['actor'], 'view': 'sources', 'items': items, 'more': more,
@@ -294,15 +296,15 @@ class OwnerControlsMixin:
             return 'hidden_by_moderator'
         return 'withdrawn'
 
-    def _mine_item(self, row, terms, effective):
+    def _mine_item(self, row, reasons):
         state = self._state(row)
         item = {'source_id': row['id'], 'project': row['external_project'], 'session': row.get('session'),
                 'captured_at': _iso(row['created']), 'occurred_at': row['occurred_at'], 'kind': row.get('kind'),
                 'state': state, 'source_version': row['source_version'],
-                'sharing': {'effective': effective if state == 'active' else 'private',
-                            'stored': row['sharing'], 'requested': row['sharing_requested'],
-                            'originals': row['originals_sharing'],
-                            'binding': self._binding(terms, effective), 'terms': terms},
+                'sharing': {'private': bool(int(row.get('private') or 0)),
+                            'effective': 'workspace' if state == 'active' and not reasons else 'private',
+                            'reasons': reasons, 'requested': row['sharing_requested'],
+                            'carried': list(origin_projects(row))},
                 'grants': int(row.get('grants') or 0)}
         if state == 'active':
             item['preview'] = (row.get('preview') or '')[:120]
@@ -315,9 +317,8 @@ class OwnerControlsMixin:
         rows = db.execute(f'''SELECT m.session,s.external_project project,count(*) sources,
                 min(s.created) first_captured,max(s.created) last_captured,
                 count(*) FILTER (WHERE s.active=1) active,
-                count(*) FILTER (WHERE s.sharing='private') stored_private,
-                count(*) FILTER (WHERE s.sharing='team') stored_team,
-                count(*) FILTER (WHERE s.sharing='organization') stored_organization
+                count(*) FILTER (WHERE s.private=1) stored_private,
+                count(*) FILTER (WHERE s.private=0) stored_shared
             FROM enterprise_sources s JOIN memories m ON m.id=s.id
             WHERE {where} AND m.session IS NOT NULL
             GROUP BY m.session,s.external_project ORDER BY max(s.created) DESC LIMIT ?''',
@@ -325,8 +326,7 @@ class OwnerControlsMixin:
         sessions = [{'session': r['session'], 'project': r['project'], 'sources': r['sources'],
                      'active_sources': r['active'], 'first_captured': _iso(r['first_captured']),
                      'last_captured': _iso(r['last_captured']),
-                     'stored_levels': {'private': r['stored_private'], 'team': r['stored_team'],
-                                       'organization': r['stored_organization']}} for r in rows[:limit]]
+                     'stored': {'private': r['stored_private'], 'shared': r['stored_shared']}} for r in rows[:limit]]
         result = {'principal': ctx['actor'], 'view': 'sessions', 'sessions': sessions, 'more': len(rows) > limit}
         if resolved is not None:
             result['sessions_matched'] = len(resolved)
@@ -393,19 +393,20 @@ class OwnerControlsMixin:
     # Change sharing -------------------------------------------------------------------
 
     def change_sharing(self, ctx, value):
-        """Set the stored sharing level of the caller's selected sources.
+        """Make the caller's selected sources private, or shared with their workspace.
 
-        Lowering applies on the next request. Raising needs `share`, is refused
-        while the operator restricts owner sharing, is never stored above the
-        origin ceiling and is capped at query time by every current ceiling.
+        Making private applies on the next request. Clearing private needs `share`,
+        the writer role in each source's workspace, a credential that is not
+        delegated and owner sharing allowed by the operator; origin-private sources
+        stay private.
         """
         from agenthub.enterprise import Denied
         if not {'withdraw', 'share'} & set(ctx['actions']):
             raise Denied()
         value = dict(value or {})
         confirm = value.pop('confirm', None)
-        requested = _level(value.pop('sharing', None), 'sharing')
-        originals = _level(value.pop('originals', None), 'originals', optional=True)
+        requested = _privacy(value.pop('sharing', None), 'sharing')
+        value.pop('originals', None)  # legacy: originals are shared only by explicit grant
         if set(value) - set(SELECTORS) or (confirm is not None and confirm is not False
                                             and not isinstance(confirm, str)):
             raise ValueError('invalid_request')
@@ -416,27 +417,28 @@ class OwnerControlsMixin:
             rows, more, resolved = self._select(db, ctx, value, include_inactive=False)
             tenant = db.execute('SELECT owner_sharing FROM enterprise_organizations WHERE id=?',
                                 (ctx['tenant'],)).fetchone()
-            plan, cache = [], {}
-            for row in rows:
-                plan.append(self._sharing_plan(db, row, requested, originals, cache))
+            roles = self._roles(db, ctx)
+            plan = [self._sharing_plan(row, requested, roles) for row in rows]
         raising = [p for p in plan if p['raises']]
         refusal = None
         if raising:
             if 'share' not in ctx['actions']:
-                refusal = 'raising_needs_the_share_action'
+                refusal = 'sharing_needs_the_share_action'
             elif ctx.get('acting_for'):
-                refusal = 'delegated_credentials_cannot_raise_sharing'
+                refusal = 'delegated_credentials_cannot_share'
             elif not tenant or tenant['owner_sharing'] != 'allowed':
                 refusal = 'operator_restricts_owner_sharing_to_lowering'
-        parameters = {'sharing': requested, 'originals': originals, **{k: value[k] for k in sorted(value)}}
+            elif any(p['needs_writer'] for p in raising):
+                refusal = 'sharing_needs_the_writer_role'
+        parameters = {'sharing': requested, **{k: value[k] for k in sorted(value)}}
         token = confirm_token(ctx, 'sharing', parameters, rows)
-        summary = self._sharing_summary(plan, requested)
+        summary = self._sharing_summary(plan)
         preview = {'operation': 'change_sharing', 'dry_run': True, 'requested': requested,
-                   'originals_requested': originals, 'sources': len(rows), 'more': more, **summary,
+                   'sources': len(rows), 'more': more, **summary,
                    'confirm_token': token if rows and not refusal else None,
-                   'note': 'Lowering applies on the next request. Raising applies to these sources only and is '
-                           'still capped at every request by your own setting and the project, tenant, '
-                           'connection and origin ceilings.'}
+                   'note': 'Making sources private applies on the next request. Shared sources are readable by '
+                           'everyone in their workspace\'s audience (and only by people who can also read every '
+                           'workspace they carry). Origin-private sources stay private.'}
         if resolved is not None:
             preview['sessions_matched'] = len(resolved)
         if refusal:
@@ -450,69 +452,56 @@ class OwnerControlsMixin:
         with self.delivery_lock(), self.open() as opened, opened.db:
             db = opened.db
             now = time.time()
+            if raising and any(self._workspace_role(db, ctx, p['workspace'])[0] < WRITER for p in raising):
+                raise Denied()
             for item in plan:
-                current = db.execute('''SELECT tenant,owner,active,source_version,sharing,originals_sharing
+                current = db.execute('''SELECT tenant,owner,active,source_version,private
                     FROM enterprise_sources WHERE id=? FOR UPDATE''', (item['id'],)).fetchone()
                 if (not current or current['tenant'] != ctx['tenant'] or current['owner'] != ctx['actor']
                         or not current['active'] or current['source_version'] != item['version']):
                     continue
-                if (current['sharing'], current['originals_sharing']) == (item['stored'], item['originals']):
+                if current['private'] == item['private']:
                     continue
-                db.execute('''UPDATE enterprise_sources SET sharing=?,originals_sharing=?,policy_version=policy_version+1
-                    WHERE id=?''', (item['stored'], item['originals'], item['id']))
-                # Passages of this source: the stored-level prefilter. Derived documents
-                # that depend on it are capped like passages from now on (migration 047).
+                db.execute('''UPDATE enterprise_sources SET private=?,policy_version=policy_version+1
+                    WHERE id=?''', (item['private'], item['id']))
+                # Passages of this source: the not-private prefilter.
                 db.execute('''UPDATE enterprise_documents SET raw_shared=? WHERE representation='raw'
                     AND id IN (SELECT document_id FROM enterprise_dependencies WHERE source_id=?)''',
-                    (RANK[item['stored']], item['id']))
-                db.execute('''UPDATE enterprise_documents SET level_capped=1,policy_version=policy_version+1
-                    WHERE representation!='raw' AND level_capped=0
-                    AND id IN (SELECT document_id FROM enterprise_dependencies WHERE source_id=?)''', (item['id'],))
-                for tier, before, after, asked in (('passages', current['sharing'], item['stored'], requested),
-                                                   ('originals', current['originals_sharing'], item['originals'],
-                                                    originals or item['originals'])):
-                    if before == after:
-                        continue
-                    capped = ','.join(item['capped_by']) if tier == 'passages' else ''
-                    db.execute('''INSERT INTO enterprise_sharing_changes
-                        (tenant,actor,source_id,tier,from_level,to_level,requested,capped_by,request_id,created)
-                        VALUES(?,?,?,?,?,?,?,?,?,?)''', (ctx['tenant'], ctx['actor'], item['id'], tier, before, after,
-                                                         asked, capped, ctx.get('request_id'), now))
-                    self._audit(db, ctx, 'source_sharing' if tier == 'passages' else 'source_originals_sharing',
-                                before + '>' + after, item['id'])
+                    (1 - item['private'], item['id']))
+                before = 'private' if current['private'] else 'shared'
+                after = 'private' if item['private'] else 'shared'
+                db.execute('''INSERT INTO enterprise_sharing_changes
+                    (tenant,actor,source_id,tier,from_level,to_level,requested,capped_by,request_id,created)
+                    VALUES(?,?,?,'passages',?,?,?,?,?,?)''', (ctx['tenant'], ctx['actor'], item['id'], before, after,
+                                                         requested, ','.join(item['capped_by']),
+                                                         ctx.get('request_id'), now))
+                self._audit(db, ctx, 'source_sharing', before + '>' + after, item['id'])
                 changed += 1
         return {'operation': 'change_sharing', 'dry_run': False, 'requested': requested,
-                'originals_requested': originals, 'changed': changed, 'more': more, **summary}
-
-    def _sharing_plan(self, db, row, requested, originals, cache):
-        """What a change would store for one source and what the request would then reach."""
-        stored = lowest(requested, origin_ceiling(row))
-        originals_stored = lowest(originals or row['originals_sharing'], stored)
-        terms, _ = self._terms(db, dict(row, sharing=stored), cache)
-        effective = lowest(*terms.values())
-        capped_by = [name for name in TERMS if name != 'source' and RANK[terms[name]] < RANK[requested]]
-        if stored != requested and 'origin' not in capped_by:
-            capped_by.append('origin')
-        return {'id': row['id'], 'version': row['source_version'], 'stored': stored, 'originals': originals_stored,
-                'effective': effective, 'capped_by': capped_by,
-                'raises': RANK[stored] > RANK[row['sharing']] or RANK[originals_stored] > RANK[row['originals_sharing']],
-                'lowers': RANK[stored] < RANK[row['sharing']] or RANK[originals_stored] < RANK[row['originals_sharing']]}
+                'changed': changed, 'more': more, **summary}
 
     @staticmethod
-    def _sharing_summary(plan, requested):
-        effective = {level: sum(1 for p in plan if p['effective'] == level) for level in SHARING}
-        capped = {}
-        for item in plan:
-            for name in item['capped_by']:
-                capped[name] = capped.get(name, 0) + 1
+    def _sharing_plan(row, requested, roles):
+        """What a change would store for one source."""
+        capped_by = []
+        private = 1 if requested == 'private' else 0
+        if not private and origin_ceiling(row) == 'private':
+            private = 1
+            capped_by.append('origin')
+        return {'id': row['id'], 'version': row['source_version'], 'private': private,
+                'workspace': row['external_project'], 'capped_by': capped_by,
+                'needs_writer': roles.get(row['external_project'], (0, 0))[0] < WRITER,
+                'raises': private < row['private'], 'lowers': private > row['private']}
+
+    @staticmethod
+    def _sharing_summary(plan):
+        capped = sum(1 for p in plan if p['capped_by'])
         summary = {'raises': sum(1 for p in plan if p['raises']), 'lowers': sum(1 for p in plan if p['lowers']),
                    'unchanged': sum(1 for p in plan if not p['raises'] and not p['lowers']),
-                   'effective_after': effective, 'capped_by': capped,
-                   'stored_below_request_by_origin': sum(1 for p in plan if p['stored'] != requested)}
+                   'private_after': sum(1 for p in plan if p['private']),
+                   'shared_after': sum(1 for p in plan if not p['private'])}
         if capped:
-            summary['capped'] = ('Some sources will be readable less widely than ' + requested + ': '
-                                 + ', '.join(f'{name} ({count})' for name, count in sorted(capped.items()))
-                                 + '. A source tainted by its origin can never be raised above that origin.')
+            summary['capped'] = (str(capped) + ' source(s) came from origin-private content and stay private.')
         return summary
 
     # Grants ---------------------------------------------------------------------------
@@ -525,8 +514,14 @@ class OwnerControlsMixin:
                 or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in ids):
             raise ValueError('invalid_grant_scope')
         grantee_kind, grantee = value.get('grantee_kind'), value.get('grantee')
-        if grantee_kind not in ('principal', 'project') or not isinstance(grantee, str) or not NAME.fullmatch(grantee):
+        if grantee_kind == 'project':
+            raise ValueError('project_grantee_retired_use_group')
+        if grantee_kind not in ('principal', 'group') or not isinstance(grantee, str) \
+                or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', grantee):
             raise ValueError('invalid_grantee')
+        if grantee_kind == 'group':
+            group = self._resolve_group(db, ctx['tenant'], grantee)
+            grantee = group['id'] if group else grantee
         ids = sorted(set(ids))
         if scope == 'session':
             # 'current', a session handle, or a host conversation ID (one per connection).
@@ -539,8 +534,8 @@ class OwnerControlsMixin:
         return scope, ids, grantee_kind, grantee
 
     def grant(self, ctx, value):
-        """Grant a named principal or project the passages (and optionally originals)
-        of the caller's source(s), capture session or connection. Preview first."""
+        """Share the passages (and optionally originals) of the caller's source(s),
+        capture session or connection with a named principal or group. Preview first."""
         from agenthub.enterprise import Denied
         from agenthub.raw_access import _owned_scope, scope_sources, upsert_grant
         if not {'share', 'policy'} & set(ctx['actions']):
@@ -573,13 +568,24 @@ class OwnerControlsMixin:
                 if grantee == ctx['actor']:
                     raise ValueError('cannot_grant_to_yourself')
             else:
-                known = db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=? AND id=? AND active=1',
+                known = db.execute('SELECT 1 FROM groups WHERE tenant=? AND id=? AND active=1',
                                    (ctx['tenant'], grantee)).fetchone()
             if not known:
                 raise ValueError('unknown_grantee')
             covered = []
             for ident in ids:
                 covered += scope_sources(db, ctx['tenant'], ctx['actor'], scope, ident, limit=5000)
+            if issued_with == 'share' and not refusal:
+                # Sharing is a widening: the writer role in every covered workspace.
+                roles = self._roles(db, ctx)
+                workspaces = {row[0] for row in db.execute(
+                    'SELECT DISTINCT external_project FROM enterprise_sources WHERE id=ANY(?::text[])',
+                    (covered,))} if covered else {value.get('project')} - {None}
+                if scope == 'connection':
+                    workspaces |= {row[0] for row in db.execute('SELECT project FROM backend_connections WHERE id=ANY(?::text[])',
+                                                                (ids,))}
+                if any(roles.get(name, (0, 0))[0] < WRITER for name in workspaces):
+                    refusal = 'sharing_needs_the_writer_role'
             origins = self._grant_origins(db, ctx, covered, grantee_kind, grantee)
             rows = [{'id': i, 'source_version': 0} for i in ids]
         parameters = {'scope': scope, 'grantee_kind': grantee_kind, 'grantee': grantee, 'originals': include_originals}
@@ -589,12 +595,12 @@ class OwnerControlsMixin:
                    'tiers': ['passages'] + (['originals'] if include_originals else []),
                    'sources_covered': len(covered), **origins,
                    'confirm_token': None if refusal else token,
-                   'note': ('A grant lets the named reader read these passages' +
-                            (' and originals' if include_originals else '') + ' even where your sharing level '
-                            'would not reach them. It never carries a source beyond its origin: tainted sources '
-                            'stay with the people their origin allows. Originals also need the reader\'s '
-                            'source_read action. Session and connection grants cover later captures too. '
-                            'Revoke at any time.')}
+                   'note': ('A share lets the named reader read these passages' +
+                            (' and originals' if include_originals else '') + ' even when they are private or '
+                            'the reader is outside the workspace. It never carries a source beyond its origin: '
+                            'origin-private sources stay with you, and a reader must also be able to read every '
+                            'workspace a source carries. Originals also need the reader\'s source_read action. '
+                            'Session and connection shares cover later captures too. Revoke at any time.')}
         if refusal:
             return dict(preview, status='refused', reason=refusal)
         if confirm != token:
@@ -618,22 +624,23 @@ class OwnerControlsMixin:
             source = db.execute('SELECT * FROM enterprise_sources WHERE id=?', (ident,)).fetchone()
             if not source:
                 continue
-            level = self._origin_level(db, dict(source))
-            if level == 'private':
+            source = dict(source)
+            if origin_ceiling(source) == 'private':
                 private += 1
-            elif level == 'team':
-                if grantee_kind == 'project':
+            elif origin_projects(source) or origin_ceiling(source) == 'team':
+                if grantee_kind == 'group':
                     limited += 1
-                elif not all(self._active_member(db, dict(ctx, actor=grantee), name, project_active=False)
-                             for name in (source['external_project'], *origin_projects(dict(source)))):
+                elif not self._origin_admits(db, {'tenant': ctx['tenant'], 'actor': grantee,
+                                                  'delegated_projects': None}, source, via_share=True):
                     private += 1
         result = {'kept_by_origin': private}
         if limited:
             result['limited_by_origin'] = limited
         if private or limited:
             result['origin'] = ('Some covered sources came from content restricted by its origin (for example '
-                                'recalled from a private or another project\'s memory). The grant does not reach '
-                                'them' + (' for readers outside the source projects' if limited else '') + '.')
+                                'recalled from a private memory or from another workspace). The share does not '
+                                'reach them' + (' for readers who cannot read every workspace they carry'
+                                                if limited else '') + '.')
         return result
 
     def revoke(self, ctx, value):
@@ -681,8 +688,8 @@ class OwnerControlsMixin:
                 ' ORDER BY created DESC LIMIT 500', (ctx['tenant'], ctx['actor'])).fetchall()
             received = db.execute('''SELECT g.granted_by,g.scope_kind,g.grantee_kind,g.grantee,g.passages,g.originals,
                     g.created FROM raw_source_grants g WHERE g.tenant=? AND g.revoked IS NULL
-                AND ((g.grantee_kind='principal' AND g.grantee=?) OR (g.grantee_kind='project' AND g.grantee IN
-                    (SELECT project FROM enterprise_memberships WHERE tenant=? AND principal=? AND active=1)))
+                AND ((g.grantee_kind='principal' AND g.grantee=?) OR (g.grantee_kind='group' AND g.grantee IN
+                    (SELECT group_id FROM group_closure WHERE tenant=? AND principal=?)))
                 ORDER BY g.created DESC LIMIT 500''', (ctx['tenant'], ctx['actor'], ctx['tenant'], ctx['actor'])).fetchall()
         def tiers(row):
             return [name for name in ('passages', 'originals') if row[name]]
@@ -697,15 +704,17 @@ class OwnerControlsMixin:
     # Moderation ----------------------------------------------------------------------
 
     def moderate(self, ctx, value):
-        """A project member with `moderate` withdraws (hides) sources in that project.
+        """A workspace admin withdraws (hides) sources in that workspace.
 
-        Never deletes and never reads originals. The owner sees the source as
-        hidden by a moderator, with who, when and the reason. Preview first.
+        Moderation follows the admin role: it needs the `admin` role in the
+        workspace and a credential holding `manage` (credentials that carry the
+        older `moderate` action keep working). Never deletes and never reads
+        originals. The owner sees the source as hidden by a moderator, with who,
+        when and the reason. Preview first.
         """
         from agenthub.enterprise import Denied
         from agentclient.enterprise_capture import redact
-        self._need(ctx, 'moderate')
-        if ctx.get('acting_for'):
+        if not {'manage', 'moderate'} & set(ctx['actions']) or ctx.get('acting_for'):
             raise Denied()
         value = dict(value or {})
         confirm = value.pop('confirm', None)
@@ -722,7 +731,7 @@ class OwnerControlsMixin:
             db = opened.db
             if hasattr(self, 'current_identity'):
                 self.current_identity(db, ctx)
-            if not self._active_member(db, ctx, project):
+            if self._workspace_role(db, ctx, project)[0] < ADMIN:
                 raise Denied()
             rows = [dict(r) for r in db.execute('''SELECT id,source_version,owner FROM enterprise_sources
                 WHERE tenant=? AND external_project=? AND active=1 AND id=ANY(?::text[]) ORDER BY id''',
@@ -740,7 +749,7 @@ class OwnerControlsMixin:
         hidden = 0
         with self.delivery_lock(), self.open() as opened, opened.db:
             db = opened.db
-            if not self._active_member(db, ctx, project):
+            if self._workspace_role(db, ctx, project)[0] < ADMIN:
                 raise Denied()
             now = time.time()
             for row in rows:

@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 from agenthub.enterprise import Denied, Conflict
+from agenthub.workspace_access import RepoNotLinked
 from agenthub.cloud_identity import IdentityError
 from agenthub.request_timing import capture, span, timed, emit
 from agenthub.write_limits import RateLimited, WriteTooLarge, check as check_write_limit
@@ -95,8 +96,30 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/my-data/grants'):READ,
     ('POST','/enterprise/v3/my-data/grant'):(('share',),('policy',)),
     ('POST','/enterprise/v3/my-data/revoke'):(('share',),('withdraw',),('policy',)),
-    # Project maintainers hide (withdraw) others' content in their project.
-    ('POST','/enterprise/v3/moderation/withdraw'):(('moderate',),),
+    # Workspace admins hide (withdraw) others' content in their workspace; the
+    # business method checks the admin role. Older credentials holding `moderate`
+    # keep working; `manage` is the admin role's credential action.
+    ('POST','/enterprise/v3/moderation/withdraw'):(('manage',),('moderate',)),
+    # Workspaces, access lists, repository links and groups (agenthub.workspace_access).
+    # Reading needs `read` and a role (or the settings administrator flag); every
+    # change needs `manage` and the admin role, or the settings administrator's
+    # audited break-glass override (`settings`).
+    ('POST','/enterprise/v3/workspaces'):READ,
+    ('POST','/enterprise/v3/workspaces/show'):READ,
+    ('POST','/enterprise/v3/workspaces/create'):(('manage',),),
+    ('POST','/enterprise/v3/workspaces/settings'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/workspaces/entries/set'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/workspaces/entries/remove'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/workspaces/repos/link'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/workspaces/repos/unlink'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/groups'):READ,
+    ('POST','/enterprise/v3/groups/show'):READ,
+    ('POST','/enterprise/v3/groups/create'):(('manage',),),
+    ('POST','/enterprise/v3/groups/members/add'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/groups/members/remove'):(('manage',),('settings',)),
+    ('POST','/enterprise/v3/groups/delete'):(('manage',),('settings',)),
+    # Tenant policy: settings administrators only (the business method checks the flag).
+    ('POST','/enterprise/v3/tenant-policy'):(('settings',),),
     ('POST','/enterprise/v3/preferences'):READ,
     ('POST','/enterprise/v3/preferences/curate'):(('curate',),),
     ('POST','/enterprise/v3/preferences/withdraw'):(('withdraw',),),
@@ -138,7 +161,7 @@ SELF_SERVICE={
         'principal; an enrollment held by another principal is a conflict',
     ('POST','/enterprise/v3/capture-notice'):'returns the capture notice shown before capture starts; '
         'connection reader detail is returned only for a connection the caller owns',
-    ('POST','/enterprise/v3/sharing'):'reports the presented principal\'s own sharing setting; changing it '
+    ('POST','/enterprise/v3/sharing'):'reports the presented principal\'s own contributions_default; changing it '
         'needs ingest or policy, acts only on that principal and is refused for delegated credentials',
 }
 # Owner self-service and moderation routes and the business method each calls.
@@ -146,6 +169,15 @@ OWNER_ROUTES={'/enterprise/v3/my-data':'mine','/enterprise/v3/my-data/forget':'f
     '/enterprise/v3/my-data/sharing':'change_sharing','/enterprise/v3/my-data/grants':'grants',
     '/enterprise/v3/my-data/grant':'grant','/enterprise/v3/my-data/revoke':'revoke',
     '/enterprise/v3/moderation/withdraw':'moderate'}
+# Workspace, group and tenant-policy routes and the business method each calls.
+WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/workspaces/show':'show_workspace',
+    '/enterprise/v3/workspaces/create':'create_workspace','/enterprise/v3/workspaces/settings':'workspace_settings',
+    '/enterprise/v3/workspaces/entries/set':'set_entry','/enterprise/v3/workspaces/entries/remove':'remove_entry',
+    '/enterprise/v3/workspaces/repos/link':'link_repo','/enterprise/v3/workspaces/repos/unlink':'unlink_repo',
+    '/enterprise/v3/groups':'list_groups','/enterprise/v3/groups/show':'show_group',
+    '/enterprise/v3/groups/create':'create_group','/enterprise/v3/groups/members/add':'add_group_member',
+    '/enterprise/v3/groups/members/remove':'remove_group_member','/enterprise/v3/groups/delete':'delete_group',
+    '/enterprise/v3/tenant-policy':'tenant_policy'}
 # Routes that carry their own credential in the body (or are a credential
 # exchange) and so run before Bearer authentication.
 CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/enterprise/v3/auth/aws-sts',
@@ -160,7 +192,8 @@ def route_rule(method,path,data=None):
         action=LIFECYCLE_ACTIONS.get(data.get('operation')) if isinstance(data,dict) else None
         if action is None:raise ValueError('invalid_lifecycle_operation')
         return ((action,),)
-    if (method,path)==('POST','/enterprise/v3/sharing') and isinstance(data,dict) and 'max_sharing' in data:
+    if ((method,path)==('POST','/enterprise/v3/sharing') and isinstance(data,dict)
+            and ({'max_sharing','contributions_default','apply_to_existing'}&set(data))):
         return SHARING_CHANGE_ACTIONS
     rule=ROUTE_ACTIONS.get((method,path))
     if rule is not None:return rule
@@ -218,8 +251,10 @@ def pack_search_result(request,result):
 # reporting that 'read' used to imply. 'curate' (reviewed notes, preference
 # curation) is privileged and granted explicitly through `enrollment_actions`.
 # 'withdraw' and 'share' are the owner's self-service over their own content
-# (agenthub.owner_controls); 'moderate' is a project role, never a default.
-DEFAULT_ENROLLMENT_ACTIONS=('ingest','read','feedback','correct','withdraw','share')
+# (agenthub.owner_controls); 'manage' creates and administers workspaces, always
+# bounded by the role in each workspace (agenthub.workspace_access). 'moderate'
+# follows the admin role and is no longer issued by default.
+DEFAULT_ENROLLMENT_ACTIONS=('ingest','read','feedback','correct','withdraw','share','manage')
 # Unauthenticated /ready reuses one bounded evaluation for this many seconds.
 READINESS_TTL_SECONDS=10.0
 
@@ -375,6 +410,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         # These business methods own their policy/write transaction boundary.
         if method=='POST' and path=='/enterprise/v3/sharing':return store.sharing_setting(ctx,data)
         if method=='POST' and path in OWNER_ROUTES:return getattr(store,OWNER_ROUTES[path])(ctx,data)
+        if method=='POST' and path in WORKSPACE_ROUTES:return getattr(store,WORKSPACE_ROUTES[path])(ctx,data)
         if method=='POST' and path=='/enterprise/v3/preferences/curate':
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])
@@ -583,6 +619,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     headers=NO_STORE|{'WWW-Authenticate':challenge})
             return JSONResponse({'error':'not_found'},status_code=404)
         except (Denied,IdentityError,FileNotFoundError):return JSONResponse({'error':'not_found'},status_code=404)
+        except RepoNotLinked:return JSONResponse({'error':'repo_not_linked'},status_code=409)
         except Conflict:return JSONResponse({'error':'conflict'},status_code=409)
         except (ValueError,TypeError,KeyError):return JSONResponse({'error':'invalid_request'},status_code=400)
         except Exception:return JSONResponse({'error':'service_error'},status_code=503)

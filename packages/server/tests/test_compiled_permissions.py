@@ -42,7 +42,7 @@ class CompiledPermissions(CompletePolicyEquivalence):
             self.assertEqual(len(rows), 1)
             self.assertEqual(sum(r[0] for r in rows), 20001)
         with self.store.open() as state, state.db:
-            state.db.execute("UPDATE enterprise_sources SET visibility='private' WHERE id='compact-noise-1'")
+            state.db.execute("UPDATE enterprise_sources SET visibility='private',private=1 WHERE id='compact-noise-1'")
         self.compare_full(expected={'alice': {document}, 'bob': set(), 'admin': set()})
         # Removing the restricted input restores the precise remaining policy.
         with self.store.open() as state, state.db:
@@ -77,7 +77,7 @@ class CompiledPermissions(CompletePolicyEquivalence):
         self.assertTrue(self.store.candidates(self.contexts['bob'], 'gauge', vector=False))
         def revoke():
             with self.store.open() as state, state.db:
-                state.db.execute("UPDATE enterprise_sources SET visibility='private' WHERE id=?", (source,))
+                state.db.execute("UPDATE enterprise_sources SET visibility='private',private=1 WHERE id=?", (source,))
         with ThreadPoolExecutor(max_workers=2) as pool:
             pool.submit(revoke).result(timeout=10)
             result = pool.submit(self.store.candidates, self.contexts['bob'], 'gauge', vector=False).result(timeout=10)

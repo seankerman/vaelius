@@ -77,11 +77,127 @@ def validate_response(path,value):
             if not isinstance(value.get('documents'),list):raise ValueError('invalid_source_list')
         else:raise ValueError('unsupported_cloud_source_response')
     elif route=='sharing':
-        levels={'private','team','organization'}
-        if (not {'principal','max_sharing'}<=set(value) or set(value)-{'principal','max_sharing','tenant_ceiling','changed'}
-                or value['max_sharing'] not in levels or value.get('tenant_ceiling','private') not in levels
+        # The access model replaces per-person `max_sharing` with the two-state
+        # `contributions_default` (shared|private); `max_sharing` and
+        # `tenant_ceiling` are still echoed for old clients, `widest_entry` is
+        # optional, and `existing` carries the preview/confirm flow of
+        # `--apply-to-existing`.
+        legacy_levels={'private','team','organization'}
+        allowed={'principal','max_sharing','contributions_default','changed','tenant_ceiling','widest_entry','existing'}
+        if (not isinstance(value,dict) or 'principal' not in value or set(value)-allowed
                 or type(value.get('changed',False)) is not bool):
             raise ValueError('invalid_sharing_response')
+        if 'max_sharing' in value and value['max_sharing'] not in legacy_levels:
+            raise ValueError('invalid_sharing_response')
+        if 'contributions_default' in value and value['contributions_default'] not in {'shared','private'}:
+            raise ValueError('invalid_sharing_response')
+        if 'max_sharing' not in value and 'contributions_default' not in value:
+            raise ValueError('invalid_sharing_response')
+        if value.get('tenant_ceiling','private') not in legacy_levels:
+            raise ValueError('invalid_sharing_response')
+        if 'widest_entry' in value and value['widest_entry'] not in {'none','people_and_groups','organization'}:
+            raise ValueError('invalid_sharing_response')
+        if 'existing' in value:
+            existing=value['existing']
+            if not isinstance(existing,dict) or set(existing)-{'sources','confirm_token','applied'}:
+                raise ValueError('invalid_sharing_response')
+            if type(existing.get('sources',0)) is not int:
+                raise ValueError('invalid_sharing_response')
+            token=existing.get('confirm_token')
+            if token is not None and (not isinstance(token,str) or len(token)!=32):
+                raise ValueError('invalid_sharing_response')
+            if 'applied' in existing and type(existing['applied']) is not int:
+                raise ValueError('invalid_sharing_response')
+    elif route=='workspaces':
+        if (not isinstance(value,dict) or set(value)!={'workspaces'}
+                or not isinstance(value['workspaces'],list)):
+            raise ValueError('invalid_workspace_listing')
+        for workspace in value['workspaces']:
+            if (not isinstance(workspace,dict) or
+                    not {'id','name','role','item_default','active','organization_entry'}<=set(workspace) or
+                    not isinstance(workspace['id'],str) or not isinstance(workspace['name'],str) or
+                    workspace['item_default'] not in {'shared','private'} or
+                    type(workspace['active']) not in (bool,int) or
+                    (workspace['role'] is not None and workspace['role'] not in {'reader','writer','admin'}) or
+                    (workspace['organization_entry'] is not None and
+                        workspace['organization_entry'] not in {'reader','writer','admin'})):
+                raise ValueError('invalid_workspace_listing')
+    elif route in {'workspaces/create','workspaces/show','workspaces/settings'}:
+        if not isinstance(value,dict) or not isinstance(value.get('workspace'),dict):
+            raise ValueError('invalid_workspace_response')
+        workspace=value['workspace']
+        if (not {'id','name','item_default','active'}<=set(workspace)
+                or workspace['item_default'] not in {'shared','private'}):
+            raise ValueError('invalid_workspace_response')
+        if route=='workspaces/create':
+            if value.get('role')!='admin':raise ValueError('invalid_workspace_response')
+        if route=='workspaces/show':
+            if (not {'role','entries','repos','audience_size'}<=set(value)
+                    or not isinstance(value['entries'],list) or not isinstance(value['repos'],list)
+                    or type(value['audience_size']) is not int):
+                raise ValueError('invalid_workspace_response')
+            for entry in value['entries']:
+                if (not isinstance(entry,dict)
+                        or not {'subject_kind','role'}<=set(entry)
+                        or entry['subject_kind'] not in {'principal','group','organization'}
+                        or entry['role'] not in {'reader','writer','admin'}):
+                    raise ValueError('invalid_workspace_response')
+        if route=='workspaces/settings' and type(value.get('changed',False)) is not bool:
+            raise ValueError('invalid_workspace_response')
+    elif route=='workspaces/entries/set':
+        if (not {'workspace','entry','operation','audience_before','audience_after'}<=set(value)
+                or value['operation'] not in {'added','changed','unchanged'}
+                or type(value['audience_before']) is not int or type(value['audience_after']) is not int):
+            raise ValueError('invalid_workspace_entry_response')
+    elif route=='workspaces/entries/remove':
+        if (not {'workspace','removed','audience_before','audience_after'}<=set(value)
+                or type(value['removed']) not in (bool,int)
+                or type(value['audience_before']) is not int or type(value['audience_after']) is not int):
+            raise ValueError('invalid_workspace_entry_response')
+    elif route in {'workspaces/repos/link','workspaces/repos/unlink'}:
+        expected=(route.endswith('/link'))
+        if (not {'workspace','remote','linked','changed'}<=set(value)
+                or type(value['linked']) not in (bool,int) or bool(value['linked'])!=expected
+                or type(value['changed']) not in (bool,int)):
+            raise ValueError('invalid_repo_link_response')
+    elif route=='groups':
+        if (not isinstance(value,dict) or set(value)!={'groups'} or not isinstance(value['groups'],list)):
+            raise ValueError('invalid_group_listing')
+        for group in value['groups']:
+            if (not isinstance(group,dict) or
+                    not {'id','name','source','sync_state','active','admin','member'}<=set(group) or
+                    group['source'] not in {'github','scim','local'} or
+                    group['sync_state'] not in {'current','stale','failed'} or
+                    type(group['active']) not in (bool,int) or
+                    type(group['admin']) not in (bool,int) or type(group['member']) not in (bool,int)):
+                raise ValueError('invalid_group_listing')
+    elif route in {'groups/create','groups/show'}:
+        if not isinstance(value,dict) or not isinstance(value.get('group'),dict):
+            raise ValueError('invalid_group_response')
+        group=value['group']
+        if (not {'id','name','source'}<=set(group)
+                or group['source'] not in {'github','scim','local'}):
+            raise ValueError('invalid_group_response')
+        if route=='groups/show':
+            if not isinstance(value.get('members'),list):raise ValueError('invalid_group_response')
+            for member in value['members']:
+                if (not isinstance(member,dict) or not {'kind','id'}<=set(member)
+                        or member['kind'] not in {'principal','group'}):
+                    raise ValueError('invalid_group_response')
+    elif route=='groups/members/add':
+        if (not {'group','member_kind','member','role','changed'}<=set(value)
+                or value['member_kind'] not in {'principal','group'}
+                or value['role'] not in {'member','admin'}
+                or type(value['changed']) not in (bool,int)):
+            raise ValueError('invalid_group_member_response')
+    elif route=='groups/members/remove':
+        if (not {'group','member_kind','member','removed'}<=set(value)
+                or value['member_kind'] not in {'principal','group'}
+                or type(value['removed']) not in (bool,int)):
+            raise ValueError('invalid_group_member_response')
+    elif route=='groups/delete':
+        if (not {'group','deleted'}<=set(value) or type(value['deleted']) not in (bool,int)):
+            raise ValueError('invalid_group_delete_response')
     elif route=='my-data':
         listed=value.get('items') if value.get('view')=='sources' else value.get('sessions')
         if (value.get('view') not in ('sources','sessions') or not isinstance(listed,list) or len(listed)>200

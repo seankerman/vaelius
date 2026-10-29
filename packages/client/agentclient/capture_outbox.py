@@ -103,13 +103,14 @@ class Outbox:
 
     def drain(self, backend, *, max_events=32, max_seconds=5):
         if not 1 <= max_events <= 1000 or not 0 < max_seconds <= 300: raise ValueError('invalid_drain_bound')
-        start=time.monotonic();accepted=0;blocked=False
+        start=time.monotonic();accepted=0;blocked=False;notices=[]
         with self.db: self._expire()
         rows=self.db.execute('SELECT * FROM pending WHERE next_attempt<=? ORDER BY created LIMIT ?', (time.time(),max_events)).fetchall()
         for row in rows:
             if time.monotonic()-start >= max_seconds: break
             try:
-                parts=split_event(json.loads(row['payload']));receipt=None
+                event=json.loads(row['payload'])
+                parts=split_event(event);receipt=None
                 for part in parts:
                     if time.monotonic()-start >= max_seconds: raise TimeoutError()
                     receipt=backend.request('/enterprise/v2/parts', part)
@@ -120,14 +121,38 @@ class Outbox:
                     self.db.execute('DELETE FROM pending WHERE digest=?', (row['digest'],))
                     self.db.execute('DELETE FROM receipts WHERE created<?', (time.time()-self.max_age,))
                 accepted+=1
+                if isinstance(receipt.get('notice'), str) and receipt['notice']:
+                    # A parts receipt may carry a status-line notice for the person,
+                    # for example an automatic repository link by an admin's first
+                    # capture (`docs/ACCESS_MODEL.md` section 4, API.md parts route).
+                    notices.append({'kind':'parts_notice','text':receipt['notice'],
+                                    'ident':'parts_notice:'+row['digest']})
             except Exception as exc:
                 delay=min(300,2**min(row['failures'],8))
                 # A 429 keeps the event and waits for the service's Retry-After.
                 if getattr(exc,'code',None)==429:delay=max(delay,retry_after(exc))
+                # 409 `repo_not_linked`: the remote is not linked to the named
+                # workspace. The event stays queued; retry sparingly and surface
+                # the admin fix on the status line (`docs/ACCESS_MODEL.md` 4, 11).
+                if getattr(exc,'code',None)==409:
+                    body={}
+                    try:
+                        raw=exc.read() if hasattr(exc,'read') else b''
+                        body=json.loads(raw.decode('utf-8','replace')) if raw else {}
+                    except Exception:body={}
+                    if isinstance(body,dict) and body.get('error')=='repo_not_linked':
+                        delay=max(delay,900)  # 15 minutes
+                        remote=event.get('remote','')
+                        workspace=event.get('workspace') or event.get('project') or ''
+                        notices.append({'kind':'repo_not_linked',
+                            'text':('vaelius: '+remote+' is not linked to workspace "'+workspace+
+                                    '" -- a workspace admin can run `vaelius-client workspace link '+
+                                    workspace+' '+remote+'` (the event stays queued).'),
+                            'ident':'repo_not_linked:'+remote+'|'+workspace})
                 with self.db:self.db.execute('UPDATE pending SET failures=failures+1,next_attempt=? WHERE digest=?',
                     (time.time()+delay,row['digest']))
                 blocked=True;break
-        return {'acknowledged_events':accepted, 'blocked':blocked, **self.status()}
+        return {'acknowledged_events':accepted, 'blocked':blocked, 'notices':notices, **self.status()}
 
     def status(self):
         row=self.db.execute('SELECT count(*),coalesce(sum(length(cast(payload as blob))),0),min(created) FROM pending').fetchone()

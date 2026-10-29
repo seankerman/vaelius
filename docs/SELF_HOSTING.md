@@ -126,3 +126,70 @@ retention commitment; export the content-free deletion journal separately and ru
 [data lifecycle](DATA_LIFECYCLE.md) for retention, legal holds and subject erasure. Never rehearse destructive recovery
 against a user's live database. [Source-first rollback](../packages/server/docs/SOURCE_FIRST.md)
 documents the raw-passage hold required before returning to an older binary.
+
+## Upgrading to this release (workspaces, migration 048)
+
+This release replaces the per-item sharing ladder with **workspace access
+lists**. Every id stays the same, and no stored content is lost, but the
+service applies very different rules after the migration runs. Plan a short
+window for owners and admins to re-share.
+
+- **Every existing item becomes private to its owner** at the migration. Owners
+  re-share them from the client (`vaelius-client sharing --set shared` or
+  `vaelius-client share`), or an admin adds a workspace access-list entry that
+  reaches the readers again. By construction nothing is readable by anyone who
+  could not read it immediately before, so no reader-set guard runs: the
+  migration is irreversibly narrower.
+- **Project members become writers.** Each project's explicit members and the
+  SCIM groups mapped to it become a local group `<project>-members`, with each
+  SCIM group nested inside it. The workspace gets one access-list entry:
+  `group:<project>-members → writer`. No admin entry and no organization entry
+  is created.
+- **Nobody is a workspace admin after the upgrade.** Workspaces without a
+  counting admin are managed by tenant settings administrators (the
+  `settings_admin` flag) through the audited break-glass override until an
+  admin is assigned. Do that from the operator CLI, for each workspace that
+  needs one:
+
+  ```sh
+  vaelius workspace --profile /absolute/private/profile --tenant TENANT \
+      --workspace maple --action set-entry \
+      --subject-kind principal --subject alice --role admin
+  ```
+
+  The report lists workspaces without an admin:
+
+  ```sh
+  vaelius workspace --profile /absolute/private/profile --tenant TENANT
+  ```
+
+- **The `sharing-policy` command is replaced.** Project and tenant sharing
+  ceilings and the person default now live on three settings
+  (`workspace_creation`, `widest_entry`, `owner_sharing`) and on each
+  workspace. Set tenant policy with `vaelius tenant-policy`:
+
+  ```sh
+  vaelius tenant-policy --profile ... --tenant TENANT \
+      --workspace-creation anyone --widest-entry people_and_groups --owner-sharing allowed
+  ```
+
+  Workspace settings (name, `item_default`, `active`), repository links and
+  access-list entries are managed with `vaelius workspace --action
+  settings|link|unlink|set-entry|remove-entry` or by the workspace's admins
+  from `vaelius-client workspace`.
+- **Credentials and refresh sessions holding `share` also hold `manage`.**
+  Migration 048 marks them with `legacy_actions` bit 4 so the owner's existing
+  rotation keeps working. New enrollments issue `manage` explicitly.
+- **Dropped tables.** `cloud_explicit_memberships`,
+  `cloud_directory_memberships` and `cloud_directory_group_projects` are
+  dropped. `enterprise_memberships` is replaced by a read-only view of the
+  same name over `workspace_access` for one release, so existing operator
+  scripts keep working while they are updated.
+- **Clients.** `vaelius-client` releases shipped with this server send
+  `workspace` and a normalized Git `remote` on every capture. An earlier
+  client that sends `project` is accepted (legacy alias). An earlier server
+  rejects `workspace` and `remote` with `invalid_general_fields`, so deploy
+  the server first.
+
+See [the privacy model](PRIVACY_MODEL.md#upgrading-to-migration-048) and
+[access reviews](ACCESS_REVIEW.md) for the rest of the behavioural change.

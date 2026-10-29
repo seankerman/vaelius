@@ -68,10 +68,17 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
         self.write(self.repo / '.vaelius', 'project = "example-repo"\n')
         self.assertEqual(discover(self.repo, names)['project'], 'example-repo')
 
-    def test_three_levels_and_a_separate_originals_request(self):
+    def test_sharing_level_is_read_and_originals_is_warned_about(self):
+        # Legacy sharing (no `workspace` key) is still read and sent on the wire,
+        # so a repository that captured in the old model keeps capturing in the
+        # old model. `originals` is accepted so the file is not invalid but is
+        # never sent (the access model drops the originals ladder); the parser
+        # records a one-time warning.
         self.write(self.repo / '.vaelius', 'project = "example-repo"\nsharing = "organization"\noriginals = "team"\n')
         found = discover(self.repo)
-        self.assertEqual((found['sharing'], found['originals']), ('organization', 'team'))
+        self.assertEqual(found['sharing'], 'organization')
+        self.assertEqual(found['originals'], 'private')
+        self.assertIn(scope_file.WARN_ORIGINALS_IGNORED, found['warnings'])
         self.write(self.repo / '.vaelius', 'project = "example-repo"\nsharing = "team"\n')
         self.assertEqual(discover(self.repo)['originals'], 'private')
         for text in ('originals = "everyone"\n', 'originals = true\n', 'sharing = "public"\n'):
@@ -83,7 +90,9 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
         self.write(self.repo / '.mindshare', 'mode: default\nsharing: organization\noriginals: team\nteam: x\n')
         names = scope_file.scope_names({'scope_files': ['.mindshare']})
         found = discover(self.repo, names)
-        self.assertEqual((found['capture'], found['sharing'], found['originals']), ('on', 'organization', 'team'))
+        self.assertEqual((found['capture'], found['sharing']), ('on', 'organization'))
+        self.assertEqual(found['originals'], 'private')
+        self.assertIn(scope_file.WARN_ORIGINALS_IGNORED, found['warnings'])
 
     def test_scope_files_option_is_validated(self):
         for bad in ([], ['../x'], ['a/b'], ['.git'], 'x', [1]):
@@ -192,10 +201,16 @@ class ScopeHookTest(unittest.TestCase):
         # Hooks never rewrite config.json for a scope-file enrollment.
         self.assertEqual(json.loads((self.home / 'config.json').read_text())['projects'], {})
 
-    def test_organization_and_originals_requests_are_sent(self):
+    def test_legacy_sharing_requests_are_sent_but_originals_is_dropped(self):
+        # In a legacy file (no `workspace =`), sharing keeps today's meaning so
+        # repositories that captured in the old model keep doing so. Originals
+        # are no longer sent on the wire (the access model drops the ladder):
+        # a file that still carries `originals = ...` captures without it, with
+        # a one-time scope-file warning.
         self.scope('project = "example-repo"\nsharing = "organization"\noriginals = "team"\n')
         self.hook()
-        self.assertEqual((Outbox.events[0]['sharing'], Outbox.events[0]['originals']), ('organization', 'team'))
+        self.assertEqual(Outbox.events[0]['sharing'], 'organization')
+        self.assertNotIn('originals', Outbox.events[0])
         self.scope('project = "example-repo"\nsharing = "team"\n')
         self.hook()
         self.assertEqual(Outbox.events[-1]['sharing'], 'team')
@@ -338,9 +353,22 @@ class SharingContractTest(unittest.TestCase):
         plain = normalize_capture(event, 'example-repo', 'synthetic-connection')
         self.assertNotIn('sharing', plain)
         self.assertNotIn('originals', plain)
+        # In a legacy file (no `workspace =`), sharing passes through unchanged;
+        # the access model drops the originals ladder, so it is never sent.
         wide = normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='organization',
                                  originals='team')
-        self.assertEqual((wide['sharing'], wide['originals']), ('organization', 'team'))
+        self.assertEqual(wide['sharing'], 'organization')
+        self.assertNotIn('originals', wide)
+        # In a workspace file, only `private` is honored; a wider request is
+        # translated to `organization` (the server reads it as "inherit the
+        # workspace audience"), and `originals` is still never sent.
+        workspace = normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='team',
+                                      workspace_key=True)
+        self.assertEqual(workspace['sharing'], 'organization')
+        self.assertNotIn('originals', workspace)
+        workspace_private = normalize_capture(event, 'example-repo', 'synthetic-connection', sharing='private',
+                                              workspace_key=True)
+        self.assertNotIn('sharing', workspace_private)
         # Private travels as omission, so older services see the same event.
         for key in ('sharing', 'originals'):
             for forged in ('private', 'everyone', 'public', None, ['team']):

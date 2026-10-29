@@ -90,7 +90,12 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         _, alice = self.note('owner-a')
         _, bob = self.note('owner-b', owner='bob')
         _, team = self.note('member', visibility='team')
-        _, organization = self.note('organization', visibility='organization')
+        # Organization-wide items live in a workspace with an organization entry: a
+        # `team` request in such a workspace would stay private (agenthub.workspace_access).
+        self.store.create_project('acme', 'oak')
+        self.store.set_membership('acme', 'oak', 'alice', True)
+        self.store.operator_workspace('set-entry', 'oak', subject_kind='organization', role='reader')
+        _, organization = self.note('organization', visibility='organization', project='oak')
         _, missing = self.note('missing-links', visibility='team')
         with self.store.open() as state, state.db:
             state.db.execute('DELETE FROM enterprise_dependencies WHERE document_id=?', (missing,))

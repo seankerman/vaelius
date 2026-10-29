@@ -41,7 +41,8 @@ class GeneralSourcesMixin:
         readers=sorted(set(reader_ids or []))
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
-            if not self._project_member(db,ctx,project): raise Denied()
+            # Enrolling a capture connection needs the writer role in the workspace.
+            if not self._project_member(db,ctx,project,2): raise Denied()
             for reader in readers:
                 if not db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1', (ctx['tenant'],reader)).fetchone():
                     raise ValueError('unknown_connection_reader')
@@ -62,7 +63,7 @@ class GeneralSourcesMixin:
         if (not row or row['tenant']!=ctx['tenant'] or not row['active'] or
                 (not allow_stale and row['permission_observed']+row['freshness_seconds']<time.time())): raise Denied()
         if ingest and (row['enrollment']!=ctx['enrollment'] or row['owner']!=ctx['actor'] or
-                       not self._project_member(db,ctx,row['project'])): raise Denied()
+                       not self._project_member(db,ctx,row['project'],2)): raise Denied()
         return row
 
     def _general_source_allowed(self, db, ctx, source):
@@ -94,8 +95,10 @@ class GeneralSourcesMixin:
                 from agenthub.enterprise import _scope
                 sources=db.execute('SELECT source_id FROM backend_source_revisions WHERE connection=?',(ident,)).fetchall()
                 for source in sources: self._invalidate_source(db,source[0], 'connection_policy_changed')
-                db.execute('''UPDATE enterprise_sources SET visibility=?,policy_version=policy_version+1
-                    WHERE id IN (SELECT source_id FROM backend_source_revisions WHERE connection=?)''',(visibility,ident))
+                # A connection narrowed to private makes its items private (narrowing only).
+                db.execute('''UPDATE enterprise_sources SET visibility=?,policy_version=policy_version+1,
+                    private=CASE WHEN ?='private' THEN 1 ELSE private END
+                    WHERE id IN (SELECT source_id FROM backend_source_revisions WHERE connection=?)''',(visibility,visibility,ident))
                 scope=_scope(ctx['tenant'],row['project'],visibility,ctx['actor'])
                 db.execute('UPDATE enterprise_sources SET internal_project=? WHERE id IN (SELECT source_id FROM backend_source_revisions WHERE connection=?)',(scope,ident))
                 db.execute('UPDATE memories SET project=? WHERE id IN (SELECT source_id FROM backend_source_revisions WHERE connection=?)',(scope,ident))
@@ -166,7 +169,9 @@ class GeneralSourcesMixin:
                 ((*key,r['part_index'],hashlib.sha256(r['data']).hexdigest()) for r in rows))
             state.db.execute("INSERT INTO backend_ingest_receipts VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",(*key,value['digest'],result['disposition'],result['source_id'],value['part_count'],time.time()))
             state.db.execute('DELETE FROM backend_parts WHERE connection=? AND external_id=? AND revision=?',key)
-        return {'disposition':result['disposition'],'digest':value['digest'],'received_parts':value['part_count'],'complete':True,'source_id':result['source_id']}
+        receipt={'disposition':result['disposition'],'digest':value['digest'],'received_parts':value['part_count'],'complete':True,'source_id':result['source_id']}
+        if result.get('notice'):receipt['notice']=result['notice']
+        return receipt
 
     def ingest_general(self, ctx, value):
         from agenthub.enterprise import Conflict, Denied, _scope, _digest
@@ -176,7 +181,14 @@ class GeneralSourcesMixin:
         value,_=redact_capture(value)
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db;connection=self._connection(db,ctx,value['connection'])
-            if value['project']!=connection['project'] or value['source_type'] not in json.loads(connection['source_types']): raise Denied()
+            # `project` (or its alias `workspace`) names the workspace by name or id.
+            workspace=self._resolve_workspace(db,ctx['tenant'],value['project'])
+            if (not workspace or workspace['id']!=connection['project']
+                    or value['source_type'] not in json.loads(connection['source_types'])): raise Denied()
+            project_id=workspace['id']
+            # A capture from a repository must come from a remote linked to this
+            # workspace; an admin's first capture links an unlinked one (audited).
+            notice=self._check_remote(db,ctx,workspace['id'],value.get('remote'))
             key=(value['connection'],value['external_id'],value['revision']);hashed=digest(value)
             prior=db.execute('SELECT * FROM backend_source_revisions WHERE connection=? AND external_id=? AND revision=?',key).fetchone()
             if prior:
@@ -187,7 +199,7 @@ class GeneralSourcesMixin:
             head=db.execute('SELECT * FROM backend_source_heads WHERE connection=? AND external_id=?',key[:2]).fetchone()
             if head and int(value['revision'])<=int(head['revision']): raise Conflict()
             source_id=_digest(json.dumps([ctx['tenant'],connection['namespace'],*key]))
-            project=_scope(ctx['tenant'],value['project'],connection['visibility'],ctx['actor'])
+            project=_scope(ctx['tenant'],project_id,connection['visibility'],ctx['actor'])
             session=_digest(json.dumps([ctx['tenant'],value['connection'],value['conversation']]))
             turn=_digest(json.dumps([session,value['turn']])) if value['turn'] else ''
             blocks=value['blocks'];event=value['event'];now=time.time()
@@ -216,31 +228,33 @@ class GeneralSourcesMixin:
                     if native['body'] in quoted and self._visible_source(db,ctx,native): copies.append(native['id'])
                 if copies: role='context_transfer'
             db.execute('INSERT INTO backend_source_revisions VALUES(?,?,?,?,?,?,?,?,?)',(source_id,*key,hashed,canonical(value).decode(),now,value['disposition'],connection['policy_version']))
-            # Scope-file requests are capped by the person's setting, the project
-            # and tenant ceilings and the connection visibility now; query time
-            # applies every current ceiling again (agenthub.project_sharing).
-            requested,sharing,originals_requested,originals=self._ingest_sharing(db,ctx,connection,value)
+            # New items inherit the workspace audience unless the request, the
+            # connection, the person or the workspace makes them private
+            # (agenthub.workspace_access). Originals are shared only by explicit grant.
+            private,requested,reasons=self._ingest_privacy(db,ctx,connection['visibility'],dict(value,project=project_id))
             # The origin label (agentclient.origin) is stored as sent and never changes:
-            # the ceiling and the other projects keep applying at query time.
+            # its carried workspaces keep applying at query time.
             label=value.get('origin_label')
-            origin_projects=sorted(set(label['projects'])-{value['project']}) if label else []
+            carried=[(self._resolve_workspace(db,ctx['tenant'],name) or {'id':name})['id']
+                     for name in (label['projects'] if label else [])]
+            origin_projects=sorted(set(carried)-{project_id})
             db.execute('''INSERT INTO enterprise_sources
                 (id,tenant,owner,external_project,internal_project,external_id,enrollment,payload_hash,
                  visibility,raw_visibility,occurred_at,created,occurred_precision,occurred_timezone,
                  sharing,sharing_requested,originals_sharing,originals_requested,
-                 origin_ceiling,origin_reason,origin_projects)
-                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?,?,?,?,?,?,?,?)''',
-                (source_id,ctx['tenant'],ctx['actor'],value['project'],project,
+                 origin_ceiling,origin_reason,origin_projects,private)
+                VALUES(?,?,?,?,?,?,?,?,?,'private',?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (source_id,ctx['tenant'],ctx['actor'],project_id,project,
                  value['connection']+':'+value['external_id']+':'+value['revision'],ctx['enrollment'],hashed,
                  connection['visibility'],str(value['occurred_at']),now,
-                 'instant' if value['occurred_at']!='unknown' else 'unknown',None,sharing,requested,
-                 originals,originals_requested,label['ceiling'] if label else None,
-                 (label['reason'] or None) if label else None,json.dumps(origin_projects)))
+                 'instant' if value['occurred_at']!='unknown' else 'unknown',None,'private',
+                 requested if requested in ('private','team','organization') else 'organization',
+                 'private',value.get('originals','private'),label['ceiling'] if label else None,
+                 (label['reason'] or None) if label else None,json.dumps(origin_projects),int(private)))
             if label and (label['ceiling']!='organization' or origin_projects):
                 self._audit(db,ctx,'origin_label',label['ceiling'],source_id,connection['policy_version'])
-            if requested!=sharing:self._audit(db,ctx,'sharing_request','capped_'+sharing,source_id,connection['policy_version'])
-            if originals_requested!=originals:
-                self._audit(db,ctx,'originals_request','capped_'+originals,source_id,connection['policy_version'])
+            if private and requested!='private':
+                self._audit(db,ctx,'sharing_request','private:'+','.join(reasons),source_id,connection['policy_version'])
             segments=getattr(self,'conversation_segments',None)
             if segments is not None:segments.retain(db,source_id,value)
             db.execute('INSERT INTO memories(id,session,project,body,kind,created,exit_code,turn) VALUES(?,?,?,?,?,?,?,?)',
@@ -273,7 +287,9 @@ class GeneralSourcesMixin:
             if value['source_type'] in {'agent','conversation'} and value['disposition'] in {'accepted','redacted'}:
                 from agenthub.source_index import queue
                 queue(db,source_id)
-            return {'source_id':source_id,'disposition':value['disposition']}
+            result={'source_id':source_id,'disposition':value['disposition']}
+            if notice:result['notice']=notice
+            return result
 
     def general_source(self, ctx, source_id):
         from agenthub.enterprise import Denied

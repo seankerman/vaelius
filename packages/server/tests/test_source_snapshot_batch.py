@@ -38,7 +38,8 @@ class SourceSnapshotBatch(PostgresFixture, unittest.TestCase):
             with patch.object(PostgresConnection,'execute',counted):self.check(expected)
             counts.append(len(statements))
             self.assertTrue(any('search_source_policies' in s for s in statements))
-        self.assertEqual(counts[0],counts[1]);self.assertLessEqual(counts[1],3)
+        # One more statement than before migration 048: the reader's workspaces (R, D).
+        self.assertEqual(counts[0],counts[1]);self.assertLessEqual(counts[1],4)
 
     def test_large_requested_batch_is_filtered_before_policy_joins(self):
         sid,snapshot=self.source()
@@ -86,6 +87,8 @@ class SourceSnapshotBatch(PostgresFixture, unittest.TestCase):
         with self.assertRaises(PermissionError):self.check({'missing':next(iter(expected.values()))})
 
     def test_raw_owner_rule_acl_and_current_identity(self):
+        # The owner keeps new items private: only the owner rule admits them.
+        self.store.sharing_setting(self.ctx,{'contributions_default':'private'})
         expected=dict([self.source(visibility='organization')]);sid=next(iter(expected));self.check(expected)
         with self.assertRaises(PermissionError):self.check(expected,self.store.authenticate(self.tokens['bob']))
         self.store.set_source_acl_freshness(self.ctx,sid,state='stale')

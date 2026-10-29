@@ -33,9 +33,12 @@ def _digest(value):
 # legacy_actions is a bit set: 1 = issued before migration 043 (the implications
 # above); 2 = issued before migration 047, when 'withdraw' was every owner's
 # self-service action, so it also allows 'share' (owner_controls). Default
-# enrollment now lists 'share' explicitly.
+# enrollment now lists 'share' explicitly. 4 = issued before migration 048 while
+# holding 'share' (explicitly or through bit 2): it also allows 'manage'
+# (workspace creation and administration, agenthub.workspace_access).
 LEGACY_IMPLIED_ACTIONS=(('read','feedback'),('correct','curate'))
 PRE_047_IMPLIED_ACTIONS=(('withdraw','share'),)
+PRE_048_IMPLIED_ACTIONS=(('share','manage'),)
 
 
 def effective_actions(actions, legacy=False):
@@ -44,6 +47,8 @@ def effective_actions(actions, legacy=False):
     legacy=int(legacy or 0)
     implied=(LEGACY_IMPLIED_ACTIONS if legacy&1 else ())+(PRE_047_IMPLIED_ACTIONS if legacy&2 else ())
     granted|={target for source,target in implied if source in granted}
+    if legacy&4:
+        granted|={target for source,target in PRE_048_IMPLIED_ACTIONS if source in granted}
     return granted
 
 
@@ -57,11 +62,11 @@ from agenthub.backend_retrieval import RetrievalMixin
 
 
 from agenthub.governance import GovernanceMixin
-from agenthub.project_sharing import ProjectSharingMixin
+from agenthub.workspace_access import WorkspaceAccessMixin
 from agenthub.owner_controls import OwnerControlsMixin
 
 
-class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,GeneralSourcesMixin,RetrievalMixin):
+class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,GeneralSourcesMixin,RetrievalMixin):
     def __init__(self, *args, **kwargs):
         raise RuntimeError('PostgreSQL authority required; use CloudStore')
 
@@ -97,20 +102,44 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
                 (tenant,principal,int(settings_admin)))
 
     def create_project(self, tenant, project):
+        """Operator: a workspace managed by tenant administrators, as projects were:
+        a local `<id>-members` group with a writer entry, no admin and no organization entry."""
         if not isinstance(project,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}",project):
             raise ValueError("invalid_project")
         with self.open() as state, state.db:
-            state.db.execute("INSERT INTO enterprise_projects(tenant,id) VALUES(?,?)",(tenant,project))
+            db=state.db;now=time.time()
+            if db.execute("SELECT 1 FROM enterprise_projects WHERE tenant=? AND (name=? OR id=?)",(tenant,project,project)).fetchone():
+                raise Conflict()
+            db.execute("INSERT INTO enterprise_projects(tenant,id,name,created_by,created) VALUES(?,?,?,?,?)",
+                (tenant,project,project,'local_operator',now))
+            group=project+'-members'
+            db.execute("""INSERT INTO groups(tenant,id,name,source,workspace,created_by,created)
+                VALUES(?,?,?,'local',?,?,?) ON CONFLICT DO NOTHING""",(tenant,group,group,project,'local_operator',now))
+            db.execute("""INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
+                VALUES(?,?,'group',?,'writer','local_operator',?)""",(tenant,project,group,now))
+            self._refresh_groups(db,tenant,[group])
 
     def set_membership(self, tenant, project, principal, active):
+        """Operator: add or remove a principal in the workspace's `<id>-members` group."""
         with self.delivery_lock(), self.open() as state, state.db:
-            state.db.execute("INSERT INTO enterprise_memberships VALUES(?,?,?,?) ON CONFLICT(tenant,project,principal) DO UPDATE SET active=excluded.active",
-                (tenant,project,principal,int(bool(active))))
-            state.db.execute("INSERT INTO enterprise_audit(tenant,actor,operation,disposition,target_id,created) VALUES(?,?,?,?,?,?)",
-                (tenant,'local_operator','membership','granted' if active else 'revoked',project+':'+principal,time.time()))
+            self._set_member_edge(state.db,tenant,project,principal,active)
+
+    def _set_member_edge(self, db, tenant, project, principal, active):
+        group=project+'-members'
+        if not db.execute("SELECT 1 FROM groups WHERE tenant=? AND id=? AND workspace=?",(tenant,group,project)).fetchone():
+            raise ValueError('unknown_project')
+        if active:
+            db.execute("""INSERT INTO group_edges(tenant,group_id,member_kind,member,added_by,created)
+                VALUES(?,?,'principal',?,'local_operator',?) ON CONFLICT DO NOTHING""",(tenant,group,principal,time.time()))
+        else:
+            db.execute("DELETE FROM group_edges WHERE tenant=? AND group_id=? AND member_kind='principal' AND member=?",
+                (tenant,group,principal))
+        self._refresh_groups(db,tenant,[group])
+        db.execute("INSERT INTO enterprise_audit(tenant,actor,operation,disposition,target_id,created) VALUES(?,?,?,?,?,?)",
+            (tenant,'local_operator','membership','granted' if active else 'revoked',project+':'+principal,time.time()))
 
     def enroll(self, tenant, principal, enrollment, actions, *, acting_for=None):
-        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","share","moderate","policy","audit","settings","legal_hold"}
+        allowed={"ingest","read","source_read","feedback","curate","correct","withdraw","share","manage","moderate","policy","audit","settings","legal_hold"}
         if not isinstance(enrollment,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}",enrollment):
             raise ValueError("invalid_enrollment")
         if not actions or set(actions)-allowed:raise ValueError("invalid_actions")
@@ -190,19 +219,9 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
     def _need(ctx, action):
         if action not in ctx["actions"]:raise Denied()
 
-    @staticmethod
-    def _project_member(db, ctx, project):
-        if ctx.get('delegated_projects') is not None and project not in ctx['delegated_projects']:
-            return False
-        row=db.execute("""SELECT 1 FROM enterprise_memberships m
-          JOIN enterprise_projects p ON p.tenant=m.tenant AND p.id=m.project
-          WHERE m.tenant=? AND m.project=? AND m.principal=? AND m.active=1 AND p.active=1""",
-          (ctx["tenant"],project,ctx["actor"])).fetchone()
-        return bool(row)
-
     def _source_rules(self, db, ctx, source):
-        """Every ordinary source rule except visibility: tenant, lifecycle,
-        delegation, connection readers and freshness, operator quarantine, origin."""
+        """Every ordinary source rule except the audience: tenant, lifecycle,
+        delegation, connection readers and freshness, operator quarantine."""
         if not source or source["tenant"]!=ctx["tenant"] or not source["active"]:
             return False
         if (ctx.get('delegated_projects') is not None and
@@ -210,32 +229,21 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
         if not self._general_source_allowed(db,ctx,source):return False
         # Operator quarantine withholds a principal's held sources from others.
         if source.get("principal_quarantine") and source["owner"]!=ctx["actor"]:return False
-        # Origin labels (agenthub.project_sharing): what the captured content came
-        # from also caps every document derived from it, curated ones included.
-        if source["owner"]!=ctx["actor"] and not self._origin_reaches(db,ctx,source):return False
         return True
 
     def _granted_source(self, db, ctx, source):
-        """An explicit owner grant (agenthub.owner_controls) of this source's passages
-        to the reader; it stands in for visibility, never for any other rule."""
-        return "read" in ctx["actions"] and self._source_rules(db,ctx,source) and self._passage_granted(db,ctx,source)
+        """An explicit share (agenthub.owner_controls) of this source's passages to the
+        reader; it stands in for the workspace audience, never for any other rule."""
+        return "read" in ctx["actions"] and self._source_rules(db,ctx,source) and self._shared_with(db,ctx,source)
 
     def _visible_source(self, db, ctx, source, *, raw=False):
-        if not self._source_rules(db,ctx,source):return False
-        if raw:
-            # Redacted passages, evidence and context: the owner, a reader the
-            # source's current sharing level reaches (agenthub.project_sharing),
-            # or a reader it is explicitly granted to (agenthub.owner_controls).
-            # Retained originals use _original_allowed (source_read + owner,
-            # their own sharing level, or an explicit grant).
-            if "read" not in ctx["actions"]:return False
-            if source["owner"]==ctx["actor"]:return True
-            if self._passage_shared(db,ctx,source) and self._visible_source(db,ctx,source):return True
-            return self._passage_granted(db,ctx,source)
-        if "read" not in ctx["actions"]:return False
-        if source["visibility"]=="private":return source["owner"]==ctx["actor"]
-        if source["visibility"]=="team":return self._project_member(db,ctx,source["external_project"])
-        return True
+        """The reader may read this source (every document tier): `read`, every ordinary
+        source rule, and the owner or the item's audience (agenthub.workspace_access).
+        `raw=True` (redacted passages, evidence, context) also accepts an explicit
+        share. Retained originals use _original_allowed (source_read + owner or share)."""
+        if not self._source_rules(db,ctx,source) or "read" not in ctx["actions"]:return False
+        if self._in_audience(db,ctx,source):return True
+        return raw and self._shared_with(db,ctx,source)
 
     def _original_allowed(self, db, ctx, source):
         from agenthub.raw_access import original_allowed
@@ -247,7 +255,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
         # Explicit enrollment and project grant are the only intake authority.
         with self.delivery_lock(), self.open() as state:
             db=state.db
-            if not self._project_member(db,ctx,value["project"]):raise Denied()
+            # Capture needs the writer role in the workspace (credential ∩ role).
+            if not self._project_member(db,ctx,value["project"],2):raise Denied()
             body=value["body"]
             cleaned,reasons=clean_private(body)
             if "possible_secret" in reasons:raise ValueError("secret_source_rejected")
@@ -275,45 +284,44 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
             source_id=state.enqueue(event)
             if value["kind"]!="gap":state.process()
             with db:
-                # A legacy capture's visibility is its sharing request: stored at the
-                # minimum with the person, project and tenant ceilings, so documents
-                # derived from it are capped like passages (migration 047).
-                requested,sharing,_,_=self._ingest_sharing(db,ctx,{'visibility':visibility},
+                # A legacy capture's visibility is its sharing request: private keeps
+                # the item private; otherwise it inherits the workspace audience unless
+                # the person's or the workspace's default makes it private.
+                private,requested,_=self._ingest_privacy(db,ctx,visibility,
                     {'sharing':visibility,'project':value['project']})
                 db.execute("""INSERT INTO enterprise_sources(id,tenant,owner,external_project,internal_project,
                     external_id,enrollment,payload_hash,visibility,raw_visibility,occurred_at,created,
-                    occurred_precision,occurred_timezone,sharing,sharing_requested)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    occurred_precision,occurred_timezone,sharing,sharing_requested,private)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (source_id,ctx["tenant"],ctx["actor"],value["project"],project,
                      value["external_id"],ctx["enrollment"],payload_hash,visibility,"private",
                      str(value["occurred_at"]),time.time(),value.get('precision','unknown'),
-                     value.get('timezone'),sharing,requested))
+                     value.get('timezone'),'private',requested,int(private)))
                 self._governance_mark(db,ctx,source_id,cleaned)
                 self._audit(db,ctx,"ingest","accepted",source_id,1)
             return {"source_id":source_id,"disposition":"accepted"}
 
     def _readable_scopes(self, db, ctx, project=None):
+        """Coarse partitions (`internal_project`) a search may touch: the reader's own
+        private partition and the shared partition of every active workspace (or of
+        the requested one; only delegated workspaces for a delegated credential),
+        plus the partition of items captured through organization-visible
+        connections. They narrow retrieval to a workspace; they never decide who
+        may read an item, which the audience predicate does
+        (agenthub.workspace_access)."""
         self._need(ctx,"read")
         if project is not None:
-            projects=[(project,None)]
+            projects=[project]
         else:
-            # Every project with the reader's membership in one statement (the
-            # unscoped and scope "all" searches), not one lookup per project.
-            projects=[(r[0],bool(r[1])) for r in db.execute("""SELECT p.id,EXISTS(SELECT 1 FROM enterprise_memberships m
-                WHERE m.tenant=p.tenant AND m.project=p.id AND m.principal=? AND m.active=1)
-                FROM enterprise_projects p WHERE p.tenant=? AND p.active=1""",(ctx["actor"],ctx["tenant"]))]
+            projects=[r[0] for r in db.execute("SELECT id FROM enterprise_projects WHERE tenant=? AND active=1",
+                                                (ctx["tenant"],))]
         result=[]
-        for name,known in projects:
+        for name in projects:
             if ctx.get('delegated_projects') is not None and name not in ctx['delegated_projects']:
                 continue
-            member=self._project_member(db,ctx,name) if known is None else known
-            if member:
-                result.extend((_scope(ctx["tenant"],name,"private",ctx["actor"]),
-                               _scope(ctx["tenant"],name,"team",ctx["actor"])))
-            else:
-                result.append(_scope(ctx["tenant"],name,"private",ctx["actor"]))
-        if ctx.get('delegated_projects') is None:
-            result.append(_scope(ctx["tenant"],"*","organization",ctx["actor"]))
+            result.extend((_scope(ctx["tenant"],name,"private",ctx["actor"]),
+                           _scope(ctx["tenant"],name,"team",ctx["actor"])))
+        result.append(_scope(ctx["tenant"],"*","organization",ctx["actor"]))
         return sorted(set(result))
 
     @staticmethod
@@ -375,26 +383,19 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
             JOIN enterprise_sources s ON s.id=x.source_id WHERE x.document_id=?""",(document_id,)).fetchall()
         if not dependencies:return None
         raw=doc.get("representation")=="raw"
-        # A passage explicitly granted to the reader through every source it depends
-        # on passes the visibility and reader-scope rules (search_permissions.DOCUMENT_GRANTED).
+        # Passages need `read`; raw_shared/raw_granted are the same prefilters as
+        # search_permissions.predicate and search_document_allowed.
+        if raw and ("read" not in ctx["actions"] or not (doc["raw_owner"]==ctx["actor"]
+                or (doc.get("raw_shared") or 0)>0 or doc.get("raw_granted")==1)):return None
+        # A passage shared with the reader through every source it depends on passes
+        # the audience and partition rules (search_permissions.DOCUMENT_GRANTED).
         granted=(raw and doc.get("raw_granted")==1 and doc["raw_owner"]!=ctx["actor"]
                  and all(self._granted_source(db,ctx,s) for s in dependencies))
-        released=None
         if not granted:
+            # Every document: each source is the reader's own or has the reader in its audience.
             if not all(self._visible_source(db,ctx,s) for s in dependencies):
-                released=self._release_allowed(db,ctx,document_id,dependencies)
-                if not released:return None
+                if raw or not self._release_allowed(db,ctx,document_id,dependencies):return None
             if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
-        # Mirrors the raw clause of search_permissions.predicate: a passage is
-        # the owner's, shared with the reader through every source it depends on, or granted.
-        if raw and ("read" not in ctx["actions"] or (doc["raw_owner"]!=ctx["actor"] and not granted
-                and not all(self._visible_source(db,ctx,s,raw=True) for s in dependencies))):return None
-        # A derived document registered after migration 047 is capped like a passage:
-        # every source it depends on is the reader's own or shared with the reader.
-        if (not raw and doc.get("level_capped")==1 and not all(
-                s["owner"]==ctx["actor"] or self._passage_shared(db,ctx,s) for s in dependencies)):
-            if released is None:released=self._release_allowed(db,ctx,document_id,dependencies)
-            if not released:return None
         return doc
 
     def refresh_documents(self, *, db=None, document_id=None):
@@ -857,7 +858,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,ProjectSharingMixin,Gen
                     eligible.append(row['id'])
             if source:
                 return {'kind':'source','id':target_id,'active':bool(source['active']),
-                    'visibility':source['visibility'],'policy_version':source['policy_version'],
+                    'visibility':source['visibility'],'private':bool(source['private']),
+                    'workspace':source['external_project'],'policy_version':source['policy_version'],
                     'eligible_principals':eligible,'raw_readers':self._passage_readers(db,source)}
             dependencies=db.execute('SELECT count(*) FROM enterprise_dependencies WHERE document_id=?',
                 (target_id,)).fetchone()[0]

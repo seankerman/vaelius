@@ -80,6 +80,90 @@ The release workflow publishes the section whose heading matches the tag.
   others' content). Curated and derived documents registered after migration 047
   follow the sharing levels like passages. See
   [owner controls](docs/PRIVACY_MODEL.md#owner-controls).
+- Workspaces, groups and access lists (migration 048, PR A of the
+  [access model](docs/ACCESS_MODEL.md)). Projects become **workspaces** with the
+  same ids, each with an **access list** of `principal` / `group` /
+  `organization` entries and a role (`reader` < `writer` < `admin`). Items are
+  either **private** or shared with the workspace audience, plus optional
+  explicit shares to a principal or a group — the per-item `private` / `team` /
+  `organization` ladder is replaced by this. Groups come in three sources
+  (`github` added in PR C, `scim`, `local`) with transitive membership
+  materialized in `group_closure`; a stale or failed synced group contributes
+  no members. Repositories link to one workspace per tenant by normalized Git
+  remote; captures carry that remote, and the server refuses a capture whose
+  remote is not linked with HTTP 409 `repo_not_linked`. An admin's first
+  capture from an unlinked remote links it automatically. New HTTP routes
+  under `/enterprise/v3/workspaces/*`, `/groups/*` and `/tenant-policy`, with a
+  settings-admin break-glass override audited as `workspace_admin_override`.
+- `manage` credential action, gating workspace and group administration (part
+  of default interactive enrollment, provider OAuth scope `vaelius:manage`,
+  AWS STS defaults). Delegations never carry `manage`.
+- One read predicate, *reader ∈ item audience*, in three layers (Python,
+  indexed SQL `AUDIENCE` filter, row-level security `search_reader_in_audience`
+  and `search_document_allowed`), with parity tests. A teammate's search runs
+  the same number of SQL statements as the owner's.
+
+### Changed
+
+- **Role-bound credential actions.** A credential's effective actions in a
+  workspace are its credential actions ∩ the actions the role implies
+  (`reader`: `read`, `feedback`, `source_read`; `writer`: + `ingest`,
+  `correct`, `curate`, `withdraw`, `share`; `admin`: + `moderate`, `manage`).
+  Ownership survives role changes: owners always find, read, withdraw, delete
+  and make private their own items; only widening needs the `writer` role and
+  `share`.
+- **Moderation now follows the workspace admin role**, and `moderate` is no
+  longer a default action. A caller needs the `admin` role and the `manage`
+  action; the route also accepts the older `moderate` action so credentials
+  issued before migration 048 keep working.
+- **`vaelius-client sharing --set` takes `shared` or `private`.** The older
+  `team` and `organization` names stay as deprecated aliases of `shared`.
+  Scope-file keys change too: `workspace` replaces `project` (both are read),
+  and `originals` is ignored with a one-time warning. See
+  [the client guide](docs/CLIENT.md#repository-scope-files).
+- **Owner shares to a project are gone.** `/enterprise/v3/my-data/grant` and
+  the client's `--with-project` option are refused as
+  `project_grantee_retired_use_group`; use `--with-principal` or
+  `--with-group` instead. Migration 048 rewrites existing project grants into
+  grants to the project's `<project>-members` local group.
+- **Access reviews.** New line kinds `workspace_access`, `workspace_entry`,
+  `group_membership`, `synced_group_membership`, `repo_link`; new flags
+  `admin_role`, `org_wide_entry`, `group_stale`, `suspended_by_tenant_policy`;
+  new revocation outcomes `change_at_source`, `revoke_entry_or_membership`,
+  `requires_workspace_admin`. Offboarding also removes direct workspace
+  entries and local-group memberships; `remaining.workspaces_without_admin`
+  lists workspaces where the person was the last counting admin. See
+  [access reviews](docs/ACCESS_REVIEW.md).
+
+### Removed
+
+- **`project_grant` lines in the access review**, replaced by
+  `workspace_entry`, `group_membership` and `synced_group_membership`.
+- **The `vaelius sharing-policy` operator command**, replaced by `vaelius
+  workspace` (per-workspace: `show`, `set-entry`, `remove-entry`, `settings`,
+  `link`, `unlink`, `create`) and `vaelius tenant-policy`
+  (`--workspace-creation`, `--widest-entry`, `--owner-sharing`). See
+  [self-hosting](docs/SELF_HOSTING.md#upgrading-to-this-release-workspaces-migration-048).
+- Dropped tables `cloud_explicit_memberships`,
+  `cloud_directory_memberships` and `cloud_directory_group_projects`;
+  `enterprise_memberships` becomes a read-only view over
+  `workspace_access` for one release.
+
+### Upgrade note
+
+Running migration 048 **keeps every stored source** but marks every existing
+item `private = 1` and drops every existing raw grant and share. Nobody but
+each item's owner sees that content again until the owner re-shares it, an
+admin adds a workspace entry that reaches the readers, or a tenant settings
+administrator does so on the admin's behalf. The migration creates no admin
+entries by itself: each workspace is managed by tenant settings administrators
+until one is set. Credentials and refresh sessions issued before the migration
+that hold `share` also hold `manage` (`legacy_actions` bit 4), so operator
+rotation is not required. Clients that send the new `workspace` or `remote`
+fields against an earlier server are rejected with `invalid_general_fields`;
+deploy the server first. The full migration contract is in
+[the privacy model](docs/PRIVACY_MODEL.md#upgrading-to-migration-048) and
+[self-hosting](docs/SELF_HOSTING.md#upgrading-to-this-release-workspaces-migration-048).
 
 ## [0.3.0] - 2026-10-09
 

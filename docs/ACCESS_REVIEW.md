@@ -19,31 +19,46 @@ tenant does not know. For each principal it shows:
 | Field | Source |
 |---|---|
 | `identity_bindings` | Active control-plane `(issuer, subject)` bindings and their last observed use |
-| `directory`, `groups` | Latest SCIM user state and the directory groups (with mapped projects) that include the user |
+| `directory`, `groups` | Latest SCIM user state and the directory (`scim`) groups that include the user |
 | `credentials` | Each enrollment with a live access token or refresh session: count, expiry, actions, last use |
-| `granted_actions`, `privileged_actions`, `raw_source_read` | Union of live credential actions. `source_read` (raw original access) is called out on its own |
-| `project_grants` | Active project memberships and whether each comes from an explicit grant, a directory group or both |
+| `granted_actions`, `privileged_actions`, `raw_source_read` | Union of live credential actions. `source_read` (raw original access), `manage` (workspace administration) and `moderate` (older credentials only) are called out on their own |
+| `workspace_access` | Every workspace the principal can read, their effective role, and how: a direct `principal` entry, each group that gives them access (with its source and `sync_state`), and/or the organization entry |
+| `workspace_entries` | Access-list entries whose subject is this principal: workspace, role, granted by, created |
+| `group_memberships` | Local-group memberships (revocable here) |
+| `repo_links` | Repository remotes this principal linked to a workspace |
 | `document_grants` | Reviewed-release documents that name the principal as a reader |
 | `connection_reader_grants`, `owned_connections` | Connector reader lists that name the principal, and connectors they own |
 | `delegations` | Delegations the principal holds (`acts_for`), and delegates acting for them (`represented_by`) |
 | `last_activity_at` | Latest audited action, credential issuance, refresh rotation or delivery receipt |
 
 `lines` flattens this into one reviewable entitlement per row. A line has a stable
-`line_id` (the same entitlement keeps its ID across reports), a `kind` (`principal`,
-`settings_admin`, `credential`, `binding`, `project_grant`, `document_grant`,
-`connection_reader`, `delegation`), a content-free target, actions, last use and flags:
+`line_id` (the same entitlement keeps its ID across reports), a `kind`
+(`principal`, `settings_admin`, `credential`, `binding`, `workspace_access`,
+`workspace_entry`, `group_membership`, `synced_group_membership`, `repo_link`,
+`document_grant`, `connection_reader`, `delegation`), a content-free target,
+actions, last use and flags:
 
 | Flag | Meaning |
 |---|---|
 | `stale` | No observed use within `stale_days` (default 90) |
 | `never_used` | A binding no credential has ever been issued through |
-| `privileged` | Holds `audit`, `curate`, `policy`, `settings` or `source_read`, or is a tenant settings administrator |
+| `privileged` | Holds `audit`, `curate`, `moderate`, `policy`, `settings` or `source_read`, or is a tenant settings administrator; set together with `admin_role` for workspace entries whose role is `admin` |
 | `raw_source_read` | Can read raw originals |
+| `admin_role` | A workspace role of `admin`, on an entry or a group membership |
+| `org_wide_entry` | An organization entry on a workspace; listed in the per-workspace summary |
+| `group_stale` | The access is derived from a group whose `sync_state` is not `current` |
+| `suspended_by_tenant_policy` | The entry is wider than the tenant's `widest_entry` and so contributes no role at query time |
 | `delegated` | Credential acting for another principal |
 | `directory_deactivated` | Active in Vaelius although the latest SCIM state says inactive |
 | `directory_reconcile_pending` | An out-of-order SCIM event is waiting for reconciliation |
-| `orphaned:<reason>` | A live grant that points at an inactive or unknown principal or project, a missing delegation, or an explicit grant that never took effect |
+| `orphaned:<reason>` | A live entitlement that points at an inactive or unknown principal, workspace or group, a missing delegation, or an explicit grant that never took effect |
 | `unattributed_grant` | An active membership that is neither explicit nor directory-derived (legacy rows) |
+
+The report's `workspaces` summary lists every organization entry (`org_wide_entry`),
+the stale groups, the current `widest_entry` setting, and every workspace without
+a counting admin (`without_admin` — managed by tenant settings administrators until
+one is added). `project_grant` lines are gone; their equivalent is now
+`workspace_entry`, `group_membership` or `synced_group_membership`.
 
 Last use is derived from records Vaelius already keeps: credential issuance, refresh
 rotation and delivery receipts. Vaelius-issued access tokens live at most 24 hours,
@@ -103,7 +118,11 @@ A revoke runs through the existing path for that kind of line:
 |---|---|---|
 | `principal` | Full offboarding (below) | — |
 | `credential` | Revokes the enrollment's refresh families and access tokens | For tokens issued by an external authorization server, also end the session there or revoke the binding. Otherwise new tokens keep working |
-| `project_grant` | Removes the explicit grant and recomputes memberships | `directory_grant_remains`: remove the user from the directory group |
+| `workspace_entry` | Removes the principal's direct entry on that workspace | — |
+| `group_membership` | Removes the principal from a local group | — |
+| `synced_group_membership` | Not changed automatically | `change_at_source`: remove the user from the source group (SCIM or GitHub). The reviewer may also remove the group's entry from the workspace |
+| `workspace_access` | Does not revoke on its own; names the underlying entry or group membership | `revoke_entry_or_membership`: revoke the `workspace_entry` or `group_membership` lines that give this access |
+| `repo_link` | Not changed automatically | `requires_workspace_admin`: a workspace admin unlinks the repository (`vaelius-client workspace unlink`) |
 | `delegation` | Deactivates the delegation (the delegate's credentials stop authorizing) | — |
 | `document_grant` | Removes the reader from the reviewed release | — |
 | `settings_admin` | Clears the tenant administrator flag | — |
@@ -162,7 +181,9 @@ principal holds, including credentials that act for them. Access ends there, eve
 if a later step has to be retried. The command then:
 
 - deactivates delegations in both directions
-- removes explicit project grants and recomputes directory grants
+- removes the principal's direct workspace entries
+- removes the principal from local groups (SCIM and `github` memberships drop at the
+  next directory event; deactivation already ends access through them)
 - removes the principal from reviewed-release reader lists
 - deactivates their identity bindings when control-plane credentials are available
 
@@ -176,6 +197,9 @@ Every step is audited. The command is idempotent: a second run reports
 - connector reader lists that name the principal
 - directory users
 - bindings still active
+- `workspaces_without_admin`: workspaces where this principal was the last
+  counting admin (a tenant settings administrator assigns a new one, using the
+  settings-admin break-glass override)
 
 **Deactivate the user in the identity provider as well.** A later SCIM update that
 marks the user active reactivates the principal.

@@ -170,16 +170,18 @@ def connect(dsn, *, autocommit=False):
         connect_timeout=5, options=inherited_options + " -c statement_timeout=15000 -c lock_timeout=5000")
 
 
-def migrate(dsn, *, control=False, statement_timeout_ms=15000):
+def migrate(dsn, *, control=False, statement_timeout_ms=15000, through=None):
     """Apply checksum-pinned, ordered static migrations using admin credentials.
 
     Serving constructors never migrate. A failed migration rolls back its schema
-    and receipt together; an edited applied migration fails closed.
+    and receipt together; an edited applied migration fails closed. `through`
+    stops after that version (upgrade tests build an older schema with it).
     """
     if type(statement_timeout_ms) is not int or not 1000 <= statement_timeout_ms <= 600000:
         raise ValueError('migration_statement_timeout_bound')
     selected = [path for path in sorted((Path(__file__).parent / "migrations").glob("*.sql"))
-        if ("_control" in path.name) == control]
+        if ("_control" in path.name) == control
+        and (through is None or int(path.name.split("_", 1)[0]) <= through)]
     receipts = []
     with connect(dsn) as connection:
         connection.execute("SELECT set_config('statement_timeout',%s,true)", (str(statement_timeout_ms),))

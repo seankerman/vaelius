@@ -135,11 +135,13 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
     tenant = store.tenant_id
     bindings = _control_bindings(store)
     with _snapshot(store) as db:
-        principal_rows = db.execute('''SELECT id,active,settings_admin,max_sharing FROM enterprise_principals
+        principal_rows = db.execute('''SELECT id,active,settings_admin,contributions_default FROM enterprise_principals
             WHERE tenant=%s ORDER BY id''',
             (tenant,)).fetchall()
         projects = {row['id']: bool(row['active']) for row in db.execute(
             'SELECT id,active FROM enterprise_projects WHERE tenant=%s', (tenant,))}
+        widest = db.execute('SELECT widest_entry FROM enterprise_organizations WHERE id=%s',
+                            (tenant,)).fetchone()['widest_entry']
         credentials = db.execute('''SELECT principal,acting_for,enrollment,
                 bool_or(oauth_provider IS NOT NULL) AS provider_issued,
                 count(*) FILTER (WHERE active=1 AND expires_at>%s) AS active_access,
@@ -167,13 +169,25 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
             SELECT f.identity_issuer,f.identity_subject,greatest(max(f.created),max(r.used_at))
                 FROM enterprise_credential_families f LEFT JOIN enterprise_refresh_tokens r ON r.family=f.id
                 WHERE f.tenant=%s AND f.identity_issuer IS NOT NULL GROUP BY 1,2''', (tenant, tenant)).fetchall()
-        memberships = db.execute('''SELECT m.project,m.principal,
-                EXISTS(SELECT 1 FROM cloud_explicit_memberships e WHERE e.project=m.project AND e.principal=m.principal) AS explicit,
-                EXISTS(SELECT 1 FROM cloud_directory_memberships d WHERE d.project=m.project AND d.principal=m.principal) AS directory
-            FROM enterprise_memberships m WHERE m.tenant=%s AND m.active=1''', (tenant,)).fetchall()
-        stray_explicit = db.execute('''SELECT e.project,e.principal FROM cloud_explicit_memberships e
-            WHERE NOT EXISTS(SELECT 1 FROM enterprise_memberships m WHERE m.tenant=%s AND m.project=e.project
-                AND m.principal=e.principal AND m.active=1)''', (tenant,)).fetchall()
+        # Access lists (agenthub.workspace_access): entries, effective access and how.
+        entries = db.execute('''SELECT workspace,subject_kind,subject,role,granted_by,created FROM workspace_entries
+            WHERE tenant=%s ORDER BY workspace,subject_kind,subject''', (tenant,)).fetchall()
+        access = db.execute('''SELECT a.principal,a.workspace,a.principal_role,a.group_role,
+                coalesce((SELECT jsonb_agg(jsonb_build_object('group',g.id,'source',g.source,'sync_state',g.sync_state,
+                    'role',e.role) ORDER BY g.id) FROM workspace_entries e JOIN groups g ON g.tenant=e.tenant AND g.id=e.subject
+                    WHERE e.tenant=a.tenant AND e.workspace=a.workspace AND e.subject_kind='group'
+                    AND EXISTS(SELECT 1 FROM group_closure c WHERE c.tenant=g.tenant AND c.group_id=g.id
+                        AND c.principal=a.principal)),'[]'::jsonb) AS via_groups
+            FROM workspace_access a WHERE a.tenant=%s ORDER BY a.principal,a.workspace''', (tenant,)).fetchall()
+        edges = db.execute('''SELECT e.group_id,e.member,e.role,e.created,g.source,g.sync_state,g.active,g.workspace
+            FROM group_edges e JOIN groups g ON g.tenant=e.tenant AND g.id=e.group_id
+            WHERE e.tenant=%s AND e.member_kind='principal' ORDER BY e.group_id,e.member''', (tenant,)).fetchall()
+        stale_groups = db.execute('''SELECT id,source,sync_state,last_synced FROM groups WHERE tenant=%s
+            AND source!='local' AND sync_state!='current' ORDER BY id''', (tenant,)).fetchall()
+        organization_entries = db.execute('''SELECT p.id,p.org_role FROM enterprise_projects p
+            WHERE p.tenant=%s AND p.org_role>0 ORDER BY p.id''', (tenant,)).fetchall()
+        repos = db.execute('''SELECT remote,workspace,linked_by,created FROM workspace_repos WHERE tenant=%s
+            ORDER BY remote''', (tenant,)).fetchall()
         delegations = db.execute('''SELECT principal,acting_for,actions,projects FROM enterprise_delegations
             WHERE tenant=%s AND active=1''', (tenant,)).fetchall()
         directory_users = db.execute('''SELECT u.external_id,u.principal,r.active,r.requires_reconcile
@@ -181,7 +195,10 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
             ON r.kind='user' AND r.external_id=u.external_id''').fetchall()
         groups = db.execute('''SELECT external_id,active,requires_reconcile,payload_json
             FROM cloud_directory_resources WHERE kind='group' ''').fetchall()
-        group_projects = db.execute('SELECT external_id,project FROM cloud_directory_group_projects').fetchall()
+        group_projects = db.execute('''SELECT g.external_id,w.workspace AS project FROM groups g
+            JOIN group_edges e ON e.tenant=g.tenant AND e.member_kind='group' AND e.member=g.id
+            JOIN groups w ON w.tenant=e.tenant AND w.id=e.group_id AND w.workspace IS NOT NULL
+            WHERE g.tenant=%s AND g.source='scim' ''', (tenant,)).fetchall()
         releases = db.execute('SELECT document_id,actor,readers FROM backend_releases WHERE tenant=%s',
             (tenant,)).fetchall()
         connections = db.execute('''SELECT id,owner,project,reader_ids,active FROM backend_connections
@@ -192,18 +209,19 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
     def person(ident):
         if ident not in people:
             people[ident] = {'principal': ident, 'known': False, 'active': False, 'settings_admin': False,
-                'max_sharing': None,
+                'contributions_default': None,
                 'identity_bindings': [], 'directory': [], 'groups': [], 'credentials': [],
-                'project_grants': [], 'document_grants': [], 'connection_reader_grants': [],
+                'workspace_access': [], 'workspace_entries': [], 'group_memberships': [],
+                'repo_links': [], 'document_grants': [], 'connection_reader_grants': [],
                 'owned_connections': [], 'delegations': {'acts_for': [], 'represented_by': []},
                 'last_activity_at': None, '_flags': set()}
         return people[ident]
 
     for row in principal_rows:
         record = person(row['id'])
-        # The person's own sharing ceiling: how widely their captured content can be shared.
+        # The person's default for new items (shared with the workspace, or private).
         record.update(known=True, active=bool(row['active']), settings_admin=bool(row['settings_admin']),
-                      max_sharing=row['max_sharing'])
+                      contributions_default=row['contributions_default'])
     active = {ident for ident, record in people.items() if record['active']}
     lines = []
 
@@ -311,19 +329,75 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
                     'active': bool(row['active']), 'requires_reconcile': bool(row['requires_reconcile']),
                     'projects': sorted(mapped_projects.get(row['external_id'], []))})
 
-    for row in memberships:
-        via = [name for name in ('explicit', 'directory') if row[name]]
-        flags = set() if via else {'unattributed_grant'}
-        if not projects.get(row['project'], False):
+    roles = {1: 'reader', 2: 'writer', 3: 'admin'}
+
+    def effective(principal_role, group_role):
+        if widest == 'none':
+            return 3 if principal_role == 3 else 0
+        return max(principal_role, group_role)
+
+    # Effective access per workspace and how it is held: a direct entry, groups (with
+    # source and sync state). The organization entry is listed once per workspace.
+    for row in access:
+        role = effective(row['principal_role'], row['group_role'])
+        via_groups = row['via_groups'] if isinstance(row['via_groups'], list) else json.loads(row['via_groups'])
+        if not role and not via_groups:
+            continue
+        via = (['entry'] if row['principal_role'] else []) + ['group:' + item['group'] for item in via_groups]
+        flags = set()
+        if role == 3:
+            flags.add('admin_role')
+            flags.add('privileged')
+        if not role:
+            flags.add('suspended_by_tenant_policy')
+        if any(item['sync_state'] != 'current' for item in via_groups):
+            flags.add('group_stale')
+        if not projects.get(row['workspace'], False):
             flags.add('orphaned:inactive_project')
-        target = {'project': row['project'], 'via': via}
-        entry = line('project_grant', row['principal'], target, parts=(row['project'],), flags=flags)
-        person(row['principal'])['project_grants'].append(dict(target, line_id=entry['line_id'], flags=entry['flags']))
-    for row in stray_explicit:
-        target = {'project': row['project'], 'via': ['explicit'], 'effective': False}
-        entry = line('project_grant', row['principal'], target, parts=(row['project'],),
-                     flags={'orphaned:unmaterialized_grant'})
-        person(row['principal'])['project_grants'].append(dict(target, line_id=entry['line_id'], flags=entry['flags']))
+        target = {'workspace': row['workspace'], 'role': roles.get(role), 'via': via,
+                  'groups': [{'group': item['group'], 'source': item['source'], 'sync_state': item['sync_state']}
+                             for item in via_groups]}
+        entry = line('workspace_access', row['principal'], target, parts=(row['workspace'],), flags=flags)
+        person(row['principal'])['workspace_access'].append(dict(target, line_id=entry['line_id'],
+                                                                 flags=entry['flags']))
+    for row in entries:
+        if row['subject_kind'] != 'principal':
+            continue
+        flags = {'admin_role', 'privileged'} if row['role'] == 'admin' else set()
+        if not projects.get(row['workspace'], False):
+            flags.add('orphaned:inactive_project')
+        target = {'workspace': row['workspace'], 'subject_kind': 'principal', 'role': row['role'],
+                  'granted_by': row['granted_by'], 'created': row['created']}
+        entry = line('workspace_entry', row['subject'], target, parts=(row['workspace'],), flags=flags)
+        person(row['subject'])['workspace_entries'].append(dict(target, line_id=entry['line_id'],
+                                                                flags=entry['flags']))
+    for row in edges:
+        synced = row['source'] != 'local'
+        flags = set()
+        if synced and row['sync_state'] != 'current':
+            flags.add('group_stale')
+        if row['role'] == 'admin':
+            flags.add('admin_role')
+        target = {'group': row['group_id'], 'source': row['source'], 'sync_state': row['sync_state'],
+                  'role': row['role'], 'workspace': row['workspace'], 'created': row['created']}
+        entry = line('synced_group_membership' if synced else 'group_membership', row['member'], target,
+                     parts=(row['group_id'],), flags=flags)
+        person(row['member'])['group_memberships'].append(dict(target, line_id=entry['line_id'],
+                                                               flags=entry['flags']))
+    for row in repos:
+        target = {'remote': row['remote'], 'workspace': row['workspace'], 'created': row['created']}
+        entry = line('repo_link', row['linked_by'], target, parts=(row['remote'],))
+        person(row['linked_by'])['repo_links'].append(dict(target, line_id=entry['line_id'], flags=entry['flags']))
+    workspace_summary = {
+        'organization_entries': [{'workspace': row['id'], 'role': roles.get(row['org_role']),
+                                  'suspended': widest != 'organization', 'flags': ['org_wide_entry']}
+                                 for row in organization_entries],
+        'stale_groups': [dict(row) for row in stale_groups],
+        'widest_entry': widest,
+        'without_admin': sorted(name for name in projects if not any(
+            e['workspace'] == name and e['role'] == 'admin' and e['subject_kind'] in ('principal', 'group')
+            for e in entries)),
+    }
 
     for row in delegations:
         scope = json.loads(row['projects'])
@@ -399,7 +473,8 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
                         'privileged_principals': sum('privileged' in record['flags'] for record in principals),
                         'directory_deactivated': sum('directory_deactivated' in record['flags'] for record in principals),
                         'flags': dict(sorted(flag_counts.items()))},
-            'principals': principals, 'lines': lines, 'orphaned_grants': orphaned}
+            'principals': principals, 'lines': lines, 'orphaned_grants': orphaned,
+            'workspaces': workspace_summary}
 
 
 def _iso(value):
@@ -507,27 +582,42 @@ def revoke_enrollment(store, principal, acting_for, enrollment, *, actor, reason
     return dict(result, status='applied' if changed else 'noop')
 
 
-def revoke_membership(store, principal, project, *, actor, request_id=None):
-    with store.open() as state:
-        known = state.db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=%s AND id=%s',
-                                 (store.tenant_id, project)).fetchone()
-    if known:
-        store.set_membership(store.tenant_id, project, principal, False)
-    else:
-        with store.delivery_lock(), store.open() as state, state.db:
-            state.db.execute('DELETE FROM cloud_explicit_memberships WHERE project=%s AND principal=%s',
-                             (project, principal))
-    with store.open() as state, state.db:
+def revoke_workspace_entry(store, principal, workspace, *, actor, request_id=None):
+    """Remove a principal's direct entry from a workspace (the last-admin rule still holds)."""
+    with store.delivery_lock(), store.open() as state, state.db:
         db = state.db
-        row = db.execute('SELECT active FROM enterprise_memberships WHERE tenant=%s AND project=%s AND principal=%s',
-                         (store.tenant_id, project, principal)).fetchone()
-        remains = bool(row and row['active'])
-        _audit(store, db, actor, 'membership', 'revoked' if not remains else 'directory_grant_remains',
-               project + ':' + principal, request_id)
-    if remains:
-        return {'status': 'directory_grant_remains',
-                'action_required': 'remove the principal from the directory group mapped to this project'}
-    return {'status': 'applied'}
+        ctx = {'tenant': store.tenant_id, 'actor': actor, 'principal': actor, 'request_id': request_id}
+        try:
+            result = store._delete_entry(db, ctx, workspace, 'principal', principal)
+        except ValueError as error:
+            if str(error) != 'last_admin':
+                raise
+            return {'status': 'refused_last_admin',
+                    'action_required': 'add another admin to the workspace before removing this one'}
+    return {'status': 'applied' if result['removed'] else 'noop'}
+
+
+def revoke_group_membership(store, principal, group, *, actor, request_id=None):
+    """Remove a principal from a local group; a synced group changes at its source."""
+    with store.delivery_lock(), store.open() as state, state.db:
+        db = state.db
+        row = db.execute('SELECT * FROM groups WHERE tenant=%s AND id=%s', (store.tenant_id, group)).fetchone()
+        if not row:
+            return {'status': 'noop'}
+        if row['source'] != 'local':
+            _audit(store, db, actor, 'group_membership', 'change_at_source', group + ':' + principal, request_id)
+            return {'status': 'change_at_source',
+                    'action_required': 'remove the person from the group at its source (identity provider or GitHub), '
+                                       'or remove the group\'s entry from the workspace'}
+        ctx = {'tenant': store.tenant_id, 'actor': actor, 'principal': actor, 'request_id': request_id}
+        try:
+            removed = store._delete_member(db, ctx, dict(row), 'principal', principal)
+        except ValueError as error:
+            if str(error) != 'last_admin':
+                raise
+            return {'status': 'refused_last_admin',
+                    'action_required': 'add another admin before removing this one'}
+    return {'status': 'applied' if removed else 'noop'}
 
 
 def revoke_delegation(store, principal, acting_for, *, actor, request_id=None):
@@ -630,8 +720,16 @@ def apply_revocation(store, item, *, actor, control_admin=None, reason='access_r
             # active; only principal or binding deactivation stops new ones here.
             result['action_required'] = 'revoke the session at the authorization server or revoke the binding'
         return result
-    if kind == 'project_grant':
-        return revoke_membership(store, principal, target['project'], **common)
+    if kind == 'workspace_entry':
+        return revoke_workspace_entry(store, principal, target['workspace'], **common)
+    if kind in ('group_membership', 'synced_group_membership'):
+        return revoke_group_membership(store, principal, target['group'], **common)
+    if kind == 'workspace_access':
+        return {'status': 'revoke_entry_or_membership',
+                'action_required': 'revoke the workspace_entry or group_membership lines that give this access'}
+    if kind == 'repo_link':
+        return {'status': 'requires_workspace_admin',
+                'action_required': 'a workspace admin unlinks the repository (vaelius-client workspace unlink)'}
     if kind == 'delegation':
         return revoke_delegation(store, principal, target['acting_for'], **common)
     if kind == 'document_grant':
@@ -874,9 +972,13 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
                          (tenant, principal)).fetchone()
         if not row:
             raise ValueError('unknown_principal')
-        projects = [r['project'] for r in db.execute('''SELECT project FROM cloud_explicit_memberships
-            WHERE principal=%s UNION SELECT project FROM enterprise_memberships
-            WHERE tenant=%s AND principal=%s AND active=1 ORDER BY project''', (principal, tenant, principal))]
+        entry_rows = db.execute('''SELECT workspace,role FROM workspace_entries
+            WHERE tenant=%s AND subject_kind='principal' AND subject=%s ORDER BY workspace''', (tenant, principal)).fetchall()
+        projects = [r['workspace'] for r in entry_rows]
+        admin_of = {r['workspace'] for r in entry_rows if r['role'] == 'admin'}
+        local_groups = [r['group_id'] for r in db.execute('''SELECT e.group_id FROM group_edges e JOIN groups g
+            ON g.tenant=e.tenant AND g.id=e.group_id WHERE e.tenant=%s AND e.member_kind='principal'
+            AND e.member=%s AND g.source='local' ORDER BY e.group_id''', (tenant, principal))]
         delegations = [dict(r) for r in db.execute('''SELECT principal,acting_for FROM enterprise_delegations
             WHERE tenant=%s AND active=1 AND (principal=%s OR acting_for=%s) ORDER BY principal,acting_for''',
             (tenant, principal, principal))]
@@ -888,7 +990,8 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
             AND readers::jsonb ? %s''', (tenant, principal)).fetchone()[0]
     bindings = [item for item in (_control_bindings(store) or ()) if item['principal'] == principal]
     plan = {'principal_active': bool(row['active']), 'settings_admin': bool(row['settings_admin']),
-            'refresh_families': sessions, 'access_tokens': tokens, 'project_grants': projects,
+            'refresh_families': sessions, 'access_tokens': tokens, 'workspace_entries': projects,
+            'local_group_memberships': local_groups,
             'delegations': delegations, 'release_reader_grants': releases,
             'identity_bindings': [{'binding_kind': b['kind'], 'issuer': b['issuer'], 'subject': b['subject']}
                                   for b in bindings]}
@@ -912,20 +1015,35 @@ def offboard(store, principal, *, actor, reason, apply=True, control_admin=None,
                 _audit(store, db, actor, 'delegation', 'revoked', item['principal'] + ':' + item['acting_for'],
                        request_id)
             changes['delegations_revoked'] = revoked
-            removed = db.execute('DELETE FROM cloud_explicit_memberships WHERE principal=%s', (principal,)).rowcount
-            # Directory grants are recomputed from active principals only.
+            # Direct entries and local group memberships go; deactivation already ends
+            # every access path, and synced memberships disappear at the next sync.
+            # Workspaces where they were the last principal admin are reported in
+            # `remaining`: a tenant administrator assigns one.
+            entries = db.execute('''DELETE FROM workspace_entries WHERE tenant=%s AND subject_kind='principal'
+                AND subject=%s''', (tenant, principal)).rowcount
+            edges = db.execute('''DELETE FROM group_edges e USING groups g WHERE g.tenant=e.tenant AND g.id=e.group_id
+                AND e.tenant=%s AND e.member_kind='principal' AND e.member=%s AND g.source='local' ''',
+                (tenant, principal)).rowcount
+            if local_groups:
+                store._refresh_groups(db, tenant, local_groups)
+            if projects:
+                store._refresh_workspaces(db, tenant, projects)
+            # Directory groups are recomputed from active principals only.
             store._reconcile_directory_memberships(db, tenant)
-            db.execute('UPDATE enterprise_memberships SET active=0 WHERE tenant=%s AND principal=%s AND active=1',
-                       (tenant, principal))
             for project in projects:
-                _audit(store, db, actor, 'membership', 'revoked', project + ':' + principal, request_id)
-            changes['project_grants_removed'] = len(projects) if projects else removed
+                _audit(store, db, actor, 'workspace_entry_remove',
+                       'offboarding_admin' if project in admin_of else 'offboarding', project + ':' + principal,
+                       request_id)
+            for group in local_groups:
+                _audit(store, db, actor, 'group_membership', 'offboarding', group + ':' + principal, request_id)
+            changes['workspace_entries_removed'] = entries
+            changes['group_memberships_removed'] = edges
             changes['release_reader_grants_removed'] = _remove_release_reader(store, db, principal, actor=actor,
                                                                               request_id=request_id)
             done = changes['principal_deactivated'] or any(
                 changes[key] for key in ('refresh_families_revoked', 'access_tokens_deactivated',
-                                         'delegations_revoked', 'project_grants_removed',
-                                         'release_reader_grants_removed'))
+                                         'delegations_revoked', 'workspace_entries_removed',
+                                         'group_memberships_removed', 'release_reader_grants_removed'))
             _audit(store, db, actor, 'offboarding', 'applied' if done else 'already_offboarded', principal,
                    request_id)
         binding_results = [revoke_binding(store, principal, item['kind'], item['issuer'], item['subject'],
@@ -952,6 +1070,13 @@ def _remaining(store, principal, bindings_pending):
             FROM cloud_directory_users u LEFT JOIN cloud_directory_resources r
             ON r.kind='user' AND r.external_id=u.external_id WHERE u.principal=%s ORDER BY u.external_id''',
             (principal,))]
+        # Workspaces this principal administered (directly, or through a local
+        # group) that no longer have a counting admin.
+        last_admin = [row['workspace'] for row in db.execute('''SELECT DISTINCT a.target_id AS workspace
+            FROM (SELECT split_part(target_id,':',1) AS target_id FROM enterprise_audit WHERE tenant=%s
+                AND operation='workspace_entry_remove' AND disposition='offboarding_admin'
+                AND split_part(target_id,':',2)=%s) a ORDER BY 1''', (tenant, principal))
+            if not store._counting_admins(db, tenant, row['workspace'])]
         live = db.execute('''SELECT count(*) FROM enterprise_credentials WHERE tenant=%s AND active=1
             AND expires_at>%s AND (principal=%s OR acting_for=%s)''', (tenant, time.time(), principal,
             principal)).fetchone()[0]
@@ -962,7 +1087,11 @@ def _remaining(store, principal, bindings_pending):
               'owned_connections': owned, 'connection_reader_grants': readers,
               'directory_users': [dict(item, directory_active=None if item['directory_active'] is None
                                        else bool(item['directory_active'])) for item in directory],
-              'live_access_tokens': live, 'identity_bindings': bindings, 'actions_required': []}
+              'live_access_tokens': live, 'identity_bindings': bindings,
+              'workspaces_without_admin': last_admin, 'actions_required': []}
+    if last_admin:
+        result['actions_required'].append('a tenant administrator assigns an admin to workspaces where this '
+                                          'principal was the last one')
     if bindings:
         result['actions_required'].append('deactivate identity bindings with control-plane admin credentials'
                                           if bindings_pending else 'identity bindings remain active')

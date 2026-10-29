@@ -82,7 +82,7 @@ class CaptureGovernanceTests(unittest.TestCase):
     def test_session_status_every_session_and_full_notice_once_per_project(self):
         first = self.hook('SessionStart', Backend(NOTICE))
         message = first['systemMessage']
-        self.assertIn('Vaelius capture ON for project demo', message)
+        self.assertIn('Vaelius capture ON for workspace demo', message)
         self.assertIn('members of project demo', message)
         self.assertIn(NOTICE['notice'], message)
         self.assertIn('https://policy.example.invalid/memory', message)
@@ -102,16 +102,19 @@ class CaptureGovernanceTests(unittest.TestCase):
         self.assertEqual(json.loads((self.home / 'config.json').read_text()), self.config)
 
     def test_status_and_notice_show_the_persons_own_sharing_setting(self):
-        notice = dict(NOTICE, readers=dict(NOTICE['readers'], personal_sharing='team',
+        # The access model collapses the ladder to two states (`shared` and
+        # `private`). A service that still reports a legacy `personal_sharing`
+        # value (`team`/`organization`) is treated as `shared`.
+        notice = dict(NOTICE, readers=dict(NOTICE['readers'], personal_sharing='shared',
                                            project_ceiling='organization', passage_sharing_limit='team'))
         first = self.hook('SessionStart', Backend(notice))['systemMessage']
-        self.assertIn('Your sharing setting: team', first)
-        self.assertIn('shared with at most members of this project', first)
-        self.assertIn('vaelius-client sharing --set private|team|organization', first)
+        self.assertIn('Your sharing setting: shared', first)
+        self.assertIn('inherit the workspace audience', first)
+        self.assertIn('vaelius-client sharing --set shared|private', first)
         # Later sessions use the remembered setting without another request.
         later = Backend(notice)
         second = self.hook('SessionStart', later, session_id='s2')['systemMessage']
-        self.assertIn('Your sharing setting: team', second)
+        self.assertIn('Your sharing setting: shared', second)
         self.assertFalse(any(path.endswith('capture-notice') for path, _ in later.calls))
         # The person changes it themselves; the status line follows.
         from agentclient import cli
@@ -122,16 +125,19 @@ class CaptureGovernanceTests(unittest.TestCase):
 
             def request(self, path, value=None):
                 self.calls.append((path, value))
-                return {'principal': 'alice', 'max_sharing': 'organization', 'tenant_ceiling': 'organization',
-                        'changed': True}
+                return {'principal': 'alice', 'contributions_default': 'private',
+                        'max_sharing': 'private', 'tenant_ceiling': 'organization', 'changed': True}
         service = Sharing()
         with patch('agentclient.transport.enterprise_client', return_value=service), \
                 patch('builtins.print') as printed:
-            cli.main(['--home', str(self.home), 'sharing', '--set', 'organization'])
-        self.assertEqual(service.calls, [('/enterprise/v3/sharing', {'max_sharing': 'organization'})])
-        self.assertEqual(json.loads(printed.call_args[0][0])['max_sharing'], 'organization')
+            cli.main(['--home', str(self.home), 'sharing', '--set', 'private'])
+        self.assertEqual(service.calls, [('/enterprise/v3/sharing', {'contributions_default': 'private'})])
+        self.assertEqual(json.loads(printed.call_args[0][0])['contributions_default'], 'private')
         third = self.hook('SessionStart', Backend(notice), session_id='s3')['systemMessage']
-        self.assertIn('Your sharing setting: organization', third)
+        # The person just set private; later sessions use the remembered value
+        # (the capture-notice was already fetched for this workspace, so the
+        # hook does not refetch and does not know about the `shared` readers).
+        self.assertIn('Your sharing setting: private', third)
         with patch('agentclient.transport.enterprise_client', return_value=service), patch('builtins.print'):
             cli.main(['--home', str(self.home), 'sharing'])
         self.assertEqual(service.calls[-1], ('/enterprise/v3/sharing', {}))
@@ -141,10 +147,16 @@ class CaptureGovernanceTests(unittest.TestCase):
 
     def test_sharing_response_is_validated_at_transport_boundary(self):
         from agentclient.cloud_contract import validate_response
-        good = {'principal': 'alice', 'max_sharing': 'team', 'tenant_ceiling': 'organization', 'changed': False}
+        # New shape: contributions_default plus optional legacy echoes.
+        good = {'principal': 'alice', 'contributions_default': 'shared',
+                'max_sharing': 'organization', 'tenant_ceiling': 'organization', 'changed': False}
         self.assertEqual(validate_response('/enterprise/v3/sharing', good), good)
-        for bad in (dict(good, max_sharing='everyone'), dict(good, extra=1), {'max_sharing': 'team'},
-                    dict(good, changed='yes'), dict(good, tenant_ceiling='public')):
+        legacy = {'principal': 'alice', 'max_sharing': 'team', 'tenant_ceiling': 'organization', 'changed': False}
+        self.assertEqual(validate_response('/enterprise/v3/sharing', legacy), legacy)
+        for bad in (dict(good, max_sharing='everyone'), dict(good, extra=1),
+                    {'max_sharing': 'team'},  # missing principal
+                    dict(good, changed='yes'), dict(good, tenant_ceiling='public'),
+                    dict(good, contributions_default='team')):
             with self.assertRaises(ValueError):
                 validate_response('/enterprise/v3/sharing', bad)
         # Older clients keep accepting the notice: the new detail lives inside `readers`.
@@ -163,14 +175,14 @@ class CaptureGovernanceTests(unittest.TestCase):
         self.write(paused=True)
         backend = Backend(NOTICE)
         paused = self.hook('SessionStart', backend)
-        self.assertEqual(paused, {'systemMessage': 'Vaelius capture OFF (paused) for project demo. '
+        self.assertEqual(paused, {'systemMessage': 'Vaelius capture OFF (paused) for workspace demo. '
                                                    'Resume: vaelius-client resume.'})
         self.assertEqual(backend.calls, [])
         self.assertEqual(self.hook('SessionStart', backend, cwd='/unrelated/folder'), {})
         self.assertEqual(self.hook('UserPromptSubmit', backend, prompt='x'), {})
         self.write(capture_disabled_projects=['demo'])
         disabled = self.hook('SessionStart', backend)
-        self.assertIn('capture OFF for project demo', disabled['systemMessage'])
+        self.assertIn('capture OFF for workspace demo', disabled['systemMessage'])
         self.assertEqual(backend.calls, [])
 
     def test_notice_response_is_validated_at_transport_boundary(self):

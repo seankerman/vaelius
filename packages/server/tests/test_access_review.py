@@ -180,7 +180,9 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertTrue(alice['raw_source_read'])
         self.assertEqual(alice['privileged_actions'], ['policy', 'source_read'])
         self.assertIsNotNone(alice['last_activity_at'])
-        self.assertEqual([g['project'] for g in alice['project_grants']], ['maple'])
+        self.assertEqual([(g['workspace'], g['role'], g['via']) for g in alice['workspace_access']],
+                         [('maple', 'writer', ['group:maple-members'])])
+        self.assertEqual([g['group'] for g in alice['group_memberships']], ['maple-members'])
         self.assertEqual(alice['delegations']['represented_by'][0]['principal'], 'svc')
         bob = self.person(report, 'bob')
         self.assertIn('stale', bob['flags'])
@@ -190,8 +192,14 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         [binding] = self.lines(report, 'bob', 'binding')
         self.assertEqual(set(binding['flags']), {'never_used', 'stale'})
         self.assertEqual([(g['external_id'], g['projects']) for g in bob['groups']], [('grp-eng', ['oak'])])
-        self.assertEqual({g['project']: g['via'] for g in bob['project_grants']},
-                         {'maple': ['explicit'], 'oak': ['directory']})
+        self.assertEqual({g['workspace']: g['via'] for g in bob['workspace_access']},
+                         {'maple': ['group:maple-members'], 'oak': ['group:oak-members']})
+        # A local group membership is revocable here; a synced (SCIM) one changes at its source.
+        self.assertEqual(sorted((item['kind'], item['target']['source']) for item in self.lines(report, 'bob', 'group_membership')
+                                + self.lines(report, 'bob', 'synced_group_membership')),
+                         [('group_membership', 'local'), ('synced_group_membership', 'scim')])
+        self.assertEqual(report['workspaces']['organization_entries'], [])
+        self.assertEqual(report['workspaces']['without_admin'], ['maple', 'oak'])
         self.assertEqual([g['document_id'] for g in bob['document_grants']], ['doc-released'])
         self.assertEqual([g['connection'] for g in bob['connection_reader_grants']], ['notes-' + self.tenant])
         svc = self.lines(report, 'svc', 'delegation')
@@ -231,7 +239,8 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertIn('directory_deactivated', self.lines(report, 'carol', 'principal')[0]['flags'])
         self.assertEqual(report['summary']['directory_deactivated'], 1)
         orphaned = {(item['principal'], item['kind']): item['reasons'] for item in report['orphaned_grants']}
-        self.assertEqual(orphaned[('dave', 'project_grant')], ['inactive_principal'])
+        self.assertEqual(orphaned[('dave', 'workspace_access')], ['inactive_principal'])
+        self.assertEqual(orphaned[('dave', 'group_membership')], ['inactive_principal'])
         self.assertEqual(orphaned[('dave', 'credential')], ['inactive_principal'])
         self.assertEqual(orphaned[('dave', 'document_grant')], ['inactive_principal'])
         self.assertEqual(orphaned[('dave', 'connection_reader')], ['inactive_principal'])
@@ -315,12 +324,14 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         with self.assertRaises(Denied):
             self.store.refresh_credential(self.alice['refresh_token'], replacement_access_token=secrets.token_urlsafe(48),
                                           replacement_refresh_token=secrets.token_urlsafe(48))
-        explicit = decide_as('admin', line('bob', 'project_grant', project='maple'), 'revoke').json()
-        self.assertEqual(explicit['outcome']['status'], 'applied')
-        directory = decide_as('admin', line('bob', 'project_grant', project='oak'), 'revoke').json()
-        self.assertEqual(directory['outcome']['status'], 'directory_grant_remains')
+        local = decide_as('admin', line('bob', 'group_membership', group='maple-members'), 'revoke').json()
+        self.assertEqual(local['outcome']['status'], 'applied')
+        synced = decide_as('admin', line('bob', 'synced_group_membership'), 'revoke').json()
+        self.assertEqual(synced['outcome']['status'], 'change_at_source')
+        access = decide_as('admin', line('bob', 'workspace_access', workspace='oak'), 'revoke').json()
+        self.assertEqual(access['outcome']['status'], 'revoke_entry_or_membership')
         self.assertEqual(self.sql("SELECT project,active FROM enterprise_memberships WHERE principal='bob' ORDER BY project"),
-                         [{'project': 'maple', 'active': 0}, {'project': 'oak', 'active': 1}])
+                         [{'project': 'oak', 'active': 1}])
         self.assertEqual(decide_as('admin', line('svc', 'delegation'), 'revoke').json()['outcome']['status'], 'applied')
         self.denied(self.tokens['svc'])
         self.assertEqual(decide_as('admin', line('bob', 'document_grant'), 'revoke').json()['outcome']['status'], 'applied')
@@ -348,7 +359,7 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(decided[line('alice', 'principal')]['reviewer'], 'admin')
         self.assertIsNotNone(decided[binding]['applied'])
         self.assertEqual(evidence['summary']['approve'], 1)
-        self.assertEqual(evidence['summary']['revoke'], 9)
+        self.assertEqual(evidence['summary']['revoke'], 10)
         self.assertEqual(evidence['summary']['revocations_unfinished'], 0)
         self.assertEqual(evidence['summary']['lines'], opened['line_count'])
         exported = self.post(client, 'admin', 'evidence', {'review_id': review, 'format': 'csv'}).json()['content']
@@ -357,7 +368,7 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertIsNotNone(closed['closed'])
         self.assertEqual(decide_as('admin', line('carol', 'principal'), 'approve').status_code, 409)
         decisions = self.audits('access_review_decision')
-        self.assertEqual(len(decisions), 10)
+        self.assertEqual(len(decisions), 11)
         self.assertTrue(all(row['actor'] == 'admin' for row in decisions))
         self.assertIn(('admin', 'applied', line('bob', 'credential')),
                       [tuple(r.values()) for r in self.audits('access_review_revoke')])
@@ -432,7 +443,7 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertTrue(changes['principal_deactivated'])
         self.assertEqual(changes['refresh_families_revoked'], 2)  # alice's login and svc acting for alice
         self.assertEqual(changes['delegations_revoked'], 1)
-        self.assertEqual(changes['project_grants_removed'], 1)
+        self.assertEqual((changes['workspace_entries_removed'], changes['group_memberships_removed']), (0, 1))
         self.assertEqual(changes['identity_bindings_deactivated'], 1)
         for token in (self.tokens['alice'], self.tokens['svc']):
             self.denied(token)
@@ -441,7 +452,8 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
             self.store.refresh_credential(self.alice['refresh_token'], replacement_access_token=secrets.token_urlsafe(48),
                                           replacement_refresh_token=secrets.token_urlsafe(48))
         self.assertEqual(self.sql("SELECT count(*) AS n FROM enterprise_memberships WHERE principal='alice' AND active=1")[0]['n'], 0)
-        self.assertEqual(self.sql("SELECT count(*) AS n FROM cloud_explicit_memberships WHERE principal='alice'")[0]['n'], 0)
+        self.assertEqual(self.sql('''SELECT count(*) AS n FROM group_edges WHERE member_kind='principal'
+            AND member='alice' ''')[0]['n'], 0)
         self.assertEqual(self.sql('SELECT count(*) AS n FROM enterprise_sources WHERE active=1')[0]['n'], before)
         self.assertEqual(self.sql('SELECT body FROM memories WHERE id=%s', (self.source,))[0]['body'], self.body)
         remaining = result['remaining']
@@ -459,7 +471,9 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
     def test_offboarding_directory_member_without_control_credentials_reports_what_remains(self):
         from agenthub.access_review import offboard
         result = offboard(self.store, 'bob', actor='security-officer', reason='synthetic departure')
-        self.assertEqual(result['changes']['project_grants_removed'], 2)
+        # The local membership goes; the SCIM one ends with deactivation (the group
+        # is recomputed from active principals only).
+        self.assertEqual(result['changes']['group_memberships_removed'], 1)
         self.assertEqual(result['changes']['release_reader_grants_removed'], 1)
         self.assertEqual(self.sql("SELECT count(*) AS n FROM enterprise_memberships WHERE principal='bob' AND active=1")[0]['n'], 0)
         self.assertEqual(json.loads(self.sql('SELECT readers FROM backend_releases')[0]['readers']), ['dave'])

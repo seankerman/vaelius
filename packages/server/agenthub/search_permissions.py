@@ -272,6 +272,7 @@ def validate_source_snapshots(store, db, ctx, expected):
     # Redacted passage tier (owner, or shared at its level): `read` suffices. Retained
     # originals are a separate source_read + owner/grant check in agenthub.raw_access.
     store._need(ctx,'read')
+    store._label(db,ctx)
     condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     ids=sorted(expected)
     for offset in range(0,len(ids),1000):
@@ -338,6 +339,7 @@ def read_source_context(store,db,ctx,ids):
     ids=sorted(set(ids))
     if len(ids)>1000:raise ValueError('context_source_batch_bound')
     if not ids:return []
+    store._label(db,ctx)
     condition,args=policy_condition(ctx,store._reader_workspaces(db,ctx))
     return [dict(row) for row in db.execute('''WITH requested AS MATERIALIZED (
         SELECT * FROM enterprise_sources WHERE id=ANY(?::text[])

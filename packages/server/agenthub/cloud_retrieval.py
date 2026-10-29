@@ -823,6 +823,7 @@ class HybridRetrievalMixin:
 
     def _authorization_predicate(self, state, ctx, project=None, *, candidate_ids=None):
         self.current_identity(state.db, ctx)
+        self._label(state.db, ctx)
         self._need(ctx, 'read')
         scopes = self._readable_scopes(state.db, ctx, project)
         sql = "ed.tenant=? AND ed.active=1 AND d.lifecycle='active'\n            AND (ed.internal_project=ANY(?::text[]) OR EXISTS(SELECT 1 FROM cloud_preferences pf\n                WHERE pf.document_id=d.document_id AND pf.tenant=? AND pf.owner=? AND pf.valid_until IS NULL\n                AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=?)))\n                OR <GRANTED>)\n            AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM knowledge_generation_documents gd JOIN knowledge_generations g\n                    ON g.generation_id=gd.generation_id WHERE gd.document_id=d.document_id AND g.status='active'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preference_candidates pc WHERE pc.document_id=d.document_id AND pc.status IN ('pending','held'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                AND (pf.owner!=? OR pf.tenant!=?))\n            AND (NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                    AND pf.valid_until IS NULL AND pf.revision_id=d.active_revision_id))\n            "
@@ -885,7 +886,8 @@ class HybridRetrievalMixin:
             from agenthub.search_reader import restrict
             # A session label decides which workspaces recall reaches (its superset
             # list), so it replaces the cross-project `scope` option of #28.
-            reach = None if project is None else ('all' if ctx.get('session_label') else scope)
+            labelled = ctx.get('session_label') or ctx.get('session_label_request')
+            reach = None if project is None else ('all' if labelled else scope)
             reader = restrict(self, state, ctx, project, reach=reach)
             with reader:
                 predicates = ['TRUE', "d.lifecycle='active'"]
@@ -1007,7 +1009,7 @@ class HybridRetrievalMixin:
                     ([c['document_id'] for c in candidates],)).fetchone())
         if temporal_requested:
             with self.open() as state:
-                scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') else value.get('project'))
+                scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') or ctx.get('session_label_request') else value.get('project'))
                 temporal=self.temporal_search(state,ctx,value,scopes,
                     candidate_ids=[c['document_id'] for c in candidates] if candidates is not None else None)
                 if temporal is not None:
@@ -1058,7 +1060,7 @@ class HybridRetrievalMixin:
         with self.open() as state:
             allowed=[candidate['document_id'] for candidate in candidates]
             from agenthub.processing.durable_memory import retrieve as durable_retrieve
-            scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') else value.get('project'))
+            scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') or ctx.get('session_label_request') else value.get('project'))
             durable=durable_retrieve(state,value['query'],scopes[0],read_projects=scopes,authorized_document_ids=allowed) if scopes and self.retrieval_selection_policy=='baseline' else None
             durable_ids={row['document_id'] for row in durable} if durable is not None else None
             owners={}

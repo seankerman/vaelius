@@ -312,11 +312,17 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 # The label decides which workspaces recall reaches (folds in `scope`).
                 data.pop('scope',None)
         session={}
+        if label is not None:
+            from agenthub.workspace_access import validate_session_label
+            label=validate_session_label(label)
         def labelled(context):
-            # Computed once per request on current state; re-attached after re-authentication.
+            # Computed lazily, once per request, inside the request's own transaction on
+            # current state (WorkspaceAccessMixin._label); shared after re-authentication.
             if label is None:return context
-            if 'filter' not in session:session['filter']=store.session_filter(context,label)['session_label']
-            return dict(context,session_label=session['filter'])
+            return dict(context,session_label_request=label,session_label_cache=session)
+        def epoch():
+            if 'filter' not in session:session['filter']=store.session_filter(ctx,label)['session_label']
+            return session['filter']['epoch']
         ctx=labelled(ctx)
         with span('ready'):store.require_ready()
         if method=='POST' and limits_apply(path,data):
@@ -360,7 +366,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             result.pop('_candidate_pool',None)
             if ranker is not None:result=pack_search_result(data,result)
             if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
-            if label is not None:result=dict(result,session_epoch=session['filter']['epoch'])
+            if label is not None:result=dict(result,session_epoch=epoch())
             meter_search(store,ctx,result)
             return result
         with getattr(store,'delivery_read_lock',store.delivery_lock)():
@@ -398,7 +404,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             if method=='POST' and path in ('/enterprise/v1/search','/enterprise/v3/search'):
                 result=store.search(ctx,data)
                 if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
-                if label is not None:result=dict(result,session_epoch=session['filter']['epoch'])
+                if label is not None:result=dict(result,session_epoch=epoch())
                 meter_search(store,ctx,result);return result
             if method=='POST' and path=='/enterprise/v3/timeline':
                 if set(data)-{'id','offset','limit','cursor'} or not isinstance(data.get('id'),str):

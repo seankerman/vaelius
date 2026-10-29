@@ -80,7 +80,7 @@ def restrict(store, state, ctx, project=None, *, reach=None):
         review=selected_documents(store, ctx), releases=releases)
     if reach is not None:
         context['reach'] = reach
-    session = ctx.get('session_label')
+    session = store._label(state.db, ctx)
     if session and not session.get('private'):
         # Recall in a labelled session (docs/ACCESS_MODEL.md section 7, migration 049).
         context['session'] = {key: list(session.get(key, ())) for key in ('workspaces', 'direct', 'principals', 'groups')}

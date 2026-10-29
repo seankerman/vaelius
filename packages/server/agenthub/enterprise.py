@@ -246,7 +246,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Ge
         if not self._in_audience(db,ctx,source):
             shared=raw and self._shared_with(db,ctx,source)
             if not shared:return False
-        session=ctx.get("session_label")
+        session=self._label(db,ctx)
         if not session or session.get("private"):return True
         # A session label (recall) admits only items whose audience contains the session's.
         if shared is None:shared=raw and self._shared_with(db,ctx,source)
@@ -404,7 +404,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Ge
             if not all(self._visible_source(db,unlabelled,s) for s in dependencies):
                 if raw or not self._release_allowed(db,ctx,document_id,dependencies):return None
             if doc["internal_project"] not in self._readable_scopes(db,ctx):return None
-        if ctx.get("session_label") and not ctx["session_label"].get("private"):
+        session=self._label(db,ctx)
+        if session and not session.get("private"):
             # The session label (search_permissions.SESSION): every source passes, through
             # its workspace or through shares whose subjects contain the session audience.
             shared=(granted and all(self._session_granted(db,ctx,s) for s in dependencies))

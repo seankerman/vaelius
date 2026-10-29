@@ -595,6 +595,14 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         allowed = self.layers(self.label(self.alice, 'maple'))[0]
         documents = self.documents()
         self.assertTrue({documents[i] for i in ids(labelled) if i in documents} <= allowed)
+        # The API path computes the same filter lazily inside the request's transaction.
+        holder = {}
+        lazy = self.store.search(dict(self.alice, session_label_request={'workspace': 'maple'},
+                                      session_label_cache=holder), query)
+        self.assertEqual(ids(lazy), ids(labelled))
+        self.assertEqual(holder['filter']['workspaces'], ['maple'], 'computed once and shared')
+        oracle, indexed, rls = self.layers(dict(self.alice, session_label_request={'workspace': 'maple'}))
+        self.assertEqual((oracle, indexed, rls), (self.expect('m_shared', 'm_team'),) * 3)
         sent = []
         tools = MemoryTools('maple', SimpleNamespace(request=lambda path, value=None: sent.append((path, value)) or
                                                      {'results': []}), label={'workspace': 'maple'})

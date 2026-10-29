@@ -1255,6 +1255,18 @@ class WorkspaceAccessMixin:
                       groups=sorted(r['id'] for r in rows if r['kind'] == 'group' and r['contains']))
         return result
 
+    def _label(self, db, ctx):
+        """This request's session-label recall filter, computed once, on first use, inside
+        a transaction the request already holds (`session_label_request` from the API;
+        an explicit `session_label`, including None, wins)."""
+        if 'session_label' in ctx or ctx.get('session_label_request') is None:
+            return ctx.get('session_label')
+        holder = ctx.setdefault('session_label_cache', {})
+        if 'filter' not in holder:
+            holder['filter'] = self._session_label(db, ctx, validate_session_label(ctx['session_label_request']))
+        ctx['session_label'] = holder['filter']
+        return holder['filter']
+
     def session_filter(self, ctx, label):
         """ctx with its `session_label` recall filter (None keeps today's behavior)."""
         if label is None:

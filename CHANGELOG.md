@@ -48,6 +48,19 @@ The release workflow publishes the section whose heading matches the tag.
   as private from that point on. Scope files can allow specific paths and MCP
   servers (`[capture] allowed_paths`, `allowed_mcp_servers`). Events carry an
   optional `origin_label`; deploy the service before clients.
+- Scoped folders form the origin allowlist. Any folder holding a scope file, with
+  its whole subtree and whether or not it is a Git repository, is in scope; the
+  nearest scope file wins. A scope file at the home folder, above it, or directly
+  at a top-level personal folder is ignored. Scoped folders are checked before the
+  personal-folder rule, so repositories under `~/Documents` behave normally;
+  credentials stay private everywhere, now including inside the project. Claude
+  Code's own state (`~/.claude/projects/<folder>/`) follows the folder it belongs
+  to, and its user configuration (`CLAUDE.md`, `reference/`, `plans/`,
+  `settings*.json`, `plugins/`) does not restrict. Same-project folders and
+  same-project recalled memory no longer change the label. A session-start line
+  names the in-scope folders (`scope_context_notice`, on by default).
+  `Context.scope_of(path)` returns a path's scope (root, project, sharing,
+  category) for reuse.
 - Docker `HEALTHCHECK` against the unauthenticated `/health` endpoint.
 - One sharing ladder, `private` < `team` < `organization`, for conversation passages
   and, separately, for originals. Effective sharing is the minimum of the author's own

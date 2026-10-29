@@ -280,6 +280,11 @@ delivered only by an MDM profile or server-managed settings is invisible to that
 check; set `"claude_code_guardrail_notice": false` in the client profile's
 `config.json` to silence it.
 
+At session start the client also names the in-scope folders, the current root and
+scoped folders next to it (`vaelius: in-scope folders: ...`), for the person and as
+context for the agent; set `"scope_context_notice": false` to turn that line off
+([scoped folders](DATA_BOUNDARIES.md#scoped-folders)).
+
 #### Enforce for an organisation
 
 An administrator can deploy the profile as managed settings, which users and

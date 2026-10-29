@@ -71,6 +71,11 @@ Redaction is pattern based and not universal; see
 
 ## The sharing ladder
 
+> **Superseded once PR A of the [access model](ACCESS_MODEL.md) lands.** Workspaces
+> with access lists, groups, and per-item `private` and explicit shares replace this
+> per-item ladder and the minimum of terms below. Until then this section describes
+> what the service enforces.
+
 | Level | Who can read, besides the author |
 | --- | --- |
 | `private` | nobody |

@@ -239,17 +239,21 @@ without a model call, and the service enforces the label.
 
 | Touched | Label |
 | --- | --- |
-| A path inside the current project's root, or governed by the same project's scope file (another checkout or worktree). Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
-| A path inside another repository whose scope file names a different project | tagged with that project: sharing no wider than that scope file requests, and for `team` only readers who are members of **every** tagged project |
-| A path inside a repository with no scope file, or whose scope file is off or invalid | `private` |
-| Personal folders under home (`Documents`, `Desktop`, `Downloads`, `Pictures`, `Movies`, `Music`, iCloud and cloud-drive folders, `Library/Mail`, `Library/Messages`) and credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, ...) | always `private`; no allowlist opens them |
-| Temporary folders (`$TMPDIR`, `/tmp`, `/private/var/folders`), tool caches and package folders (`~/.cache`, `~/.npm`, `~/.cargo`, `site-packages`, `node_modules`, Claude Code plugin folders, ...), read-only system locations (`/usr`, `/opt/homebrew`, `/etc`, `/Library/Developer`) | no restriction |
-| Anything else that exists outside the project (the rest of the home folder, other volumes) | `private` |
+| Credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, ...), anywhere, including inside the project. Checked-in templates (`.env.example`, `.env.sample`, `.env.template`, ...) are not credentials | always `private`; no allowlist opens them |
+| A path inside a [scoped folder](#scoped-folders) of the **same project**: the current root, another checkout or worktree, a sibling folder whose scope file names the same `project`. Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
+| A path inside a scoped folder of a **different project** | tagged with that project: sharing no wider than that scope file requests, and for `team` only readers who are members of **every** tagged project |
+| A path inside a scoped folder whose scope file is off or invalid | `private` |
+| Claude Code's own state, `~/.claude/projects/<folder>/` (saved tool output, task output, auto-memory, transcripts) | follows the folder the name encodes: the current session's folder is unrestricted, a scoped folder follows that folder's project as above, anything else is `private` |
+| Claude Code user configuration already loaded into sessions: `~/.claude/CLAUDE.md`, `~/.claude/reference/`, `~/.claude/plans/`, `~/.claude/settings*.json`, `~/.claude/plugins/` | no restriction |
+| Personal folders under home (`Documents`, `Desktop`, `Downloads`, `Pictures`, `Movies`, `Music`, iCloud and cloud-drive folders, `Library/Mail`, `Library/Messages`) outside every scoped folder | always `private`; no allowlist opens them |
+| Temporary folders (`$TMPDIR`, `/tmp`, `/private/var/folders`, including Claude Code's scratch and task folders), tool caches and package folders (`~/.cache`, `~/.npm`, `~/.cargo`, `site-packages`, `node_modules`, ...), read-only system locations (`/usr`, `/opt/homebrew`, `/etc`, `/Library/Developer`) | no restriction |
+| A Git repository with no governing scope file | `private` |
+| Anything else that exists outside every scoped folder (the rest of the home folder, other volumes) | `private` |
 | A path that does not exist (a file the agent is about to create) | no restriction: nothing was read |
 | Public web fetches and searches | no restriction, recorded as origin `web` |
 | A fetch from a non-public address (`localhost`, private and link-local ranges, single-label and intranet-style names, `file:`) | `private` (`file:` follows the path rules) |
 | An MCP server other than Vaelius itself (mail, chat, document stores, issue trackers, ...) | `private`: those systems have permissions memory cannot reproduce |
-| Recalled or injected memory | the label the service attached to each item: an organization item restricts nothing, a team item keeps `team` and adds its project to the tag set, a private or unlabelled item is `private`. The person's own preferences are standing instructions, like prompts, and do not restrict |
+| Recalled or injected memory | the label the service attached to each item: an organization item restricts nothing; a team item of the current project restricts nothing when the scope file requests `team` or less, and otherwise keeps `team`; a team item of another project keeps `team` and adds its project to the tag set; a private or unlabelled item is `private`. The person's own preferences are standing instructions, like prompts, and do not restrict |
 | A tool the client does not recognise | `private` |
 
 Planning, delegation and question tools (`TodoWrite`, `Task`/`Agent`, `AskUserQuestion`,
@@ -271,6 +275,54 @@ repository is caught. Hosts are covered: Claude Code `Bash`, Codex `Bash`
 `LS`, `LSP`, Codex `apply_patch` and `FileChange`; `WebFetch`, `WebSearch`; and
 `mcp__<server>__<tool>`, plugin servers `mcp__plugin_<plugin>_<server>__<tool>`,
 MCP resource tools and Codex `McpToolCall` items.
+
+### Scoped folders
+
+A folder that holds a scope file (`.vaelius`, or a legacy name from the profile's
+`scope_files`) is a **scoped folder**, together with its whole subtree, whether or
+not it is a Git repository. The nearest scope file above a path governs it, so a
+nested scope file overrides its parent, and a workspace folder with one scope file
+covers every repository inside it that has none. The rules are checked in the order
+of the table above: credentials first, then scoped folders, so a repository under
+`~/Documents` behaves like any other repository, while a loose file in `~/Documents`
+stays private.
+
+A scope file is **ignored**, neither counting nor overriding, when it sits at:
+
+- the home folder, any folder above it, or the filesystem root;
+- directly at a top-level personal folder: `~/Documents`, `~/Desktop`,
+  `~/Downloads`, `~/Pictures`, `~/Movies`, `~/Music`, the iCloud Drive root and the
+  cloud-drive folders;
+- anywhere inside the mail and chat stores (`Library/Mail`, `Library/Messages`,
+  their containers).
+
+A scope file deeper inside a personal folder, for example
+`~/Documents/some-workspace/.vaelius`, counts normally. A session whose own scope
+file sits at an ignored place has no in-scope root for labelling: everything it
+reads outside temporary, tool and system folders makes it private.
+
+Reading another scoped folder changes the label only when its audience is
+narrower: the same `project` changes nothing and never shows a status line; a
+different project adds that project to the tag set as described above.
+
+**Claude Code state.** Claude Code names each `~/.claude/projects/<folder>` after
+the session's starting directory, replacing every character other than `A-Z`, `a-z`
+and `0-9` with `-` (so `/work/my_repo.v2` becomes `-work-my-repo-v2`). The client
+treats the folder of the current session (from the working directory, the scope
+root, or the hook's transcript path) as the project itself. Any other folder is
+matched back to an existing directory by that encoding and follows that directory's
+scope; a folder that matches no existing scoped directory is `private`.
+
+**What the agent is told.** At session start in a captured project, the client adds
+one informational line, shown to the person and given to the agent as context:
+
+```text
+vaelius: in-scope folders: ~/src/repo, ../docs-site (reads elsewhere make this session private)
+```
+
+It lists the current root and scoped sibling folders next to it, stays under 200
+characters, and never lists the home folder or a personal folder. Set
+`"scope_context_notice": false` in the client profile's `config.json` to turn it off.
 
 ### Exceptions in the scope file
 

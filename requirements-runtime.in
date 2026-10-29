@@ -2,7 +2,7 @@
 # installed in the container image. Pins must equal packages/server/pyproject.toml;
 # scripts/check_locks.py enforces that. Regenerate the hashed lock as described
 # in RELEASING.md.
-authlib==1.8.0
+authlib==1.9.1
 boto3==1.43.113
 joserfc==1.7.5
 jsonschema==4.26.0

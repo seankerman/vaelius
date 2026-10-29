@@ -251,13 +251,16 @@ with what it touched and keeps the most restrictive label for the rest of the
 session (session taint), because that content is now in the agent's context. The
 label carries:
 
-- an **origin ceiling**: `private` for personal folders, credentials, other volumes,
-  repositories without a scope file, MCP servers other than Vaelius, non-public web
-  addresses, private recalled memory and unknown tools; no restriction for the
-  project itself, temporary and tool folders, read-only system paths, the public web
-  and the scope file's allowlists;
-- **other projects** whose content it carries: another repository with its own scope
-  file, or recalled team memory from another project. Instead of making the session
+- an **origin ceiling**: `private` for credentials (anywhere), personal folders and
+  other home or volume paths outside every scoped folder, repositories without a
+  scope file, MCP servers other than Vaelius, non-public web addresses, private
+  recalled memory and unknown tools; no restriction for the project itself, other
+  scoped folders of the same project, Claude Code's own state for in-scope folders,
+  its user configuration, temporary and tool folders, read-only system paths, the
+  public web and the scope file's allowlists;
+- **other projects** whose content it carries: another scoped folder (a folder with
+  its own scope file, and everything below it) naming a different project, or
+  recalled team memory from another project. Instead of making the session
   private, the event is tagged with that project; it is shared no wider than every
   tagged project allows, and at `team` only with people who are members of all of
   them;
@@ -276,6 +279,21 @@ check reads the stored origin, no later change of a person setting, project or
 tenant ceiling, or even of the stored level itself, can widen it. Recalled items
 report the projects they carry in `origin.projects`, so a session that restates them
 inherits the same restriction.
+
+**Scoped folders form an allowlist.** Any folder holding a scope file, with its
+whole subtree, is in scope; the nearest scope file wins. A scope file at the home
+folder, above it, or directly at a top-level personal folder (`~/Documents`,
+`~/Desktop`, `~/Downloads`, iCloud Drive, ...) is ignored, so it cannot open a
+personal area; one deeper inside, such as `~/Documents/some-workspace/.vaelius`,
+counts. Scoped folders are checked before the personal-folder rule, so a repository
+under `~/Documents` behaves normally; credentials stay private even inside one.
+Reading another scoped folder restricts only when its audience is narrower: the
+same `project` changes nothing, and recalled memory follows the same rule. Claude
+Code's own state (`~/.claude/projects/<folder>/`: saved tool output, task output,
+auto-memory) follows the folder it belongs to, and its user configuration
+(`~/.claude/CLAUDE.md`, `reference/`, `plans/`, `settings*.json`, `plugins/`) does
+not restrict. At session start the agent and the person see one informational line
+naming the in-scope folders ([details](DATA_BOUNDARIES.md#scoped-folders)).
 
 Only a new session (`/clear`, a new conversation) starts clean; compaction keeps the
 label because its summary is written from the restricted content. The person sees

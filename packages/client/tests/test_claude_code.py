@@ -257,7 +257,10 @@ class StatusTests(Profile):
         result = self.hook('SessionStart', raises=LoginRequired())
         self.assertIn('Vaelius capture ON for project demo', result['systemMessage'])
         self.assertIn('Vaelius signed out', result['systemMessage'])
-        self.assertNotIn('hookSpecificOutput', result)
+        # The only text for the model is the local in-scope folder line, never the service status.
+        context = result['hookSpecificOutput']['additionalContext']
+        self.assertTrue(context.startswith('vaelius: in-scope folders: '))
+        self.assertNotIn('\n', context)
         for kind in ('UserPromptSubmit', 'PostToolUse', 'Stop'):
             self.assertNotIn('hookSpecificOutput', self.hook(kind, raises=LoginRequired()))
         self.assertEqual([e['event']['kind'] for e in self.outbox()], ['UserPromptSubmit', 'PostToolUse', 'Stop'])

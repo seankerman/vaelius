@@ -1,5 +1,5 @@
 {
-  "build_id": "fb69e453d0604e7421dacb168158613a951c8ab84f1658abd3fa8f43a7496311",
+  "build_id": "4d4274006428bc7936cf45cdb66f5f3644fb529dd8bfa3914b72571f02c19870",
   "files": {
     "__init__.py": "a604f4728260e9159852b230b0a504a18157db4525b27ee637f7e84a3c47bc27",
     "aws_sts.py": "516d865b533573554fa33e25755f37c379a3308314d7d4ac62d61a7d91a14851",
@@ -8,9 +8,9 @@
     "claude_code.py": "9a20df1176450c9246bdbe7843bbcd8311aaed9f3d633d22ce5720cceab54606",
     "claude_guardrails.py": "9288da1588548570ff1a108ef9c6bfdf7c0fa5b1ca999d73933dc63a7e1a0d72",
     "cleaning.py": "5fac2d1998a3007dd5eeea40bdb7980fc5c6deba54a565540776becef5c274c1",
-    "cli.py": "8142a2fd607791ba05690222a504f0de59d726e217ce1ad0edae8ec0e2ed301e",
-    "cloud_contract.py": "fadfb07b7c80c590a13695e5f744c9ff321ad81412e27c8b271e937772f12a96",
-    "cloud_enroll.py": "03cdec23f447f2b6acfadc264546a4d4fdee235fc49ba664bf314d72d21dc42c",
+    "cli.py": "1cb4714afca2eb3399995e6e9c682fb671d65456569bb0cd4e7fd95947631073",
+    "cloud_contract.py": "9836e4acdb1c33e5daa06e6cef9ffe06c2a39be787f8d01da419c0f2665ffa2b",
+    "cloud_enroll.py": "1426b3920f09f94cd294b0bc5b91e7f134503375d89a6e1e398664abaaa35135",
     "codex_status.py": "34b325dbddabfcf1327068ff0ae448fb0ac373970f6fa2f1af2cab2978ea83c5",
     "credentials.py": "7971365e8a38d4b22bb0b1ba65c6784ee31d87964c334e9b469b8152a0367983",
     "desktop_capture.py": "43a0388293707eff15590cb148aec638b0445933893a705b3f8b697c5f6cb395",
@@ -19,6 +19,7 @@
     "enterprise_contract.py": "0825b669d3a2520edb69d31a54e1abf04433054e3d330b0ad140708756414221",
     "enterprise_desktop.py": "094014dc7dd2a5c8fc67021d5833726c9f36bb6f1994f94f279ae57960421c01",
     "general_contract.py": "91013386b7e3b57791bce9a4df6e354909413d1090153677e76efdc2d8af1900",
+    "github_link.py": "c87ddfb8928efe29d0a3623934f1999000ad24b96c0b631fe64cf5e154263b80",
     "hooks.py": "3e514123e7fecd7326101b8d8c3074e05b51e8c40fd5ab40d9216bcc5b0353b8",
     "host_command.py": "e3480609ed8f37b3399fc78b8002faf5e5e745c656439623f0471058e4596b16",
     "install.py": "d67f80e85b5803ffde9d55fe01fff685cd324f1c2bb77abc6fae13deab3b204e",

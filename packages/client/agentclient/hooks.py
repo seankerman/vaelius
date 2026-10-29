@@ -318,7 +318,7 @@ def _enterprise_hook(home, config, event, original, host='codex'):
         if not cards:return {}
         context=prefix+json.dumps(cards,ensure_ascii=True)
         # Injected memory is now in the agent's context: it restricts what follows.
-        notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True))
+        notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True,sharing=event.get('sharing')))
         try:
             backend.request('/enterprise/v1/receipts',{'version':VERSION,
                 'session':event['session'] or 'unknown-session',
@@ -431,11 +431,21 @@ def handle(home, event, *, host='codex', via='settings'):
     result=_enterprise_hook(Path(home),config,metadata,event,host=host)
     if origin_notice:
         result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),origin_notice) if x))
+    line=None
+    if kind=='SessionStart' and config.get(origin_labels.SCOPE_NOTICE_KEY) is not False:
+        # Plain information for the person and the agent: where reads stay in scope.
+        try:line=origin_labels.in_scope_line(scope,event.get('cwd'),config)
+        except Exception:line=None
+        if line:
+            output=dict(result.get('hookSpecificOutput') or {'hookEventName':kind})
+            output['additionalContext']='\n'.join(x for x in (line,output.get('additionalContext')) if x)
+            result=dict(result,hookSpecificOutput=output)
     if kind in ('SessionStart','UserPromptSubmit'):
         try:message=_notices(Path(home),config,kind,scope)
         except Exception:message=None
         if host=='claude-code' and kind=='SessionStart' and scope['capture']=='on':
             message='\n'.join(x for x in (message,_guardrail_line(config,event)) if x)
+        message='\n'.join(x for x in (message,line) if x)
         if message:
             # Capture status first, then any signed-out or unreachable warning.
             result=dict(result,systemMessage='\n'.join(x for x in (message,result.get('systemMessage')) if x))

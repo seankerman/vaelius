@@ -284,7 +284,7 @@ class ClassifierTableTest(unittest.TestCase):
 
     def test_outside_path_beyond_home_and_temp_is_private(self):
         context = self.tree.context()
-        context.system = []  # as if the synthetic tree were not under a temporary folder
+        context.system = context.temp = []  # as if the synthetic tree were not under a temporary folder
         target = self.tree.tmp / 'volume/data.csv'
         target.parent.mkdir()
         target.write_text('x')
@@ -625,12 +625,37 @@ class HookTaintTest(unittest.TestCase):
         self.assertEqual((self.last()['origin_label']['ceiling'], self.last()['origin_label']['reason']),
                          ('private', 'recalled_memory'))
 
-    def test_same_project_team_memory_keeps_team(self):
+    def test_same_project_team_memory_does_not_narrow_a_team_project(self):
+        card = {'id': 'd1', 'revision': 'r1', 'title': 't', 'lesson': 'l', 'provenance': {'author': 'a'},
+                'origin': {'project': 'demo', 'sharing': 'team'}}
+        result = self.hook('UserPromptSubmit', prompt='what did we decide?', cards=[card])
+        self.assertNotIn('vaelius: this session', result.get('systemMessage', ''))
+        self.hook('Stop', last_assistant_message='we decided ...')
+        self.assertEqual((self.last()['sharing'], self.last().get('origin_label')), ('team', None))
+
+    def test_same_project_team_memory_narrows_an_organization_request(self):
+        (self.tree.repo / '.vaelius').write_text('project = "demo"\nsharing = "organization"\n')
         card = {'id': 'd1', 'revision': 'r1', 'title': 't', 'lesson': 'l', 'provenance': {'author': 'a'},
                 'origin': {'project': 'demo', 'sharing': 'team'}}
         self.hook('UserPromptSubmit', prompt='what did we decide?', cards=[card])
         self.hook('Stop', last_assistant_message='we decided ...')
-        self.assertEqual((self.last()['sharing'], self.last()['origin_label']['ceiling']), ('team', 'team'))
+        self.assertEqual(self.last()['origin_label']['ceiling'], 'team')
+
+    def test_session_start_names_the_in_scope_folders(self):
+        result = self.hook('SessionStart', source='startup')
+        line = 'vaelius: in-scope folders: ~/src/repo, ../other, ../quiet, ../repo-copy (reads elsewhere make this session private)'
+        self.assertIn(line, result['hookSpecificOutput']['additionalContext'])
+        self.assertIn(line, result['systemMessage'])
+        self.assertNotIn('../off', line)  # capture off
+        self.assertNotIn('../plain', line)  # no scope file
+        self.assertNotIn(str(self.tree.home), json.dumps(result))
+        for word in ('REQUIRED', 'must', 'verbatim', 'print'):
+            self.assertNotIn(word, line)
+
+    def test_session_start_line_can_be_turned_off(self):
+        (self.home / 'config.json').write_text(json.dumps(dict(self.config, scope_context_notice=False)))
+        result = self.hook('SessionStart', source='startup')
+        self.assertNotIn('in-scope folders', json.dumps(result))
 
     def test_scope_file_allowlists_apply_through_the_hook(self):
         (self.tree.repo / '.vaelius').write_text(
@@ -762,3 +787,186 @@ class ScopeFileExceptionsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ScopedFolderTest(unittest.TestCase):
+    """Scoped-folder allowlist: repositories under a stand-in `~/Documents`, ignored scope
+    files at home and personal folders, nested overrides, same-project siblings and
+    Claude Code's own state under `~/.claude`."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        home = self.home = self.tmp / 'home'
+        ws = self.ws = home / 'Documents/ws'
+        self.repo = ws / 'repo'
+        files = {
+            home / '.vaelius': 'project = "everything"\nsharing = "organization"\n',  # ignored: home
+            home / 'Documents/.vaelius': 'project = "everything"\nsharing = "organization"\n',  # ignored: personal root
+            self.repo / '.vaelius': 'project = "same"\nsharing = "team"\n',
+            ws / 'sib/.vaelius': 'project = "same"\nsharing = "private"\n',
+            ws / 'diff/.vaelius': 'project = "other"\nsharing = "team"\n',
+            ws / 'my_lib.v2/.vaelius': 'project = "same"\n',  # `_` and `.` both encode as `-`
+            home / 'work/.vaelius': 'project = "same"\nsharing = "team"\n',  # not a Git repository
+            home / 'work/nested/.vaelius': 'project = "inner"\nsharing = "team"\n',
+        }
+        for path in (self.repo / '.git', ws / 'sib/.git', ws / 'diff/.git', ws / 'plain/.git', home / 'src/plain/.git', home / 'work/repo-a/.git',
+                     self.repo / 'src', home / 'loose-dir'):
+            path.mkdir(parents=True, exist_ok=True)
+        for path in (self.repo / 'src/app.py', self.repo / '.env', self.repo / '.env.example', self.repo / 'certs/dev.pem',
+                     ws / 'sib/s.py', ws / 'diff/d.py', ws / 'plain/p.py', home / 'src/plain/p.py', ws / 'loose.md', home / 'Documents/taxes.pdf',
+                     home / 'notes.txt', home / 'work/repo-a/a.py', home / 'work/readme.md', home / 'work/nested/n.py',
+                     home / 'Desktop/todo.txt', home / 'loose-dir/x.txt', home / '.claude/CLAUDE.md',
+                     home / '.claude/reference/boxes.md', home / '.claude/plans/p.md', home / '.claude/settings.json',
+                     home / '.claude/settings.local.json', home / '.claude/history.jsonl', home / '.aws/credentials'):
+            files.setdefault(path, 'synthetic\n')
+        for path, text in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        projects = home / '.claude/projects'
+        for folder in (self.repo / 'src', ws / 'sib', ws / 'diff', ws / 'my_lib.v2', home / 'loose-dir', home / 'gone/away'):
+            for leaf in ('tool-results/r1.txt', 'tasks/t1.output', 'memory/MEMORY.md', 'session.jsonl'):
+                target = projects / origin.slug(folder) / leaf
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('synthetic\n')
+        self.enterContext(mock.patch.dict(os.environ, {'HOME': str(home)}))
+        scope = {'project': 'same', 'sharing': 'team', 'root': str(self.repo), 'scope_file': str(self.repo / '.vaelius')}
+        self.context = origin.Context(scope, str(self.repo / 'src'), {})
+
+    def test_slug_matches_claude_code(self):
+        self.assertEqual(origin.slug('/srv/a.b/Documents/my_repo/.claude worktrees/x'),
+                         '-srv-a-b-Documents-my-repo--claude-worktrees-x')
+
+    def test_rules(self):
+        home, ws, repo = self.home, self.ws, self.repo
+        state = home / '.claude/projects'
+        rows = [
+            # Scoped folders under a personal folder behave normally.
+            ('repo under Documents', repo / 'src/app.py', 'organization', None, []),
+            ('same-project sibling repo', ws / 'sib/s.py', 'organization', None, []),
+            ('different-project repo', ws / 'diff/d.py', 'team', 'other_project', ['other']),
+            ('unscoped repo next door', ws / 'plain/p.py', 'private', 'personal_content', []),
+            ('unscoped repo elsewhere', home / 'src/plain/p.py', 'private', 'other_project', []),
+            # Ignored scope files at home and directly at personal folders.
+            ('home file despite ~/.vaelius', home / 'notes.txt', 'private', 'outside_repo', []),
+            ('unknown home folder', home / 'loose-dir/x.txt', 'private', 'outside_repo', []),
+            ('Documents despite ~/Documents/.vaelius', home / 'Documents/taxes.pdf', 'private', 'personal_content', []),
+            ('loose file in a Documents workspace', ws / 'loose.md', 'private', 'personal_content', []),
+            ('Desktop', home / 'Desktop/todo.txt', 'private', 'personal_content', []),
+            # Non-Git scoped folder covers its subtree, including repos without a scope file; nested overrides.
+            ('non-git scoped folder', home / 'work/readme.md', 'organization', None, []),
+            ('repo inside scoped folder', home / 'work/repo-a/a.py', 'organization', None, []),
+            ('nested override', home / 'work/nested/n.py', 'team', 'other_project', ['inner']),
+            # Credentials stay private, even inside the project.
+            ('.env in repo', repo / '.env', 'private', 'credential_file', []),
+            ('key in repo', repo / 'certs/dev.pem', 'private', 'credential_file', []),
+            ('.env template in repo', repo / '.env.example', 'organization', None, []),
+            ('aws credentials', home / '.aws/credentials', 'private', 'credential_file', []),
+            # Claude Code state and configuration.
+            ('own tool-results', state / origin.slug(repo / 'src') / 'tool-results/r1.txt', 'organization', None, []),
+            ('own task output', state / origin.slug(repo / 'src') / 'tasks/t1.output', 'organization', None, []),
+            ('own auto-memory', state / origin.slug(repo / 'src') / 'memory/MEMORY.md', 'organization', None, []),
+            ('same-project sibling state', state / origin.slug(ws / 'sib') / 'tool-results/r1.txt', 'organization', None, []),
+            ('state of a folder named with _ and .', state / origin.slug(ws / 'my_lib.v2') / 'memory/MEMORY.md',
+             'organization', None, []),
+            ('other-project state', state / origin.slug(ws / 'diff') / 'memory/MEMORY.md', 'team', 'other_project', ['other']),
+            ('unscoped folder state', state / origin.slug(home / 'loose-dir') / 'session.jsonl', 'private', 'outside_repo', []),
+            ('deleted folder state', state / origin.slug(home / 'gone/away') / 'session.jsonl', 'private', 'outside_repo', []),
+            ('CLAUDE.md', home / '.claude/CLAUDE.md', 'organization', None, []),
+            ('reference', home / '.claude/reference/boxes.md', 'organization', None, []),
+            ('plans', home / '.claude/plans/p.md', 'organization', None, []),
+            ('settings', home / '.claude/settings.json', 'organization', None, []),
+            ('local settings', home / '.claude/settings.local.json', 'organization', None, []),
+            ('other ~/.claude files', home / '.claude/history.jsonl', 'private', 'outside_repo', []),
+        ]
+        for description, path, ceiling, reason, projects in rows:
+            with self.subTest(description):
+                label = origin.classify(claude('Read', {'file_path': str(path)}, cwd=str(repo / 'src')), self.context)
+                self.assertEqual((label['ceiling'], label['reason'], label['projects']), (ceiling, reason, projects))
+
+    def test_transcript_path_marks_the_session_state_folder(self):
+        # A working directory outside the root (the agent changed directory) is not this session's folder.
+        moved = origin.Context({'project': 'same', 'sharing': 'team', 'root': str(self.repo)}, str(self.home / 'loose-dir'), {})
+        target = self.home / '.claude/projects' / origin.slug(self.home / 'loose-dir') / 'tool-results/r1.txt'
+        self.assertEqual(moved.place(str(target))['ceiling'], 'private')
+        # Without a project, nothing is this session's own state.
+        unscoped = origin.Context(None, str(self.home / 'loose-dir'), {})
+        self.assertEqual(unscoped.place(str(target))['ceiling'], 'private')
+        other = self.home / '.claude/projects' / origin.slug(self.ws / 'plain') / 'x'
+        other.parent.mkdir(parents=True)
+        other.write_text('x')
+        scope = {'project': 'same', 'root': str(self.repo)}
+        event = claude('Read', {'file_path': str(other)}, cwd=str(self.repo))
+        event['transcript_path'] = '/elsewhere/session.jsonl'  # not under ~/.claude/projects: ignored
+        self.assertEqual(origin.classify(event, origin.Context(scope, str(self.repo), {}))['ceiling'], 'private')
+        event['transcript_path'] = str(other.parent / 'session.jsonl')
+        self.assertEqual(origin.classify(event, origin.Context(scope, str(self.repo), {}))['ceiling'], 'organization')
+
+    def test_scope_of_reports_root_project_sharing_and_category(self):
+        rows = [
+            (self.repo / 'src/app.py', 'project', str(self.repo), 'same', 'team'),
+            (self.ws / 'sib/s.py', 'project', str(self.ws / 'sib'), 'same', 'private'),
+            (self.ws / 'diff/d.py', 'scoped', str(self.ws / 'diff'), 'other', 'team'),
+            (self.home / 'work/repo-a/a.py', 'project', str(self.home / 'work'), 'same', 'team'),
+            (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'memory/MEMORY.md', 'claude_state',
+             str(self.ws / 'diff'), 'other', 'team'),
+            (self.home / '.claude/CLAUDE.md', 'claude_config', None, None, None),
+            (self.home / 'Documents/taxes.pdf', 'personal', None, None, None),
+            (self.repo / '.env', 'credential', None, None, None),
+            (self.home / 'notes.txt', 'unknown', None, None, None),
+            (self.home / 'nope.txt', 'missing', None, None, None),
+            (self.ws / 'plain/p.py', 'personal', None, None, None),
+            (self.home / 'src/plain/p.py', 'unscoped_repo', str(self.home / 'src/plain'), None, None),
+            (Path('/usr/bin/env'), 'system', None, None, None),
+        ]
+        for path, category, root, project, sharing in rows:
+            with self.subTest(str(path)):
+                info = self.context.scope_of(str(path))
+                self.assertEqual((info['category'], info['root'], info['project'], info['sharing']),
+                                 (category, root, project, sharing))
+        temp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, temp, True)
+        (temp / 'scratch.txt').write_text('x')
+        if not origin._within(temp, self.home):
+            self.assertEqual(self.context.scope_of(str(temp / 'scratch.txt'))['category'], 'temp')
+
+    def test_session_moving_between_same_project_repos_stays_quiet(self):
+        taint = origin.SessionOrigins(self.tmp / 'profile')
+        for path in (self.repo / 'src/app.py', self.ws / 'sib/s.py',
+                     self.home / '.claude/projects' / origin.slug(self.repo / 'src') / 'tool-results/r1.txt'):
+            label = origin.classify(claude('Read', {'file_path': str(path)}, cwd=str(self.repo / 'src')), self.context)
+            effective = taint.apply('s', label, project='same')
+            self.assertEqual((effective['ceiling'], effective['projects'], effective['newly_restricted']),
+                             ('organization', [], False))
+        self.assertIsNone(origin.status_line(taint.get('s')))
+        label = origin.classify(claude('Read', {'file_path': str(self.ws / 'diff/d.py')}, cwd=str(self.repo)), self.context)
+        effective = taint.apply('s', label, project='same')
+        self.assertEqual((effective['ceiling'], effective['projects'], effective['newly_restricted']), ('team', ['other'], True))
+
+    def test_scope_file_at_home_governs_nothing(self):
+        context = origin.Context({'project': 'everything', 'root': str(self.home), 'scope_file': str(self.home / '.vaelius')},
+                                 str(self.home), {})
+        self.assertIsNone(context.root)
+        self.assertEqual(context.place(str(self.home / 'notes.txt'))['ceiling'], 'private')
+        self.assertIsNone(origin.in_scope_line({'project': 'everything', 'root': str(self.home)}, str(self.home), {}))
+
+    def test_in_scope_line_is_short_and_lists_scoped_siblings(self):
+        line = origin.in_scope_line({'project': 'same', 'root': str(self.repo)}, str(self.repo / 'src'), {})
+        self.assertEqual(line, 'vaelius: in-scope folders: ~/Documents/ws/repo, ../diff, ../my_lib.v2, ../sib '
+                               '(reads elsewhere make this session private)')
+        for name in 'abcdefghijklmnopqrstuvwxyz':
+            (self.ws / ('sibling-with-a-long-name-' + name)).mkdir()
+            (self.ws / ('sibling-with-a-long-name-' + name) / '.vaelius').write_text('project = "same"\n')
+        line = origin.in_scope_line({'project': 'same', 'root': str(self.repo)}, str(self.repo / 'src'), {})
+        self.assertLessEqual(len(line), origin.SCOPE_LINE_MAX)
+        self.assertTrue(line.startswith('vaelius: in-scope folders: ~/Documents/ws/repo, '))
+
+    def test_same_project_recall_is_unchanged_and_narrower_recall_restricts(self):
+        team = {'id': 'd', 'provenance': {}, 'origin': {'project': 'same', 'sharing': 'team'}}
+        self.assertEqual(origin.recalled([team], 'same', cards=True, sharing='team')['ceiling'], 'organization')
+        self.assertEqual(origin.recalled([team], 'same', cards=True, sharing='private')['ceiling'], 'organization')
+        self.assertEqual(origin.recalled([team], 'same', cards=True, sharing='organization')['ceiling'], 'team')
+        mine = {'id': 'd', 'provenance': {}, 'origin': {'project': 'same', 'sharing': 'private'}}
+        self.assertEqual(origin.recalled([mine], 'same', cards=True, sharing='private')['ceiling'], 'private')
+        other = {'id': 'd', 'provenance': {}, 'origin': {'project': 'other', 'sharing': 'team'}}
+        self.assertEqual(origin.recalled([other], 'same', cards=True, sharing='team')['projects'], ['other'])

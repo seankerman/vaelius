@@ -7,24 +7,38 @@ captured tool event touched and derives an **origin label**: a ceiling (the
 widest sharing that content may get) plus the set of *other* projects whose
 content it carries.
 
-Paths (symlinks and `..` resolved first):
+Paths (symlinks and `..` resolved first), first match wins:
 
-* inside the current project's root, or governed by the same project's scope
-  file (another checkout or worktree): no restriction;
-* inside another repository with its own scope file: tagged with that project.
-  The service then shares the event no wider than both projects allow, and for
-  `team` only with people who are members of both. The other scope file's own
-  sharing request also caps the ceiling. A repository without a scope file, or
-  whose scope file is off or invalid: `private`;
+* credential files (`.env`, `*.pem`, `~/.ssh`, `~/.aws`, ...), anywhere, even
+  inside the project: always `private`;
+* **scoped folders**: any folder holding a scope file, with its whole subtree, Git
+  repository or not. The nearest scope file up the tree governs, so a nested one
+  overrides its parent. The same project (the current root, another checkout or
+  worktree, a sibling folder with the same `project`): no restriction. Another
+  project: tagged with that project; the service then shares the event no wider
+  than both projects allow, and for `team` only with people who are members of
+  both. The other scope file's own sharing request also caps the ceiling. A scope
+  file that is off or invalid: `private`. A scope file at the home folder, at any
+  folder above it (including `/`), or directly at a top-level personal folder
+  (`~/Documents`, `~/Desktop`, `~/Downloads`, iCloud Drive, ...) is ignored: it
+  neither counts nor overrides. One deeper inside those folders counts normally;
+* Claude Code's own state: `~/.claude/projects/<folder>/` (saved tool output,
+  task output, auto-memory, transcripts) belongs to the project whose folder the
+  name encodes (Claude Code replaces every character other than `A-Z`, `a-z`
+  and `0-9` in the working directory with `-`): the current session's folder is
+  unrestricted, a scoped folder follows that folder's project, anything else is
+  `private`. User configuration already loaded into sessions (`~/.claude/CLAUDE.md`,
+  `reference/`, `plans/`, `settings*.json`, `plugins/`): no restriction;
 * personal folders (Documents, Desktop, Downloads, Pictures, Movies, Music,
-  iCloud and cloud-drive folders, Mail, Messages) and credential files: always
-  `private`, and no allowlist can open them;
+  iCloud and cloud-drive folders, Mail, Messages) outside every scoped folder:
+  always `private`, and no allowlist can open them;
 * temporary folders, tool caches and package folders (`~/.cache`, `~/.npm`,
-  `site-packages`, `node_modules`, Claude Code plugin folders, ...), read-only
-  system locations (`/usr`, `/opt/homebrew`, `/etc`, ...) and the scope file's
-  `capture.allowed_paths`: no restriction;
-* anything else that exists outside the project (the rest of the home folder,
-  other volumes): `private`. A path that does not exist exposes no content.
+  `site-packages`, `node_modules`, ...), read-only system locations (`/usr`,
+  `/opt/homebrew`, `/etc`, ...) and the scope file's `capture.allowed_paths`: no
+  restriction;
+* a Git repository without any governing scope file: `private`;
+* anything else that exists outside every scoped folder (the rest of the home
+  folder, other volumes): `private`. A path that does not exist exposes no content.
 
 Shell commands are classified only by the paths they name, after expanding `~`,
 `$HOME` and `$TMPDIR`, following `cd`, and looking inside substitutions and
@@ -38,7 +52,8 @@ Public web fetches and searches do not restrict (origin `web`); a fetch from a
 non-public address is `private`. MCP servers other than Vaelius itself are
 `private` unless the scope file lists them in `capture.allowed_mcp_servers`.
 Recalled memory carries the service's label for each item and follows the same
-project-set rule. Unknown tools fail closed to `private`.
+project-set rule; a shared item of the current project restricts only when its
+sharing is narrower than the scope file's request. Unknown tools fail closed to `private`.
 
 Labels are sticky per session (`SessionOrigins`): once an event is restricted,
 it and every later event of that session carry at least that restriction,
@@ -81,6 +96,19 @@ CREDENTIALS = ('.ssh', '.aws', '.gnupg', '.netrc', '.git-credentials', '.kube', 
                '.terraform.d/credentials.tfrc.json', '.config/op', '.pgpass', '.my.cnf')
 CREDENTIAL_NAMES = ('id_rsa*', 'id_dsa*', 'id_ecdsa*', 'id_ed25519*', '*.pem', '*.key', '*.p12', '*.pfx',
                     '.env', '.env.*', 'credentials', 'credentials.json', '.netrc', '.pgpass')
+# Checked-in templates that hold placeholders, not secrets.
+CREDENTIAL_TEMPLATES = ('.env.example', '.env.sample', '.env.template', '.env.dist', '.env.defaults')
+# A scope file directly here is ignored: it would scope a whole personal area.
+UNSCOPABLE = ('Documents', 'Desktop', 'Downloads', 'Pictures', 'Movies', 'Music', 'iCloud Drive',
+              'Library/Mobile Documents', 'Library/Mobile Documents/com~apple~CloudDocs', 'Library/CloudStorage',
+              'Dropbox', 'OneDrive', 'Google Drive')
+# Mail and chat stores: a scope file anywhere inside is ignored.
+NEVER_SCOPED = ('Library/Mail', 'Library/Messages', 'Library/Containers/com.apple.mail', 'Library/Group Containers')
+# Claude Code user configuration already loaded into every session (under ~/.claude).
+CLAUDE_CONFIG = ('CLAUDE.md', 'reference', 'plans', 'plugins')
+CLAUDE_SETTINGS = 'settings*.json'
+SLUG_LISTING = 200000  # entries read from one folder to decode a name
+SLUG_MAX = 200  # Claude Code shortens longer project folder names and appends a hash
 # Under the home folder: caches, toolchains and plugin folders an agent normally touches.
 TOOLING = ('.cache', '.npm', '.cargo', '.rustup', '.pyenv', '.rbenv', '.nvm', '.gradle', '.m2', '.bun', '.deno',
            '.yarn', '.pnpm-store', '.volta', '.asdf', '.sdkman', '.conda', 'miniconda3', 'anaconda3', 'go/pkg',
@@ -109,6 +137,11 @@ class Label(dict):
 
 
 NEUTRAL = Label()
+CURRENT = object()  # the session's own root, enrolled without a scope file
+
+
+def _scope(category, root=None, project=None, sharing=None, capture=None, error=None, **extra):
+    return dict(category=category, root=root, project=project, sharing=sharing, capture=capture, error=error, **extra)
 
 
 def _restrict(kind, reason, hint=None):
@@ -153,6 +186,11 @@ def _git_top(start):
     return None
 
 
+def slug(path):
+    """Claude Code's folder name under `~/.claude/projects` for a working directory."""
+    return re.sub(r'[^A-Za-z0-9]', '-', str(path))
+
+
 def _temp_roots():
     roots = {_real(tempfile.gettempdir())}
     if os.environ.get('TMPDIR'):
@@ -183,14 +221,136 @@ class Context:
             top = _git_top(self.cwd)
             root = str(top) if top else None
         self.root = _real(root) if root else None
+        self.sharing = (scope or {}).get('sharing')
+        self.unscopable = {self.home / p for p in UNSCOPABLE}
+        self.never_scoped = [self.home / p for p in NEVER_SCOPED]
+        if self.root is not None and self._unscopable(self.root):
+            self.root = None  # a scope file at home or a personal folder governs nothing here
+        self.claude = self.home / '.claude'
+        # This session's own Claude Code folder: named after where it started, inside the root.
+        self.own_slugs = {slug(p) for p in (self.cwd, self.root)
+                          if p is not None and self.root is not None and _within(p, self.root)}
         self.allowed_paths = [p for p in (self._allowed(entry) for entry in (scope or {}).get('allowed_paths') or ())
                               if p is not None]
         self.allowed_mcp = {str(s).replace('-', '_').lower() for s in (scope or {}).get('allowed_mcp_servers') or ()}
-        self.system = [_real(p) for p in SYSTEM] + sorted(_temp_roots())
+        self.temp = sorted(_temp_roots()) + [_real(p) for p in ('/tmp', '/private/tmp', '/var/tmp', '/var/folders')]
+        self.system = [_real(p) for p in SYSTEM]
         self.personal = [self.home / p for p in PERSONAL]
         self.credentials = [self.home / p for p in CREDENTIALS]
         self.tooling = [self.home / p for p in TOOLING]
         self._places = {}
+        self._dirs = {}
+        self._requests = {}
+        self._slugs = {}
+        self._listings = {}
+
+    def transcript(self, value):
+        """The session's own transcript folder (`~/.claude/projects/<folder>/`), from a hook event."""
+        if not isinstance(value, str) or not os.path.isabs(value):
+            return
+        try:
+            folder = _real(value).parent
+        except (OSError, ValueError):
+            return
+        if folder.parent == self.claude / 'projects' and folder.name not in self.own_slugs:
+            self.own_slugs.add(folder.name)
+            self._places.clear()
+
+    def _unscopable(self, directory):
+        """A scope file directly in `directory` is ignored: home, above home, a top-level personal folder."""
+        return (_within(self.home, directory) or directory in self.unscopable
+                or any(_within(directory, p) for p in self.never_scoped))
+
+    def _request(self, found):
+        if found not in self._requests:
+            from agentclient.scope_file import parse, ScopeFileError
+            try:
+                request = parse(found)
+            except ScopeFileError as error:
+                request = {'project': None, 'capture': 'off', 'sharing': 'private', 'path': str(found), 'error': str(error)}
+            self._requests[found] = dict(request, root=str(found.parent))
+        return self._requests[found]
+
+    def _scoped(self, path):
+        """The scope governing `path`: CURRENT (this session's root), a scope request, or None.
+
+        Walks up from the nearest existing folder; unlike capture discovery it does
+        not stop at a Git root, so a scope file covers its whole subtree. A linked
+        worktree without its own scope file falls back to the main worktree's."""
+        directory = path
+        while not directory.is_dir() and directory.parent != directory:
+            directory = directory.parent
+        return self._scoped_dir(directory)
+
+    def _scoped_dir(self, directory):
+        if directory in self._dirs:
+            return self._dirs[directory]
+        from agentclient.scope_file import _regular_file, discover
+        result = None
+        if not self._unscopable(directory):
+            found = next((directory / n for n in self.names if _regular_file(directory / n)), None)
+            if found is not None:
+                result = self._request(found)
+        if result is None and directory == self.root:
+            result = CURRENT
+        if result is None and (directory / '.git').is_file():
+            try:
+                linked = discover(directory, self.names)
+            except Exception:
+                linked = None
+            if linked and linked.get('path') and not self._unscopable(Path(linked['path']).parent):
+                result = linked
+        if result is None and directory.parent != directory:
+            result = self._scoped_dir(directory.parent)
+        self._dirs[directory] = result
+        return result
+
+    def _unslug(self, name):
+        """The existing folder a `~/.claude/projects/<name>` encodes, or None."""
+        if name in self._slugs:
+            return self._slugs[name]
+        budget = [4000]
+
+        def candidates(directory, body):
+            """Folder names whose encoding starts `body` at a `-` boundary, longest first."""
+            index = self._listing(directory)
+            cuts = [i for i, c in enumerate(body) if c == '-'] + [len(body)]
+            for cut in reversed(cuts):
+                for entry in index.get(body[:cut], ()):
+                    if os.path.isdir(os.path.join(directory, entry)):
+                        yield entry
+
+        def walk(directory, rest, depth):
+            if not rest:
+                return directory
+            if depth > 48 or not rest.startswith('-'):
+                return None
+            body = rest[1:]
+            for entry in candidates(directory, body):
+                budget[0] -= 1
+                if budget[0] < 0:
+                    return None
+                found = walk(os.path.join(directory, entry), body[len(slug(entry)):], depth + 1)
+                if found:
+                    return found
+            return None
+
+        found = walk('/', name, 0) if len(name) <= SLUG_MAX else None
+        self._slugs[name] = _real(found) if found else None
+        return self._slugs[name]
+
+    def _listing(self, directory):
+        """{encoded name: [names]} for one folder, cached; very large folders are cut off."""
+        if directory not in self._listings:
+            index = {}
+            try:
+                with os.scandir(directory) as entries:
+                    for _, entry in zip(range(SLUG_LISTING), entries):
+                        index.setdefault(slug(entry.name), []).append(entry.name)
+            except OSError:
+                pass
+            self._listings[directory] = index
+        return self._listings[directory]
 
     def _allowed(self, entry):
         """A scope-file path exception, or None when it is too broad to honour.
@@ -223,91 +383,136 @@ class Context:
         parts = path.parts
         return (parts[0] + parts[1] + '/...') if len(parts) > 1 else parts[0]
 
-    def _governing(self, path):
-        """Scope request {project, sharing, capture, path} governing `path`, or None.
+    def _credential(self, path):
+        return (any(_within(path, p) for p in self.credentials)
+                or (path.name not in CREDENTIAL_TEMPLATES
+                    and any(fnmatch.fnmatch(path.name, pattern) for pattern in CREDENTIAL_NAMES)))
 
-        Explicit enrollment without a scope file counts too, with private sharing."""
-        from agentclient.scope_file import discover
-        probe = path
-        while not probe.exists() and probe.parent != probe:
-            probe = probe.parent
-        try:
-            found = discover(probe, self.names)
-        except Exception:
-            found = None
-        if found is not None:
-            return found
+    def scope_of(self, raw, base=None):
+        """Where one path sits, independent of session taint: the reusable scope lookup.
+
+        Returns {'category', 'root', 'project', 'sharing', 'capture', 'error'}.
+        `category` is one of `credential`, `project` (this session's scoped folder or
+        another folder of the same project), `scoped` (another project's scoped
+        folder), `claude_state` (`~/.claude/projects/...`, resolved through the folder
+        it belongs to), `claude_config`, `personal`, `allowed_path`, `tooling`
+        (caches and package folders), `temp`, `system`, `unscoped_repo`, `unknown`
+        (exists outside every scoped folder) or `missing` (does not exist, outside
+        every scoped folder). `root`, `project`, `sharing` and `capture` describe the
+        governing scope file, when there is one."""
+        path = self._resolve(raw, base)
+        if path is None:
+            return _scope('missing')
+        return self._scope_of(path)
+
+    def _resolve(self, raw, base=None):
+        if not isinstance(raw, str) or not raw or '\x00' in raw:
+            return None
+        if raw.startswith('~'):
+            if raw.split('/', 1)[0] != '~':
+                return None
+            raw = os.path.expanduser('~') + raw[1:]
+        elif not os.path.isabs(raw):
+            base = base or self.cwd
+            if base is None:
+                return None
+            raw = os.path.join(str(base), raw)
+        return _real(raw)
+
+    def _from_request(self, category, found):
+        return _scope(category, found.get('root'), found.get('project'),
+                      found.get('sharing') if found.get('sharing') in LEVELS else 'private',
+                      found.get('capture'), found.get('error'))
+
+    def _governed(self, scoped):
+        """Scope info for a CURRENT marker or a scope request."""
+        if scoped is CURRENT:
+            return _scope('project', str(self.root), self.project, self.sharing, 'on')
+        same = (self.project and scoped.get('project') == self.project and not scoped.get('error')
+                and scoped.get('capture') != 'off')
+        return self._from_request('project' if same else 'scoped', scoped)
+
+    def _scope_of(self, path):
+        if self._credential(path):
+            return _scope('credential')
+        scoped = self._scoped(path)
+        if scoped is not None:
+            return self._governed(scoped)
+        if _within(path, self.claude) and path != self.claude:
+            parts = path.relative_to(self.claude).parts
+            if parts[0] in CLAUDE_CONFIG or (len(parts) == 1 and fnmatch.fnmatch(parts[0], CLAUDE_SETTINGS)):
+                return _scope('claude_config')
+            if parts[0] == 'projects' and len(parts) >= 2:
+                return self._claude_state(parts[1])
+        if any(_within(path, p) for p in self.personal):
+            return _scope('personal')
+        if any(_within(path, allowed) for allowed in self.allowed_paths):
+            return _scope('allowed_path')
+        if any(_within(path, p) for p in self.tooling) or any(part in PACKAGE_DIRS for part in path.parts):
+            return _scope('tooling')
         for root, project in (self.config.get('projects') or {}).items():
-            if _within(path, _real(root)):
-                return {'project': project, 'sharing': 'private', 'capture': 'on', 'path': None}
-        return None
+            if _within(path, _real(root)):  # explicit enrollment without a scope file
+                return self._governed({'project': project, 'sharing': 'private', 'capture': 'on', 'root': str(_real(root))})
+        exists = os.path.lexists(path)
+        if exists and _git_top(path if path.is_dir() else path.parent) is not None:
+            return _scope('unscoped_repo', str(_git_top(path if path.is_dir() else path.parent)))
+        if not _within(path, self.home) and any(_within(path, p) for p in self.temp):
+            return _scope('temp')
+        if not _within(path, self.home) and any(_within(path, p) for p in self.system):
+            return _scope('system')
+        return _scope('unknown' if exists else 'missing')
+
+    def _claude_state(self, name):
+        """Scope of `~/.claude/projects/<name>`: the folder the name encodes decides."""
+        if self.root is not None and any(name == own or (len(own) > SLUG_MAX and name[:SLUG_MAX] == own[:SLUG_MAX])
+                                         for own in self.own_slugs):
+            return dict(self._governed(CURRENT), category='claude_state', own=True)
+        folder = self._unslug(name)
+        scoped = self._scoped(folder) if folder is not None else None
+        if scoped is None:
+            return _scope('claude_state', own=False)
+        return dict(self._governed(scoped), category='claude_state', own=False,
+                    same=self._governed(scoped)['category'] == 'project')
 
     def place(self, raw, base=None):
         """Label for one filesystem path named by a tool, relative to `base` (default cwd)."""
-        if not isinstance(raw, str) or not raw or '\x00' in raw:
-            return Label(OPEN, ())
-        if raw.startswith('~'):
-            head = raw.split('/', 1)[0]
-            if head != '~':
-                return _restrict('outside_repo', 'outside_repo', '~...')  # another user's home
-            text = os.path.expanduser('~') + raw[1:]
-        elif os.path.isabs(raw):
-            text = raw
-        else:
-            base = base or self.cwd
-            if base is None:
-                return Label(OPEN, ())  # cannot be placed, and names nothing outside
-            text = os.path.join(str(base), raw)
-        if text in self._places:
-            return self._places[text]
-        label = self._place(_real(text))
-        self._places[text] = label
+        if isinstance(raw, str) and raw.startswith('~') and raw.split('/', 1)[0] != '~':
+            return _restrict('outside_repo', 'outside_repo', '~...')  # another user's home
+        path = self._resolve(raw, base)
+        if path is None:
+            return Label(OPEN, ())  # cannot be placed, and names nothing outside
+        if path in self._places:
+            return self._places[path]
+        label = self._label(path, self._scope_of(path))
+        self._places[path] = label
         return label
 
-    def _sensitive(self, path):
-        if any(_within(path, p) for p in self.credentials) or any(
-                fnmatch.fnmatch(path.name, pattern) for pattern in CREDENTIAL_NAMES):
-            return 'credential_file'
-        if any(_within(path, p) for p in self.personal):
-            return 'personal_content'
-        return None
-
-    def _other(self, path, found):
+    def _other(self, path, info):
         """Another project's files: a project-set label, capped by that scope file's request."""
-        project = found.get('project')
-        if found.get('error') or found.get('capture') == 'off' or not project or not PROJECT.fullmatch(project):
+        project = info.get('project')
+        if info.get('error') or info.get('capture') == 'off' or not project or not PROJECT.fullmatch(project):
             return _restrict('other_project', 'other_project', self.hint(path))
-        if self.project and project == self.project:
-            return Label(OPEN, ('project',))  # another checkout or worktree of this project
-        sharing = found.get('sharing') if found.get('sharing') in LEVELS else 'private'
-        return Label(sharing, ('other_project',), 'other_project', project, (project,))
+        return Label(info['sharing'], ('other_project',), 'other_project', project, (project,))
 
-    def _place(self, path):
-        if self.root is not None and _within(path, self.root):
-            found = self._governing(path)
-            # A nested repository with its own scope file for a different project.
-            if found and found.get('path') and self.scope_file and found['path'] != self.scope_file \
-                    and found.get('project') != self.project:
-                return self._other(path, found)
+    def _label(self, path, info):
+        category = info['category']
+        if category == 'credential':
+            return _restrict('outside_repo', 'credential_file', self.hint(path))
+        if category == 'project' or (category == 'claude_state' and (info.get('own') or info.get('same'))):
             return Label(OPEN, ('project',))
-        sensitive = self._sensitive(path)
-        if sensitive:
-            return _restrict('outside_repo', sensitive, self.hint(path))
-        if any(_within(path, allowed) for allowed in self.allowed_paths):
+        if category == 'scoped' or (category == 'claude_state' and info.get('root')):
+            return self._other(path, info)
+        if category == 'personal':
+            return _restrict('outside_repo', 'personal_content', self.hint(path))
+        if category == 'allowed_path':
             return Label(OPEN, ('allowed_path',))
-        if any(_within(path, p) for p in self.tooling) or any(part in PACKAGE_DIRS for part in path.parts):
+        if category in ('tooling', 'temp', 'system', 'claude_config'):
             return Label(OPEN, ('local_tooling',))
-        found = self._governing(path)
-        if found is not None:
-            return self._other(path, found)
-        exists = os.path.lexists(path)
-        if exists and _git_top(path if path.is_dir() else path.parent) is not None:
-            return _restrict('other_project', 'other_project', self.hint(path))  # a repository without a scope file
-        if _within(path, self.home):
-            return _restrict('outside_repo', 'outside_repo', self.hint(path)) if exists else Label(OPEN, ())
-        if any(_within(path, p) for p in self.system):
-            return Label(OPEN, ('local_tooling',))
-        return _restrict('outside_repo', 'outside_repo', self.hint(path)) if exists else Label(OPEN, ())
+        if category == 'unscoped_repo':
+            return _restrict('other_project', 'other_project', self.hint(path))
+        if category == 'missing':
+            return Label(OPEN, ())
+        return _restrict('outside_repo', 'outside_repo', self.hint(path))  # unknown, foreign Claude Code state
 
     def url(self, raw):
         """Public web: unrestricted, origin `web`. Non-public addresses are private; `file:` is a path."""
@@ -394,8 +599,9 @@ def classify(event, context):
     if isinstance(cwd, str) and cwd:
         base = _real(cwd if os.path.isabs(cwd) else os.path.join(str(context.cwd or '/'), cwd))
     server = event.get('mcp_server') or mcp_server(tool)
+    context.transcript(event.get('transcript_path'))
     if self_tool(tool) or server in SELF_SERVERS:
-        return recalled(response, context.project)
+        return recalled(response, context.project, sharing=context.sharing)
     if name in RESOURCE_TOOLS:
         server = str(arguments.get('server', '')).replace('-', '_').lower() or 'unknown'
     if server is not None:
@@ -450,7 +656,7 @@ def _glob_base(pattern):
 
 # Recalled memory ----------------------------------------------------------------
 
-def item_label(item, project):
+def item_label(item, project, sharing_request=None):
     """Label for one recalled item from the service's origin label.
 
     The service labels each item (`origin`) with its source project (None when
@@ -458,7 +664,10 @@ def item_label(item, project):
     whose content it already carries (`projects`). An organization item can be restated
     anywhere; a team item keeps its level and adds its projects to the event's
     project set; a private or unlabelled item is private. A preference is the
-    person's own standing instruction, like a prompt, and does not restrict."""
+    person's own standing instruction, like a prompt, and does not restrict. A
+    team or organization item of the current project alone does not restrict when
+    its sharing is at least the scope file's request (`sharing_request`): its
+    audience is not narrower than the session's."""
     if not isinstance(item, dict):
         return _restrict('recalled_memory', 'recalled_memory', 'shared memory')
     provenance = item.get('provenance') if isinstance(item.get('provenance'), dict) else {}
@@ -476,13 +685,16 @@ def item_label(item, project):
         return Label(OPEN, ('recalled_memory',))
     if sharing == 'team' and not named:
         return _restrict('recalled_memory', 'recalled_memory', 'shared memory')  # spans projects it does not name
+    if (sharing in ('organization', 'team') and not projects and sharing_request in LEVELS
+            and RANK[sharing] >= RANK[sharing_request]):
+        return Label(OPEN, ('recalled_memory',))
     if sharing in ('organization', 'team'):
         return Label('team' if sharing == 'team' else OPEN, ('recalled_memory',),
                      'recalled_memory', 'shared memory', projects)
     return _restrict('recalled_memory', 'recalled_memory', 'shared memory')
 
 
-def recalled(items, project, *, cards=False):
+def recalled(items, project, *, cards=False, sharing=None):
     """Label for recalled memory: injected `cards`, or a memory tool's result.
 
     Every injected card is a memory item, so one without a label is private. A
@@ -490,7 +702,7 @@ def recalled(items, project, *, cards=False):
     found = [item for item in items if isinstance(item, dict)] if cards and isinstance(items, list) else _cards(items)
     if not found:
         return Label(OPEN, ())
-    return combine([item_label(item, project) for item in found])
+    return combine([item_label(item, project, sharing) for item in found])
 
 
 def _cards(value, depth=0):
@@ -872,3 +1084,50 @@ def status_line(entry, *, now=False):
     else:
         level = 'limited to ' + entry['ceiling']
     return 'vaelius: this session ' + phrase + ' — capture is ' + ('now ' if now else '') + level
+
+
+# Session start --------------------------------------------------------------------
+
+SCOPE_NOTICE_KEY = 'scope_context_notice'
+SCOPE_LINE_MAX = 200
+SCOPE_SIBLINGS = 200  # folder entries examined next to the root
+
+
+def in_scope_line(scope, cwd, config=None):
+    """One informational line naming the session's scoped folders, or None.
+
+    The current root plus scoped sibling folders next to it, while the line stays
+    under SCOPE_LINE_MAX characters. A root at an ignored location (home, a
+    personal folder) is never listed."""
+    context = Context(scope, cwd, config)
+    root = context.root
+    if root is None or not context.project:
+        return None
+    if not _within(root, context.home) and any(_within(root, p) for p in context.temp):
+        shown = str(root)
+    elif _within(root, context.home):
+        shown = '~/' + str(root.relative_to(context.home))
+    else:
+        shown = str(root)
+    head, tail = 'vaelius: in-scope folders: ', ' (reads elsewhere make this session private)'
+    line = head + shown + tail
+    if len(line) > SCOPE_LINE_MAX:
+        return None
+    try:
+        with os.scandir(root.parent) as entries:
+            names = sorted(e.name for _, e in zip(range(SCOPE_SIBLINGS), entries))
+    except OSError:
+        names = []
+    pieces = [shown]
+    for name in names:
+        sibling = root.parent / name
+        if sibling == root or not sibling.is_dir() or context._unscopable(sibling):
+            continue
+        info = context._scoped_dir(sibling)
+        if not isinstance(info, dict) or info.get('root') != str(sibling) or info.get('error') or info.get('capture') == 'off':
+            continue
+        candidate = head + ', '.join(pieces + ['../' + name]) + tail
+        if len(candidate) > SCOPE_LINE_MAX:
+            break
+        pieces.append('../' + name)
+    return head + ', '.join(pieces) + tail

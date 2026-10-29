@@ -253,13 +253,12 @@ allowed_paths = ["../shared-fixtures"]
 allowed_mcp_servers = ["docs"]
 ```
 
-- The allowlist rules of the in-flight scoped-folder PR (`privacy/scoped-folder-allowlist`)
-  apply unchanged: any folder holding a scope file is in scope with its subtree; the
-  nearest scope file wins; files at home, above home or directly at a top-level
-  personal folder are ignored; Claude Code's own `~/.claude` state for in-scope
-  folders is in scope; and `Context.scope_of(path)` returns the scope label of any
-  path. This document refers to that function; if the PR changes its name, use
-  the merged one.
+- The current [scoped-folder](DATA_BOUNDARIES.md#scoped-folders) allowlist rules
+  (#40) apply unchanged: any folder holding a scope file is in scope with its
+  subtree; the nearest scope file wins; files at home, above home or directly at a
+  top-level personal folder are ignored; Claude Code's own `~/.claude` state for
+  in-scope folders is in scope; and `Context.scope_of(path)` in `agentclient.origin`
+  returns the scope label of any path. Sections 5 and 7 build on that function.
 - **Legacy keys** are still read:
 
   | Key | Mapping |
@@ -425,7 +424,7 @@ can read what this session captures could already read the source.
 
 ### What the rule applies to
 
-| Path or item (`scope_of` category, from the scoped-folder PR) | Decision |
+| Path or item (`scope_of` category) | Decision |
 | --- | --- |
 | `credential` (anywhere) | **Deny** (unchanged) |
 | `personal` (outside every scoped folder) | **Deny** (unchanged) |
@@ -450,7 +449,7 @@ shared adds a scope file to it.
 - **Files.** The PreToolUse guardrail hook applies the table above to file tools
   (Read, Grep, Glob, LSP, NotebookRead, and the paths named in Bash commands, using
   the existing command parser). A failing read returns `permissionDecision: deny`
-  with a plain message. It never returns `ask`: the replay in the scoped-folder PR
+  with a plain message. It never returns `ask`: the replay in #40
   found that 92 of 95 real sessions (96.8%) read outside their own scope under the
   earlier rules, so a prompt per such read would interrupt nearly every session. The
   message names the folder, the two workspaces and the way forward, for example:

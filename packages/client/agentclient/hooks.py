@@ -375,6 +375,12 @@ def _session_label(home, config, scope, event, notices):
         line=labels.take_announcement(session)
         if kind=='SessionStart':line=line or session_label.status_line(entry)
         if line:notices.append(line)
+    if kind=='UserPromptSubmit' and not entry.get('hidden_noted'):
+        # Once per session, for the person only: what recall leaves out and how to include it.
+        hidden=session_label.hidden_line(entry)
+        if hidden:
+            notices.append(hidden)
+            entry=labels.update(session,hidden_noted=True) or entry
     return entry
 
 

@@ -1,5 +1,5 @@
 {
-  "build_id": "1a263574b1acab024450005573ead1f98223b82d1d66bbfb23048e3abd339917",
+  "build_id": "e1a6755b125d8f820a62318ded66d60bd4211d6129a013f27a192fa9a8bca4d2",
   "files": {
     "__init__.py": "a604f4728260e9159852b230b0a504a18157db4525b27ee637f7e84a3c47bc27",
     "aws_sts.py": "516d865b533573554fa33e25755f37c379a3308314d7d4ac62d61a7d91a14851",
@@ -10,7 +10,7 @@
     "claude_memory.py": "ae0d96f6f95063a494ec567134c21f9464a65961ba3d1ca7ccea45707b572abb",
     "cleaning.py": "5fac2d1998a3007dd5eeea40bdb7980fc5c6deba54a565540776becef5c274c1",
     "cli.py": "72c2ff101ab0fdec7464090bffbd77d3d259b030154e87412c966dc6b3fcff1a",
-    "cloud_contract.py": "9836e4acdb1c33e5daa06e6cef9ffe06c2a39be787f8d01da419c0f2665ffa2b",
+    "cloud_contract.py": "6451c328bd4bdc2910eab6135d010568ec63e97464799964e0e2f7c058d58093",
     "cloud_enroll.py": "1426b3920f09f94cd294b0bc5b91e7f134503375d89a6e1e398664abaaa35135",
     "codex_status.py": "34b325dbddabfcf1327068ff0ae448fb0ac373970f6fa2f1af2cab2978ea83c5",
     "credentials.py": "7971365e8a38d4b22bb0b1ba65c6784ee31d87964c334e9b469b8152a0367983",
@@ -20,7 +20,7 @@
     "enterprise_desktop.py": "094014dc7dd2a5c8fc67021d5833726c9f36bb6f1994f94f279ae57960421c01",
     "general_contract.py": "91013386b7e3b57791bce9a4df6e354909413d1090153677e76efdc2d8af1900",
     "github_link.py": "c87ddfb8928efe29d0a3623934f1999000ad24b96c0b631fe64cf5e154263b80",
-    "hooks.py": "450be3fd69d89e63a26d7d74c0cb5616ce69866a9b5da43541ce0b92fab9c6f5",
+    "hooks.py": "9bce785d261534fd9b75dfecbffed9c988b6cb5ace5f39358102e6f9d1026d86",
     "host_command.py": "e3480609ed8f37b3399fc78b8002faf5e5e745c656439623f0471058e4596b16",
     "install.py": "d67f80e85b5803ffde9d55fe01fff685cd324f1c2bb77abc6fae13deab3b204e",
     "local_paths.py": "5c67344b460566f9046fc94057537d8938d8b45b972aaa6457824d6d0c462237",
@@ -33,7 +33,7 @@
     "remembered.py": "c6bfd59096f362ae9e973c10643928df32d82241ad77162d3b420f96966ce4d0",
     "scope_file.py": "b234554af0eeebc6723af5e08065efedecc413b3d9c83b71a737b1a445f47ca2",
     "secret_detection.py": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",
-    "session_label.py": "9560e732b8c2786cfc6e0b3b479b58d838f3b75baf99c8776f8a38700830985e",
+    "session_label.py": "00920f45c5ff5d022a0bd932b0b9004c9dd4dcb3e2f375291f9256a99e701424",
     "source_download.py": "ca245a2ad23faca8866336fecf688f90be5422d1ccadb2a44b2221a2f4410656",
     "transport.py": "77f2db067364be7c7978afbc647625a5b2726ec77717349f1ed443b1f9dc4432"
   }

@@ -46,7 +46,11 @@ def validate_response(path,value):
                 or type(value['epoch']) is not int
                 or any(not isinstance(value[k],list) or len(value[k])>10000
                        or any(not isinstance(item,dict) for item in value[k]) for k in lists)
-                or any(type(value[k]) not in (int,float) for k in ('fetched_at','refresh_after','expires_at'))):
+                or any(type(value[k]) not in (int,float) for k in ('fetched_at','refresh_after','expires_at'))
+                # Optional (newer services): who of the session audience each narrower workspace leaves out.
+                or not isinstance(value.get('narrower',[]),list) or len(value.get('narrower',[]))>10000
+                or any(not isinstance(item,dict) or not isinstance(item.get('missing_readers',{}),dict)
+                       for item in value.get('narrower',[]))):
             raise ValueError('invalid_session_descriptor')
     elif route=='document-evidence':
         if len(json.dumps(value,ensure_ascii=True))>4000:raise ValueError('source_evidence_bound')

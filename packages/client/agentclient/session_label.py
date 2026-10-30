@@ -311,9 +311,69 @@ def decide(entry, info, path, *, private=False, now=None, home=None):
     if workspace not in _names((entry.get('descriptor') or {}).get('readable')):
         return ('vaelius: denied — ' + where + ' belongs to workspace "' + workspace + '", which you cannot read '
                 'or which does not exist; this session (' + label + ') does not read it.')
+    summary = narrower(entry, workspace)
+    if summary and who(summary):
+        name = summary.get('name') or workspace
+        return ('vaelius: denied — ' + where + ': ' + name + " isn't visible to " + who(summary) + " (in this "
+                "session's audience, " + label + "). The person can run 'vaelius-client session use " + name +
+                "' for this session, or ask " + name + "'s admin to add them.")
     return ('vaelius: denied — ' + where + ' (workspace "' + workspace + '") is visible to fewer people than this '
             'session (' + label + '). Start a session there, or ask the person to run `vaelius-client session use '
             + workspace + '`; capture is then limited to people in both.')
+
+
+# Why a narrower workspace is narrower ------------------------------------------------
+#
+# The descriptor's `narrower` list carries, for each workspace the person can read but
+# this session cannot, who of the session's audience is missing from it: a count and
+# at most three names, drawn by the service only from the session workspace's own
+# access list. The hook and the recall note read it locally, never per read.
+
+def narrower(entry, workspace):
+    """The descriptor's summary for one narrower workspace (by id or name), or None."""
+    for item in ((entry or {}).get('descriptor') or {}).get('narrower') or ():
+        if isinstance(item, dict) and workspace in (item.get('id'), item.get('name')):
+            return item
+    return None
+
+
+def _join(parts):
+    return parts[0] if len(parts) == 1 else ', '.join(parts[:-1]) + ' and ' + parts[-1]
+
+
+def who(summary):
+    """'carol, dave and 2 more', or '3 people' when nobody can be named; '' when unknown."""
+    missing = (summary or {}).get('missing_readers') or {}
+    count = missing.get('count')
+    names = [str(n) for n in missing.get('names') or () if isinstance(n, str) and n][:3]
+    more = missing.get('more') if type(missing.get('more')) is int else 0
+    if names:
+        return _join(names + ([str(more) + ' more'] if more > 0 else []))
+    if type(count) is int and count > 0:
+        return str(count) + (' person' if count == 1 else ' people')
+    return ''
+
+
+def hidden_line(entry):
+    """The once-per-session status line for memories the session's recall leaves out, or None."""
+    found = [item for item in ((entry or {}).get('descriptor') or {}).get('narrower') or ()
+             if isinstance(item, dict) and type(item.get('hidden_items')) is int and item['hidden_items'] > 0]
+    if not found:
+        return None
+    found.sort(key=lambda item: (-item['hidden_items'], str(item.get('name') or item.get('id'))))
+    first = found[0]
+    name = str(first.get('name') or first.get('id'))
+    count = first['hidden_items']
+    line = 'vaelius: ' + str(count) + (' memory' if count == 1 else ' memories') + ' from ' + name + ' hidden'
+    if who(first):
+        line += ' (not visible to ' + who(first) + ')'
+    others = found[1:]
+    if others:
+        line += '; also ' + _join([str(item['hidden_items']) + ' from ' + str(item.get('name') or item.get('id'))
+                                   for item in others[:2]] + ([str(len(others) - 2) + ' more workspaces']
+                                                              if len(others) > 2 else []))
+    target = name if not others else '<workspace>'
+    return line + "; 'vaelius-client session use " + target + "' to include them"
 
 
 class _Recorder:

@@ -755,11 +755,12 @@ Sessions that start read-only, off or outside every workspace have no label.
 
 - **Reads of narrower workspaces are denied.** The guardrail hook refuses folders
   whose workspace fewer people can read than the session's, workspaces you cannot
-  read, and folders with a scope file that does not parse, with one line such as
-  `vaelius: denied — ~/src/birch (workspace "birch") is visible to fewer people than
-  this session (maple). Start a session there, or ask the person to run
-  \`vaelius-client session use birch\`; capture is then limited to people in both.`
-  It never asks. Unscoped folders stay readable and make the session private.
+  read, and folders with a scope file that does not parse, with one line. For a
+  narrower workspace the line names who is missing, for example
+  `vaelius: denied — ~/src/birch: birch isn't visible to carol (in this session's
+  audience, maple). The person can run 'vaelius-client session use birch' for this
+  session, or ask birch's admin to add them.` It never asks. Unscoped folders stay
+  readable and make the session private. See "Why can't this session read X?" below.
 - **Narrowing is explicit.** `vaelius-client session use birch` (or a folder of it,
   a linked remote, or `private`) narrows the session active in this folder; with
   several sessions, pass `--session <id>`. In Claude Code you can also ask the agent
@@ -792,6 +793,42 @@ Sessions that start read-only, off or outside every workspace have no label.
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
 ```
+
+### Why can't this session read X?
+
+Say repo1's workspace is read by Team A and repo2's by Team A plus Carol. A session
+started in repo2 captures for Team A and Carol, so it may not read repo1, and recall
+leaves repo1's memories out: Carol could otherwise see repo1 content through what
+the session captures. Adding Carol to repo2 did not break anything; it is the rule
+working. Vaelius says so plainly:
+
+- the denied read names who is missing: `vaelius: denied — ~/src/repo1: repo1 isn't
+  visible to carol (in this session's audience, repo2). The person can run
+  'vaelius-client session use repo1' for this session, or ask repo1's admin to add
+  them.` At most three people or groups are named, then "and N more". Names come only
+  from repo2's own access list (what `vaelius-client workspace show repo2` already
+  shows you); nothing about repo1's members is revealed. People who reach repo2 only
+  through an organization entry are counted, not named;
+- the first prompt of the session shows, to you only, what recall leaves out:
+  `vaelius: 12 memories from repo1 hidden (not visible to carol); 'vaelius-client
+  session use repo1' to include them`. The count is repo1's shared memories, not
+  the matches of one prompt;
+- an admin who adds a reader to a workspace, or removes someone from another one,
+  gets `newly_unreadable` (the workspaces some sessions can no longer read) and a
+  one-line note in the response of `vaelius-client workspace set-entry` /
+  `remove-entry` and `vaelius-client group add-member` / `remove-member`. Synced
+  GitHub and SCIM groups only log it on the server.
+
+There are three ways forward:
+
+1. **Add the people as readers** of repo1 (repo1's admin). Every repo2 session can
+   then read and recall it, and nothing else changes.
+2. **`vaelius-client session use repo1`** for one session (or ask the agent to call
+   `use_workspace`; it may offer, but never calls it unasked). The session becomes
+   `repo2 ∩ repo1`: it reads and recalls both, and what it captures is visible only
+   to people in both. It lasts until `/clear`.
+3. **Keep them separate.** Work on repo1 in a session started there. Nothing is
+   shared across the boundary, which may be exactly what repo1's admin wants.
 
 ### Content from outside the repository
 

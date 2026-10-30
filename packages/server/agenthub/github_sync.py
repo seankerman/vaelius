@@ -350,6 +350,7 @@ class GitHubSyncMixin:
         if not groups:
             return
         tenant = self.tenant_id
+        before = self.sync_containment(db, tenant, groups)
         db.execute('''DELETE FROM group_edges e USING groups g WHERE g.tenant=e.tenant AND g.id=e.group_id
             AND e.tenant=? AND g.source='github' AND e.member_kind='principal' AND e.group_id=ANY(?::text[])''',
                    (tenant, groups))
@@ -364,6 +365,8 @@ class GitHubSyncMixin:
             WHERE t.tenant=? AND t.group_id=ANY(?::text[]) ON CONFLICT DO NOTHING''',
                    (SYNC_ACTOR, now, tenant, groups))
         self._refresh_groups(db, tenant, groups)
+        # Sync has no admin to warn: a change that ends a workspace pair's containment is logged.
+        self.log_newly_unreadable(db, tenant, before, self.sync_containment(db, tenant, groups), 'github_sync')
 
     def _github_groups_of_user(self, db, user_ids):
         ids = sorted({int(item) for item in user_ids if item is not None})

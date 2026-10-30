@@ -24,9 +24,30 @@
       "Edit(~/.pypirc)",
       "Read(~/.kube/config)",
       "Edit(~/.kube/config)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Edit(~/.claude/.credentials.json)",
+      "Read(~/.codex/auth.json)",
+      "Edit(~/.codex/auth.json)",
       "Edit(//path/to/project/.claude/settings.local.json)",
       "Edit(./.claude/settings.json)",
       "Edit(./.claude/settings.local.json)"
+    ],
+    "ask": [
+      "Edit(~/.claude/CLAUDE.md)",
+      "Edit(~/.claude/settings.json)",
+      "Edit(~/.claude/settings.local.json)",
+      "Edit(~/.claude/skills/**)",
+      "Edit(~/.claude/agents/**)",
+      "Edit(~/.claude/commands/**)",
+      "Edit(~/.claude/hooks/**)",
+      "Edit(~/.claude/output-styles/**)",
+      "Edit(~/.claude/reference/**)",
+      "Edit(~/.claude.json)",
+      "Edit(~/.codex/config.toml)",
+      "Edit(~/.codex/hooks.json)",
+      "Edit(~/.codex/AGENTS.md)",
+      "Edit(~/.codex/AGENTS.override.md)"
     ]
   },
   "sandbox": {

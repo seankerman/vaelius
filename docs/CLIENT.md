@@ -282,6 +282,8 @@ written are in [`integrations/claude-code/guardrails`](../integrations/claude-co
 | Claude's file tools (Read, Grep, Glob, LSP, Edit, Write, NotebookEdit) | Refused in personal folders and on credential files | Refused everywhere outside the working directories (`permissions.blockReadsOutsideWorkingDirectories`), plus the `standard` refusals |
 | Bash | Refused when the command names a personal folder or searches the home folder; Claude Code refuses its recognized file commands on credential files | Runs in the OS sandbox: no reads of the home folder or other user-file roots except the working directories, package caches and git configuration; writes only in the project, the session temp folder and the caches; no unsandboxed fallback or retry |
 | Edits outside the project | Normal Claude Code prompts | Refused |
+| Changes to agent configuration (`~/.claude/CLAUDE.md`, settings, skills, agents, commands, hooks, output styles, reference, `~/.claude.json`, Codex `config.toml`, `hooks.json`, `AGENTS.md`) | Asks you first, in every interactive mode, Bash included | Asks for Bash; file-tool edits are refused (outside the project) |
+| Agent sign-in files (`~/.claude/.credentials.json`, `~/.claude.json`, `~/.codex/auth.json`) | Refused, Bash included | Refused, Bash included |
 | `aws`, `gh`, `git` over SSH, `cdk`, package managers | Work as before; they read their own configuration | Commands that read configuration under the home folder fail (for example `aws configure get region`, git over SSH on macOS) |
 | MCP servers | Not restricted | Not restricted |
 
@@ -294,6 +296,50 @@ CLI caches, `~/.ssh/id_*`, `~/.netrc`, `~/.git-credentials`,
 `~/.config/gh/hosts.yml`, `~/.docker/config.json`, `~/.npmrc`, `~/.pypirc` and
 `~/.kube/config`. Configuration such as `~/.aws/config`, `~/.ssh/config` and
 `~/.gitconfig` stays readable.
+
+**Agent configuration and sign-in files.** Some files outlive the session that
+writes them: `~/.claude/CLAUDE.md`, `~/.claude/settings.json` and
+`settings.local.json`, the `skills`, `agents`, `commands`, `hooks`, `output-styles`
+and `reference` folders under `~/.claude`, `~/.claude.json`, and Codex's
+`~/.codex/config.toml`, `hooks.json`, `AGENTS.md` and `AGENTS.override.md`. A change
+there loads into every later session, captured or not, so both profiles add an
+`ask` rule for each (`Edit(~/.claude/CLAUDE.md)`; an `Edit` rule also covers Write,
+and `Write(...)` rules never match). Claude Code prompts for an explicit ask rule in
+every mode, `bypassPermissions` and `auto` included. The guardrail hook answers `ask`
+for a Bash command that writes one of them: an output redirection, `tee`, `sed -i` or
+`perl -i`, `cp`, `mv`, `install` or `ln` onto them (or into their folder), and `rm`,
+`truncate` or `touch`, including inside `bash -c` and heredocs. Code that names one of
+these paths inside a quoted script asks too; plain reads (`cat`, `grep`) do not. This
+is the one place the guardrails ask instead of deciding: such writes are rare (about
+3 sessions in 130 over two weeks). `~/.claude/plans/` has no rule, because plan mode
+writes there, and there is no rule for the whole of `~/.claude`. With
+`CLAUDE_CONFIG_DIR` or `CODEX_HOME` set, the hook checks the moved folders too; the
+rules name the default locations.
+
+Agent sign-in files are never read: `~/.claude/.credentials.json` (Claude Code's
+token file on Linux and Windows, and the macOS fallback), `~/.claude.json` (account
+details and personal MCP server configuration, often with tokens) and
+`~/.codex/auth.json`. Each gets a `Read` deny rule, and the hook refuses them for
+every tool, Bash included (`jq . ~/.claude.json` is not one of the commands Claude
+Code recognizes) and refuses searches of a folder that holds one, such as
+`grep -r token ~/.claude`. `~/.claude.json` also carries an ask rule, but a deny rule
+wins and Claude Code's `Read` deny also refuses edits of that path, so in practice
+the agent can neither read nor change it. Reading the other configuration is allowed
+and does not make a session private
+([origin labels](DATA_BOUNDARIES.md#what-an-event-touched)).
+
+Known gaps, from Claude Code's documentation (checked 2026-10-30):
+
+- Claude Code documents that writes under `.claude` are "routed to the classifier" in
+  `auto` mode, but not how the classifier decides; the ask rules still force a prompt.
+- Its documentation lists `Edit` allow and deny rules for Bash redirection and `tee`
+  targets, not ask rules, so Bash writes are covered only by the guardrail hook. A
+  program that writes a file without naming it on the command line is not seen.
+- A hook's `ask` is not documented as prompting in `bypassPermissions` mode (ask
+  rules are). In `dontAsk` mode and in non-interactive runs (`-p`), calls that would
+  prompt are refused instead.
+- Codex's own hooks cannot ask, so these rules protect Codex's files from Claude
+  Code sessions only, not from a Codex session.
 
 **How `standard` is built, and why.** Credential files get `Read` and `Edit` deny
 rules. Claude Code applies those to its file tools and to the file commands it
@@ -339,7 +385,8 @@ user-scope `strict`. Install `strict` at project scope (the local file outranks 
 repository's) or deploy it as managed settings.
 
 Both profiles hold in every permission mode, `bypassPermissions` included: Claude
-Code applies deny rules and `PreToolUse` hook denials in all modes. To let Claude
+Code applies deny rules and `PreToolUse` hook denials in all modes, and prompts for
+ask rules in every interactive mode. To let Claude
 read a personal folder for one session, start Claude Code with
 `VAELIUS_GUARDRAIL_ALLOW=/absolute/folder` (several folders separated by `:`). This
 never opens credential files. The agent cannot set it, because hooks get Claude
@@ -379,7 +426,8 @@ to the strict template: with it, the read fence no longer reaches sandboxed comm
 Users can still add `allowRead` paths for sandboxed commands in their own settings,
 but Claude's file tools keep refusing those paths.
 
-Sources (Claude Code documentation, checked 2026-10-23):
+Sources (Claude Code documentation, checked 2026-10-23; agent configuration rules
+2026-10-30):
 [permissions](https://code.claude.com/docs/en/permissions),
 [settings reference](https://code.claude.com/docs/en/settings-reference),
 [settings precedence](https://code.claude.com/docs/en/settings),
@@ -387,7 +435,13 @@ Sources (Claude Code documentation, checked 2026-10-23):
 [permission modes](https://code.claude.com/docs/en/permission-modes),
 [hooks](https://code.claude.com/docs/en/hooks),
 [managed settings](https://code.claude.com/docs/en/managed-settings),
-[plugins reference](https://code.claude.com/docs/en/plugins-reference).
+[plugins reference](https://code.claude.com/docs/en/plugins-reference),
+[hooks guide](https://code.claude.com/docs/en/hooks-guide),
+[authentication](https://code.claude.com/docs/en/authentication),
+[the `.claude` directory](https://code.claude.com/docs/en/claude-directory); Codex
+[hooks](https://learn.chatgpt.com/docs/hooks),
+[AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md) and
+[authentication](https://learn.chatgpt.com/docs/auth).
 
 ## Credentials
 

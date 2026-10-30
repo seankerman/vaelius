@@ -28,7 +28,8 @@ Paths (symlinks and `..` resolved first), first match wins:
   and `0-9` in the working directory with `-`): the current session's folder is
   unrestricted, a scoped folder follows that folder's project, anything else is
   `private`. User configuration already loaded into sessions (`~/.claude/CLAUDE.md`,
-  `reference/`, `plans/`, `settings*.json`, `plugins/`): no restriction;
+  `reference/`, `plans/`, `settings*.json`, `plugins/`, `skills/`, `agents/`,
+  `commands/`, `hooks/`, `output-styles/`): no restriction;
 * personal folders (Documents, Desktop, Downloads, Pictures, Movies, Music,
   iCloud and cloud-drive folders, Mail, Messages) outside every scoped folder:
   always `private`, and no allowlist can open them;
@@ -95,13 +96,15 @@ PERSONAL = ('Documents', 'Desktop', 'Downloads', 'Pictures', 'Movies', 'Music', 
             'Library/Group Containers', 'iCloud Drive', 'Dropbox', 'OneDrive', 'Google Drive')
 CREDENTIALS = ('.ssh', '.aws', '.gnupg', '.netrc', '.git-credentials', '.kube', '.docker/config.json', '.config/gh',
                '.config/gcloud', '.azure', '.npmrc', '.pypirc', '.vault-token', '.password-store', 'Library/Keychains',
-               '.terraform.d/credentials.tfrc.json', '.config/op', '.pgpass', '.my.cnf')
+               '.terraform.d/credentials.tfrc.json', '.config/op', '.pgpass', '.my.cnf',
+               # Agent sign-in and account state: tokens and MCP server credentials.
+               '.claude/.credentials.json', '.claude.json', '.codex/auth.json')
 CREDENTIAL_NAMES = ('id_rsa*', 'id_dsa*', 'id_ecdsa*', 'id_ed25519*', '*.pem', '*.key', '*.p12', '*.pfx',
                     '.env', '.env.*', 'credentials', 'credentials.json', '.netrc', '.pgpass')
 # Checked-in templates that hold placeholders, not secrets.
 CREDENTIAL_TEMPLATES = ('.env.example', '.env.sample', '.env.template', '.env.dist', '.env.defaults')
 # Claude Code user configuration already loaded into every session (under ~/.claude).
-CLAUDE_CONFIG = ('CLAUDE.md', 'reference', 'plans', 'plugins')
+CLAUDE_CONFIG = ('CLAUDE.md', 'reference', 'plans', 'plugins', 'skills', 'agents', 'commands', 'hooks', 'output-styles')
 CLAUDE_SETTINGS = 'settings*.json'
 SLUG_LISTING = 200000  # entries read from one folder to decode a name
 SLUG_MAX = 200  # Claude Code shortens longer project folder names and appends a hash
@@ -780,8 +783,11 @@ def _tokens(text):
     return list(lexer)
 
 
-def _commands(tokens):
-    """(words, redirect targets) for each simple command between control operators."""
+def _commands(tokens, directed=False):
+    """(words, redirect targets) for each simple command between control operators.
+
+    With `directed`, each redirect is an (operator, target) pair, so a caller can tell
+    output (`>`, `>>`, `&>`, ...) from input."""
     words, redirects = [], []
     i = 0
     while i < len(tokens):
@@ -801,10 +807,11 @@ def _commands(tokens):
             if i + 1 < len(tokens):
                 target = tokens[i + 1]
                 if not (target.isdigit() or target == '-' or SEPARATOR.fullmatch(target)):
-                    redirects.append(target)
+                    redirects.append((token, target) if directed else target)
             i += 2
             continue
-        if not token or SEPARATOR.fullmatch(token) or token == '$':
+        # A quoted empty string (`sed -i ''`) is a word; a bare backtick separates.
+        if (not token and tokens[i]) or SEPARATOR.fullmatch(token) or token == '$':
             if words or redirects:
                 yield words, redirects
             words, redirects = [], []

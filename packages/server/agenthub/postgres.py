@@ -18,6 +18,7 @@ from agenthub.processing.state import State
 from agenthub.enterprise import EnterpriseStore, Denied, _digest
 from agenthub.cloud_identity import CloudIdentityMixin, IdentityBindings
 from agenthub.cloud_preferences import CloudPreferencesMixin
+from agenthub.remember import RememberMixin
 from agenthub.cloud_retrieval import HybridRetrievalMixin
 
 
@@ -201,7 +202,8 @@ def migrate(dsn, *, control=False, statement_timeout_ms=15000, through=None):
     return receipts
 
 
-class PostgresEnterpriseStore(HybridRetrievalMixin, CloudIdentityMixin, CloudPreferencesMixin, EnterpriseStore):
+class PostgresEnterpriseStore(HybridRetrievalMixin, CloudIdentityMixin, CloudPreferencesMixin, RememberMixin,
+                              EnterpriseStore):
     def __init__(self, home, dsn, tenant_id, *, registry=None):
         from agenthub.pipeline_pin import verify
         verify()

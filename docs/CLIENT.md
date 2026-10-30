@@ -138,6 +138,9 @@ file unless one is already installed there; see
 [least privilege for agents](#least-privilege-for-agents). Pass `--guardrails strict`
 for the repository-only profile or `--guardrails none` to leave guardrails out.
 
+It also switches Claude Code's built-in auto memory off in each of those project
+roots; see [auto memory](#claude-code-auto-memory).
+
 ### What is captured
 
 The hooks handle `SessionStart`, `UserPromptSubmit`, `PostToolUse`,
@@ -176,6 +179,74 @@ Capture of unenrolled folders is opt-in with `capture_all_sessions: true` in the
 profile's `config.json`, which names projects `Repo:<name>:<id>` and `Chat:<id>`.
 Profiles that still use the earlier `capture_all_codex_sessions` key keep working
 and keep their existing `CodexRepo:`/`CodexChat:` project names.
+
+### Remembered items
+
+Ask Vaelius to keep something, in your own words: a preference, project context, a
+reference or feedback, up to 8 KB. It is private to you until you share it.
+
+```sh
+vaelius-client remember add "Prefer pytest; run the focused test before the suite." --always-load
+vaelius-client remember add - --title "Release checklist" < notes.md
+vaelius-client remember list
+vaelius-client remember add "Release on Thursdays." --replace <id>    # a new version
+vaelius-client remember remove <id>
+```
+
+- **Where it is stored.** In this folder's workspace, or the one named by
+  `--workspace` (you need the writer role there). `--personal` delivers it in every
+  workspace, not only that one.
+- **Always load.** `--always-load` items are delivered with your preferences at
+  session start and with recall, in sessions whose audience admits them. For a
+  private item that is your private sessions (`vaelius-client session use private`,
+  a private workspace or a private sharing setting). To have one load in a shared
+  session, share it: `vaelius-client sharing --set shared --source <source id>`
+  (the source id is in `remember list`).
+- **In Claude Code.** Ask the agent to remember something: it calls the MCP tool
+  `remember`, shows you a preview and applies it only with the preview's token after
+  you agree. `list_remembered` and `forget_remembered` list and remove. These are
+  Vaelius tools, so they are never captured.
+- **Your command is the review.** It needs only the `ingest` action, not `curate`.
+  Each add, new version and removal is audited.
+
+### Claude Code auto memory
+
+Claude Code's auto memory (`~/.claude/projects/<project>/memory/`, whose `MEMORY.md`
+loads at session start) is outside the Vaelius access model: a narrowed or private
+session can write notes there that a later shared session in the same repository
+then loads, unlabelled, and captures for its audience. So:
+
+- `install --claude-code` writes `autoMemoryEnabled: false` into each enrolled or
+  scoped project's `.claude/settings.local.json` (personal, not committed). The
+  receipt records the earlier value and `uninstall --claude-code` restores it while
+  the key still holds `false`; if you turn it back on yourself, a later install
+  leaves it on and says so (`auto_memory_left_on`). CLAUDE.md files still load.
+- Both managed-settings templates set `autoMemoryEnabled: false`. Claude Code's
+  documentation says the key "has no managed-only lock" and that the environment
+  variable `CLAUDE_CODE_DISABLE_AUTO_MEMORY` (`1` off, `0` on) wins over the key for
+  a session; it does not say whether that variable can override a managed `false`.
+- A captured session starts with one line for you when auto memory is still on in
+  that repository (`"auto_memory_notice": false` in the profile's `config.json`
+  silences it). A worktree has its own `.claude/settings.local.json`, so a new agent
+  worktree starts with auto memory on unless the managed setting covers it.
+- Reading an auto-memory folder makes the rest of the session private for capture.
+  Other Claude Code state for a project (tool results, task output, session files)
+  follows the folder it belongs to, as before. An `autoMemoryDirectory` setting
+  that moves the folder elsewhere is not recognised by this rule.
+
+Import what is already there as remembered items:
+
+```sh
+vaelius-client import-memory                       # this repository's folder: counts only
+vaelius-client import-memory --from ~/.claude/projects/<project>/memory --apply
+```
+
+Every entry becomes one item. `type: user` and `type: feedback` entries are
+"always load"; `project` and `reference` entries are not. A folder that maps to an
+enrolled or scoped repository is stored in that workspace; any other folder's items
+are personal and need `--workspace`. The dry run (the default) prints counts, never
+contents; `--apply` writes them, and retries do not duplicate. Source files are never
+changed or deleted.
 
 ### Least privilege for agents
 
@@ -651,6 +722,18 @@ Sessions that start read-only, off or outside every workspace have no label.
   session's own workspaces are readable. If you become a reader, capture turns off
   with a status line. The hook itself never calls the service (measured p50 about
   65 ms per call, most of it Python start-up).
+- **The MCP connection.** Claude Code runs the MCP header helper once per connection
+  (at session start and on reconnect) and gives it no session ID. The hooks therefore
+  record the label of the session last active in each scoped folder
+  (`mcp-labels/<hash>.json` in the profile, 0600; removed when that session ends),
+  and the helper sends it, so a private or narrowed session's `search_memory` reaches
+  what it may read. The record can only narrow the folder's own label (same
+  workspace and sharing request, more narrowed workspaces, or private), never widen
+  it; a record older than 12 hours, for another workspace or unreadable is ignored.
+  A narrowing reaches the connection when it next connects (`/mcp`, then reconnect).
+  With two sessions in one folder the last one to start or prompt wins: the other
+  may recall as the narrower label, and the taint of what it recalls then limits its
+  own capture accordingly.
 
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir

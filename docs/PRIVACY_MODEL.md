@@ -210,6 +210,20 @@ source it depends on. Every derived document is capped this way
 (`level_capped = 1` for all), so a summary of a `private` or `origin_private`
 source stays as narrow as that source.
 
+### Remembered items and preferences
+
+A remembered item (`vaelius-client remember`, the MCP tool `remember`, an
+`import-memory` entry) is an owner-private source with the person's own words and
+one owner-reviewed note over it; `remembered_items` (migration 051) holds only its
+metadata (owner, workspace, `personal`, `always_load`, versions, withdrawal). Its
+audience is its source's: private until the owner shares it with the owner controls
+above. "Always load" items are delivered at session start and with recall only to
+sessions whose audience admits them. Preferences extracted by the observer are
+owner-private in the same way. Both are carried as private by the client's session
+taint when delivered, so a preference restated in a shared session does not become
+readable by that session's audience. Withdrawal, deletion, legal holds and erasure
+apply to the source as to any other.
+
 ### Reader rules that stay
 
 Tenant isolation, active principal, withdrawal and deletion, legal holds,
@@ -320,8 +334,10 @@ It is the fourth term of the same predicate in all three layers
 (`WorkspaceAccessMixin._session_admits`, `search_permissions.SESSION`, and
 `search_session_admits` called from `search_document_allowed`, migration 049), with
 parity tests. In a shared session the person's own private items are not recalled;
-a private session recalls everything the person can read. Preferences are always
-delivered. Requests without a label (older clients) keep today's behavior. The label
+a private session recalls everything the person can read. The person's private
+preferences and private "always load" remembered items follow the same rule: only
+a private session receives them (organization-required preferences always arrive).
+Requests without a label (older clients) keep today's behavior. The label
 replaces the cross-project `scope = "all"` option: recall reaches every workspace in
 `S`, the current one first.
 

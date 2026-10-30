@@ -353,7 +353,11 @@ class RecalledMemoryTest(unittest.TestCase):
                  ({'origin': {'project': None, 'sharing': 'team'}}, 'private', []),
                  ({'origin': {'project': None, 'sharing': 'organization'}}, 'organization', []),
                  ({'id': 'unlabelled'}, 'private', []),
-                 ({'provenance': {'source_type': 'preference'}}, 'organization', [])]
+                 # A preference is owner-private memory: an echo of it is carried as private.
+                 ({'provenance': {'source_type': 'preference'}}, 'private', []),
+                 ({'id': 'pref', 'evidence_status': 'source_linked_preference',
+                   'provenance': {'author': 'you', 'source_type': 'preference'},
+                   'origin': {'project': 'demo', 'sharing': 'private'}}, 'private', [])]
         for item, ceiling, projects in cases:
             with self.subTest(item):
                 label = origin.item_label(item, 'demo')
@@ -872,11 +876,18 @@ class ScopedFolderTest(unittest.TestCase):
             # Claude Code state and configuration.
             ('own tool-results', state / origin.slug(repo / 'src') / 'tool-results/r1.txt', 'organization', None, []),
             ('own task output', state / origin.slug(repo / 'src') / 'tasks/t1.output', 'organization', None, []),
-            ('own auto-memory', state / origin.slug(repo / 'src') / 'memory/MEMORY.md', 'organization', None, []),
+            # Auto memory is written by any earlier session, whatever it read: always private.
+            ('own auto-memory', state / origin.slug(repo / 'src') / 'memory/MEMORY.md', 'private',
+             'claude_auto_memory', []),
+            ('own auto-memory folder', state / origin.slug(repo / 'src') / 'memory', 'private', 'claude_auto_memory', []),
+            ('other-project auto-memory', state / origin.slug(ws / 'diff') / 'memory/MEMORY.md', 'private',
+             'claude_auto_memory', []),
+            ('own session file', state / origin.slug(repo / 'src') / 'session.jsonl', 'organization', None, []),
             ('same-project sibling state', state / origin.slug(ws / 'sib') / 'tool-results/r1.txt', 'organization', None, []),
-            ('state of a folder named with _ and .', state / origin.slug(ws / 'my_lib.v2') / 'memory/MEMORY.md',
+            ('state of a folder named with _ and .', state / origin.slug(ws / 'my_lib.v2') / 'tool-results/r1.txt',
              'organization', None, []),
-            ('other-project state', state / origin.slug(ws / 'diff') / 'memory/MEMORY.md', 'team', 'other_project', ['other']),
+            ('other-project state', state / origin.slug(ws / 'diff') / 'tool-results/r1.txt', 'team', 'other_project',
+             ['other']),
             ('unscoped folder state', state / origin.slug(home / 'loose-dir') / 'session.jsonl', 'private', 'outside_repo', []),
             ('deleted folder state', state / origin.slug(home / 'gone/away') / 'session.jsonl', 'private', 'outside_repo', []),
             ('CLAUDE.md', home / '.claude/CLAUDE.md', 'organization', None, []),
@@ -915,8 +926,10 @@ class ScopedFolderTest(unittest.TestCase):
             (self.ws / 'sib/s.py', 'project', str(self.ws / 'sib'), 'same', 'private'),
             (self.ws / 'diff/d.py', 'scoped', str(self.ws / 'diff'), 'other', 'team'),
             (self.home / 'work/repo-a/a.py', 'project', str(self.home / 'work'), 'same', 'team'),
-            (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'memory/MEMORY.md', 'claude_state',
+            (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'tool-results/r1.txt', 'claude_state',
              str(self.ws / 'diff'), 'other', 'team'),
+            (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'memory/MEMORY.md', 'claude_memory',
+             None, None, None),
             (self.home / '.claude/CLAUDE.md', 'claude_config', None, None, None),
             (self.home / 'Documents/taxes.pdf', 'personal', None, None, None),
             (self.repo / '.env', 'credential', None, None, None),

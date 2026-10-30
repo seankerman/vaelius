@@ -8,6 +8,22 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Security
 
+- Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is
+  switched off in captured repositories: `install --claude-code` writes
+  `autoMemoryEnabled: false` into each enrolled or scoped project's
+  `.claude/settings.local.json` (receipt-tracked; uninstall restores the earlier
+  value), both managed-settings templates set it, and a session-start status line
+  says when it is still on. Reading an auto-memory folder now makes the session
+  private for capture; tool results, task output and session files under
+  `~/.claude/projects/<project>/` keep the #40 rule.
+- Owner-private preferences follow the private-item rule: they reach only private
+  sessions (and unlabelled requests), and a delivered or MCP-fetched preference is
+  carried as private for taint, so an echo in a shared session is not captured for
+  its audience.
+- The MCP header helper sends the label of the session last active in its folder
+  (recorded by the hooks in the profile, 0600), only ever narrower than the folder's
+  own label. A private or narrowed session's `search_memory` no longer under-returns.
+
 - Capture discovery ignores a scope file at the home folder, above it, or directly
   in a top-level personal folder, the same rule the origin labels already applied
   (one shared predicate). A session started outside any repository under a stray
@@ -44,6 +60,14 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Added
 
+- Remembered items (migration 051): `vaelius-client remember add|list|remove`, the
+  MCP tools `remember`, `list_remembered` and `forget_remembered` (two-step confirm),
+  and `POST /enterprise/v3/remember[/list|/forget]`. The person's own words, up to
+  8 KB, owner-private until shared, versioned, withdrawable and audited; needs only
+  `ingest`. "Always load" items arrive at session start and with recall where their
+  audience allows. `submit_memory_candidate` without `source_ids` writes one; the
+  old call shape is unchanged. `vaelius-client import-memory` turns a Claude Code
+  auto-memory folder into remembered items (dry run and counts only by default).
 - GitHub team sync (access model PR C, migration 050). A GitHub App installed on
   the organization turns teams into read-only `github` groups (`gh-<team id>`,
   named `gh_<org>_<slug>`), nested by parent team. Signed webhooks

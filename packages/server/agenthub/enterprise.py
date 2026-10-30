@@ -514,8 +514,17 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,GitHubSyncMixin,Workspa
     def accept_reviewed_note(self, ctx, source_id, title, lesson):
         """Explicit owner review for a source-backed note; never raw auto-indexing."""
         self._need(ctx,'curate')
+        return self._install_owner_note(ctx,source_id,title,lesson)
+
+    def _install_owner_note(self, ctx, source_id, title, lesson, *, minimum=20, record=None):
+        """Install one owner-reviewed note over one of the caller's own active sources.
+
+        The reviewed-note route (`curate`) and remembered items (agenthub.remember,
+        `ingest`) share this: the document's audience follows its source, so an
+        owner-private source gives an owner-private note. `record(db, result)` runs
+        in the same transaction."""
         if (not isinstance(title,str) or not 1<=len(title)<=180 or
-            not isinstance(lesson,str) or not 20<=len(lesson)<=1200 or
+            not isinstance(lesson,str) or not minimum<=len(lesson)<=1200 or
             SECRET.search(title+' '+lesson)):
             raise ValueError('invalid_reviewed_note')
         from agenthub.processing.knowledge import accept_local_candidate
@@ -532,6 +541,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,GitHubSyncMixin,Workspa
             result=accept_local_candidate(db,source_id,source['internal_project'],memory['session'],
                 title,lesson,[source_id])
             self._audit(db,ctx,'reviewed_note','accepted',result['document_id'],source['policy_version'])
+            if record is not None:record(db,result)
             # Registration shares the claim transaction. CloudStore also queues
             # its derivative index job here, so a crash after commit cannot
             # strand an accepted note without a durable pending job.

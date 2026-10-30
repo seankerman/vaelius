@@ -452,8 +452,17 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         from agentclient.cleaning import clean_private
         query = clean_private(str(original.get('prompt','')))[0][:2000] if event['kind']=='UserPromptSubmit' else ''
         cards=[]
-        preferences=backend.request('/enterprise/v3/preferences',{'project':event['project'],
-            'mode':'automatic','session':event['session'] or 'unknown-session'})
+        entry=event.get('session_label')
+        label=None
+        if entry:
+            from agentclient import session_label
+            label=session_label.request_label(entry)
+            if session_label.session_private(home,event['session'] or 'unknown-session'):label['private']=True
+        request={'project':event['project'],'mode':'automatic','session':event['session'] or 'unknown-session'}
+        # The session label decides which private preferences and "always load" items
+        # this session may receive (docs/ACCESS_MODEL.md section 7).
+        if label:request['session_label']=label
+        preferences=backend.request('/enterprise/v3/preferences',request)
         selected=preferences.get('values',{})
         for preference in preferences.get('preferences',[]):
             if selected.get(preference['key'])!=preference['value']:continue
@@ -464,15 +473,12 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
                 'provenance':{'author':'you','wording':'original','source_type':'preference'},
                 'origin':{'project':event['project'],'sharing':'private'}})
             if len(cards)>=3:break
+        # Remembered items marked "always load", already labelled by the service.
+        cards.extend(card for card in preferences.get('remembered',[])[:3] if isinstance(card,dict))
         if query:
             request={'version':VERSION,'query':query,'project':event['project'],'mode':'automatic',
                  'limit':3,'session':event['session'] or 'unknown-session'}
-            entry=event.get('session_label')
-            if entry:
-                from agentclient import session_label
-                request['session_label']=session_label.request_label(entry)
-                if session_label.session_private(home,event['session'] or 'unknown-session'):
-                    request['session_label']['private']=True
+            if label:request['session_label']=dict(label)
             result=backend.request('/enterprise/v3/search',request)
             if entry and result.get('session_epoch',0)>(entry.get('descriptor') or {}).get('epoch',0):
                 # The service's state moved: refresh the descriptor now (one request).
@@ -587,6 +593,30 @@ def _guardrail_line(config, event):
     return status_line(cwd) if cwd else None
 
 
+def _auto_memory_line(config, event):
+    """SessionStart line (person only) when Claude Code auto memory is on in a captured repository."""
+    from agentclient.claude_memory import NOTICE_KEY, status_line
+    if config.get(NOTICE_KEY) is False:return None
+    try:cwd=local_cwd(event.get('cwd'))
+    except (ValueError,OSError):return None
+    return status_line(cwd) if cwd else None
+
+
+def _record_mcp_label(home, event, entry, kind):
+    """Keep the folder's MCP label record current (agentclient.session_label.compose)."""
+    from agentclient import session_label
+    session=str(event.get('session_id',''))
+    if not session:return
+    try:
+        if kind=='SessionEnd':
+            session_label.clear_mcp_label(home,session,entry)
+        elif kind in ('SessionStart','UserPromptSubmit'):
+            session_label.record_mcp_label(home,session,session_label.SessionLabels(home).get(session) or entry,
+                                           private=session_label.session_private(home,session))
+    except Exception:
+        pass
+
+
 def handle(home, event, *, host='codex', via='settings'):
     from agentclient.enterprise_capture import turn_of
     config_path = Path(home) / 'config.json'
@@ -660,7 +690,8 @@ def handle(home, event, *, host='codex', via='settings'):
     # What this event touched, made sticky for the rest of the session (agentclient.origin).
     label,origin_notice=_origin_label(Path(home),config,scope,event)
     if label:metadata['origin_label']=label
-    if entry is not None and kind=='UserPromptSubmit':metadata['session_label']=entry
+    if entry is not None and kind in ('SessionStart','UserPromptSubmit'):metadata['session_label']=entry
+    if entry is not None and host=='claude-code':_record_mcp_label(Path(home),event,entry,kind)
     result=_enterprise_hook(Path(home),config,metadata,event,host=host)
     label_line='\n'.join(label_notices)
     if label_line:
@@ -693,7 +724,7 @@ def handle(home, event, *, host='codex', via='settings'):
         try:message=_notices(Path(home),config,kind,scope)
         except Exception:message=None
         if host=='claude-code' and kind=='SessionStart' and scope['capture']=='on':
-            message='\n'.join(x for x in (message,_guardrail_line(config,event)) if x)
+            message='\n'.join(x for x in (message,_guardrail_line(config,event),_auto_memory_line(config,event)) if x)
         message='\n'.join(x for x in (message,line) if x)
         if message:
             # Capture status first, then any signed-out or unreachable warning.

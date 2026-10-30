@@ -67,8 +67,12 @@ SUBMISSION_FIELDS={
     'evidence':{'type':'string','minLength':20,'maxLength':3000},
     'source_ids':{'type':'array','minItems':1,'maxItems':1,'items':{'type':'string','minLength':1,'maxLength':128},'description':'One active source ID backing the owner-reviewed note.'}}
 TOOLS.extend([
-    tool('submit_memory_candidate','Install one explicitly owner-reviewed private note backed by exactly one active source ID. This immediately becomes searchable to authorized readers in the source policy cell; it never publishes.',
-        SUBMISSION_FIELDS,['request_key','title','evidence','source_ids'],write=True),
+    tool('submit_memory_candidate','Install one explicitly owner-reviewed private note. With source_ids (exactly one '
+        'active source ID of yours) it is backed by that source, as before. Without source_ids it is a remembered '
+        'item, exactly as the remember tool writes it, and needs confirm. Private to you; it never publishes.',
+        dict(SUBMISSION_FIELDS,confirm={'anyOf':[{'type':'boolean','const':False},{'type':'string','pattern':'^[0-9a-f]{32}$'}],
+            'description':'Only without source_ids: false to preview; the confirm_token from the preview to apply after the user agreed.'}),
+        ['request_key','title','evidence'],write=True),
     tool('correct_memory','Correct an owner source ID and version its dependent curated claim. The evidence becomes a new private source. Use a stable request_key for retries; this never publishes.',
         dict(SUBMISSION_FIELDS,id={'type':'string'}),['id','request_key','title','evidence'],write=True,destructive=True),
     tool('withdraw_memory','Withdraw an owner source ID and immediately block dependent curated documents. Supply the expected source version and a stable request_key for retries.',
@@ -155,7 +159,30 @@ TOOLS.extend([
         {'include_revoked':{'type':'boolean','default':False}},[]),
 ])
 
-PROJECT_TOOLS={'search_memory','get_user_preferences','project_memory_history','fetch_memory_episode','correct_memory'}
+# Remembered items (agenthub.remember): the person's own explicit memory, private to them.
+TOOLS.extend([
+    tool('remember','Keep something the person explicitly asked you to remember (a preference, project context, '
+        'a reference, feedback), in their own words, up to 8 KB. It is private to them and stored in this '
+        'project\'s workspace. always_load=true delivers it at the start of their sessions and with recall where '
+        'its audience allows (for a private item: their private sessions); use it for standing preferences. '
+        'personal=true delivers it in every workspace, not only this one. replace (an id from list_remembered) '
+        'stores a new version of an item. Only when the person asks. '+TWO_STEP,
+        {'text':{'type':'string','minLength':1,'maxLength':8192},
+         'title':{'type':'string','minLength':1,'maxLength':180},
+         'always_load':{'type':'boolean','default':False},'personal':{'type':'boolean','default':False},
+         'replace':{'type':'string','maxLength':128},
+         'request_key':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,100}$','description':'Stable retry key.'},
+         'confirm':CONFIRM},['text','request_key','confirm'],write=True),
+    tool('list_remembered','List the items the person asked Vaelius to remember: titles, ids, whether each is '
+        'always loaded or personal, and whether it is still private. Only their own items.',
+        {'include_withdrawn':{'type':'boolean','default':False}},[]),
+    tool('forget_remembered','Remove one remembered item of the person\'s (an id from list_remembered). '+TWO_STEP,
+        {'id':{'type':'string','minLength':1,'maxLength':128},'confirm':CONFIRM},['id','confirm'],
+        write=True,destructive=True),
+])
+
+PROJECT_TOOLS={'search_memory','get_user_preferences','project_memory_history','fetch_memory_episode','correct_memory',
+    'remember'}
 for item in TOOLS:
     if item['name'] in PROJECT_TOOLS:
         item['inputSchema']['properties']['project']={'type':'string','minLength':1,'maxLength':128,
@@ -263,6 +290,9 @@ class MemoryTools:
             if args.get('task'):
                 request['task'] = args['task']
             result = backend.request('/enterprise/v3/preferences', request)
+            # Owner-private: the client's taint carries anything echoed from here as private.
+            result['preferences'] = [dict(row, origin={'project': self.project, 'sharing': 'private'})
+                                     for row in result.get('preferences', [])]
             while result.get('preferences') and len(json.dumps(result, ensure_ascii=True)) > 4000:
                 result['preferences'].pop()
             if len(json.dumps(result, ensure_ascii=True)) > 4000:
@@ -281,7 +311,23 @@ class MemoryTools:
                 request['version'] = args['version']
             descriptor = backend.request('/enterprise/v3/source-documents/describe', request)
             return descriptor
+        if name == 'submit_memory_candidate' and 'source_ids' not in args:
+            # The new call shape: a remembered item (the remember tool), which needs confirm.
+            if not self.project:
+                raise ValueError('project_required')
+            return self.remember({'text': args['evidence'], 'title': args['title'],
+                                  'request_key': args['request_key'], 'confirm': args.get('confirm', False)})
+        if name == 'remember':
+            return self.remember(args)
+        if name == 'list_remembered':
+            return backend.request('/enterprise/v3/remember/list',
+                                   {'include_withdrawn': args.get('include_withdrawn', False)})
+        if name == 'forget_remembered':
+            return backend.request('/enterprise/v3/remember/forget',
+                                   {'document_id': args['id'], 'confirm': args['confirm']})
         if name == 'submit_memory_candidate':
+            if 'confirm' in args:
+                raise ValueError('confirm_is_for_remembered_items')
             sources = args.get('source_ids', [])
             if len(sources) != 1 or not 20 <= len(args['evidence']) <= 1200:
                 raise ValueError('enterprise_reviewed_note_requires_one_source')
@@ -306,6 +352,17 @@ class MemoryTools:
         if name in OWNER_TOOLS:
             return self.owner_call(name, args)
         raise ValueError('unknown_enterprise_tool')
+
+    def remember(self, args):
+        """Write a remembered item in this connection's workspace; preview first."""
+        request = {'text': args['text'], 'workspace': self.project, 'request_key': args['request_key'],
+                   'confirm': args['confirm']}
+        for key in ('title', 'always_load', 'personal', 'replace'):
+            if key in args:
+                request[key] = args[key]
+        if args['confirm'] is True:
+            raise ValueError('confirm_requires_the_preview_token')
+        return self.backend.request('/enterprise/v3/remember', request)
 
     def use_workspace(self, target):
         """Check the person can read the target; the client applies the narrowing."""

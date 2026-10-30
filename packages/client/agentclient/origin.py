@@ -392,7 +392,8 @@ class Context:
         `category` is one of `credential`, `project` (this session's scoped folder or
         another folder of the same project), `scoped` (another project's scoped
         folder), `claude_state` (`~/.claude/projects/...`, resolved through the folder
-        it belongs to), `claude_config`, `personal`, `allowed_path`, `tooling`
+        it belongs to), `claude_memory` (`~/.claude/projects/<name>/memory/`, Claude
+        Code auto memory: always private), `claude_config`, `personal`, `allowed_path`, `tooling`
         (caches and package folders), `temp`, `system`, `unscoped_repo`, `unknown`
         (exists outside every scoped folder) or `missing` (does not exist, outside
         every scoped folder). `root`, `project`, `sharing` and `capture` describe the
@@ -439,6 +440,10 @@ class Context:
             parts = path.relative_to(self.claude).parts
             if parts[0] in CLAUDE_CONFIG or (len(parts) == 1 and fnmatch.fnmatch(parts[0], CLAUDE_SETTINGS)):
                 return _scope('claude_config')
+            if parts[0] == 'projects' and len(parts) >= 3 and parts[2] == 'memory':
+                # Claude Code auto memory: notes written by any earlier session, whatever it
+                # read, so its contents carry no workspace (agentclient.claude_memory).
+                return _scope('claude_memory')
             if parts[0] == 'projects' and len(parts) >= 2:
                 return self._claude_state(parts[1])
         if any(_within(path, p) for p in self.personal):
@@ -499,6 +504,8 @@ class Context:
         category = info['category']
         if category == 'credential':
             return _restrict('outside_repo', 'credential_file', self.hint(path))
+        if category == 'claude_memory':
+            return _restrict('outside_repo', 'claude_auto_memory', self.hint(path))
         if category == 'project' or (category == 'claude_state' and (info.get('own') or info.get('same'))):
             return Label(OPEN, ('project',))
         if category == 'scoped' or (category == 'claude_state' and info.get('root')):
@@ -665,16 +672,13 @@ def item_label(item, project, sharing_request=None, *, labelled=False):
     its sources span several), its current sharing level and the other projects
     whose content it already carries (`projects`). An organization item can be restated
     anywhere; a team item keeps its level and adds its projects to the event's
-    project set; a private or unlabelled item is private. A preference is the
-    person's own standing instruction, like a prompt, and does not restrict. A
-    team or organization item of the current project alone does not restrict when
+    project set; a private or unlabelled item is private. A team or organization item of the current project alone does not restrict when
     its sharing is at least the scope file's request (`sharing_request`): its
-    audience is not narrower than the session's."""
+    audience is not narrower than the session's. A preference is the person's own
+    private memory: the service delivers it only to sessions whose audience admits
+    it, and an echo of it is carried as private like any other private item."""
     if not isinstance(item, dict):
         return _restrict('recalled_memory', 'recalled_memory', 'shared memory')
-    provenance = item.get('provenance') if isinstance(item.get('provenance'), dict) else {}
-    if provenance.get('source_type') == 'preference' or item.get('evidence_status') == 'source_linked_preference':
-        return Label(OPEN, ())
     label = item.get('origin') if isinstance(item.get('origin'), dict) else {}
     sharing = label.get('sharing')
     carried = label.get('projects') if isinstance(label.get('projects'), list) else []
@@ -1071,6 +1075,7 @@ PHRASES = {
     'unknown_tool': 'used a tool Vaelius cannot classify ({hint})',
     'unknown_call': 'received a tool result Vaelius cannot place',
     'explicit_private': 'was made private on request',
+    'claude_auto_memory': 'read Claude Code auto memory ({hint})',
 }
 
 

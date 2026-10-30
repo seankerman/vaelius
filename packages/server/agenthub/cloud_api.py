@@ -133,6 +133,12 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/preferences'):READ,
     ('POST','/enterprise/v3/preferences/curate'):(('curate',),),
     ('POST','/enterprise/v3/preferences/withdraw'):(('withdraw',),),
+    # Remembered items (agenthub.remember): the person's own explicit memory. Writing,
+    # a new version and removal need `ingest` (the action that creates their own
+    # content), never `curate`; each acts only on the caller's own items.
+    ('POST','/enterprise/v3/remember'):(('ingest',),),
+    ('POST','/enterprise/v3/remember/list'):READ,
+    ('POST','/enterprise/v3/remember/forget'):(('ingest',),),
     ('POST','/enterprise/v3/auth/rotate'):ANY_CREDENTIAL,
     ('POST','/enterprise/v3/auth/adopt'):ANY_CREDENTIAL,
     ('POST','/enterprise/v3/directory/events'):(('settings',),),
@@ -232,7 +238,7 @@ def authorize_route(ctx,method,path,data=None):
 
 # Requests that create content a different reader could later receive. Removal
 # (withdraw/delete), policy narrowing and reads are never rate limited.
-CONTENT_WRITES=('/enterprise/v1/sources','/enterprise/v2/parts','/enterprise/v1/reviewed-notes')
+CONTENT_WRITES=('/enterprise/v1/sources','/enterprise/v2/parts','/enterprise/v1/reviewed-notes','/enterprise/v3/remember')
 
 
 def limits_apply(path,data):
@@ -459,6 +465,9 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         if method=='POST' and path=='/enterprise/v3/preferences/curate':
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])
+        if method=='POST' and path=='/enterprise/v3/remember':return store.remember(ctx,data)
+        if method=='POST' and path=='/enterprise/v3/remember/list':return store.remembered(ctx,data)
+        if method=='POST' and path=='/enterprise/v3/remember/forget':return store.forget_remembered(ctx,data)
         if method=='POST' and path=='/enterprise/v3/auth/rotate':return store.rotate_credential(ctx)
         if method=='POST' and path=='/enterprise/v3/auth/adopt':
             if set(data)!={'enrollment'}:raise ValueError('invalid_enrollment')

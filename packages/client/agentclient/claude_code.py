@@ -259,19 +259,38 @@ def install(home, *, scope='user', claude_config_dir=None, project_root=None, gu
                 project_state = projects.setdefault(path, {})
                 project_state.setdefault('mcpServers', {})[SERVER] = entry
             _write_json(mcp_path, state)
+            memory, kept = _auto_memory(home, roots, owned.get('auto_memory', {}), backups)
             receipt['installs'][key] = {'scope': scope, 'settings_file': str(settings_path), 'command': command,
                 'mcp_file': str(mcp_path), 'mcp': entries, 'backups': backups, 'project_root': str(root) if root else None,
-                'created_settings': created_settings, 'created_hooks_key': created_hooks}
+                'created_settings': created_settings, 'created_hooks_key': created_hooks, 'auto_memory': memory}
         if desired:receipt['guardrails'][key] = record
         elif guardrails == 'none':receipt['guardrails'].pop(key, None)
         if not receipt['guardrails']:receipt.pop('guardrails')
         _save_receipt(home, receipt)
     result = {'host': 'claude-code', 'scope': scope, 'settings_file': str(settings_path)}
     if not guardrails_only:
-        result.update({'mcp_file': str(mcp_path), 'mcp_projects': sorted(roots.values()), 'events': list(EVENTS)})
+        result.update({'mcp_file': str(mcp_path), 'mcp_projects': sorted(roots.values()), 'events': list(EVENTS),
+                       'auto_memory_off': sorted(memory), 'auto_memory_left_on': kept})
     if guardrails is not None:result['guardrails'] = guardrails
     result['status'] = 'installed_restart_claude_code'
     return result
+
+
+def _auto_memory(home, roots, records, backups):
+    """Switch Claude Code auto memory off in each project root (agentclient.claude_memory).
+
+    Returns ({settings file: record}, [roots where the person turned it back on]).
+    A root that is no longer enrolled gets its earlier value back."""
+    from agentclient import claude_memory
+    memory, kept = {}, []
+    for root in sorted(roots):
+        if not Path(root).is_dir():continue
+        record, left_on = claude_memory.apply(root, records, lambda path: _backup(home, path, backups))
+        memory[str(claude_memory.settings_file(root))] = record
+        if left_on:kept.append(root)
+    for path in set(records) - set(memory):
+        claude_memory.restore(path, records[path])
+    return memory, kept
 
 
 def _strip_settings(settings_path, removers):
@@ -315,7 +334,13 @@ def uninstall(home, *, scope=None, guardrails_only=False):
             settings_path = Path(record['settings_file'])
             # Guardrails first, so an empty hooks key is dropped by whichever record created it.
             removers = [(claude_guardrails.remove, guarded)] if guarded else []
-            if owned:removers.append((_remove_install_hooks, owned))
+            if owned:
+                from agentclient.claude_memory import restore
+                # Before the hooks go, so a file the hooks install created can still be removed.
+                for path, value in (owned.get('auto_memory') or {}).items():
+                    try:restore(path, value)
+                    except (OSError, ValueError):pass
+                removers.append((_remove_install_hooks, owned))
             _strip_settings(settings_path, removers)
             entry = {'scope': record['scope'], 'settings_file': str(settings_path)}
             if guarded:

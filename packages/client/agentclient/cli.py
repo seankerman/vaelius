@@ -56,6 +56,54 @@ def _add_workspace_commands(sub):
     unlink.add_argument('workspace');unlink.add_argument('remote')
 
 
+def _add_remember_commands(sub):
+    """`vaelius-client remember add|list|remove` and `import-memory` (agentclient.remembered)."""
+    remember = sub.add_parser('remember', help='keep something in Vaelius memory, private to you until you share it')
+    inner = remember.add_subparsers(dest='remember_command', required=True)
+    add = inner.add_parser('add', help='remember text (an argument, or stdin with -); up to 8 KB')
+    add.add_argument('text', help='the text, or - to read it from stdin')
+    add.add_argument('--title', help='a short title (default: the first line)')
+    add.add_argument('--workspace', help='workspace that stores it (default: this folder\'s)')
+    add.add_argument('--always-load', action='store_true',
+                     help='deliver it at session start and with recall, where its audience allows')
+    add.add_argument('--personal', action='store_true', help='deliver it in every workspace, not only its own')
+    add.add_argument('--replace', metavar='ID', help='store this as a new version of an item from `remember list`')
+    listed = inner.add_parser('list', help='your remembered items (titles and ids)')
+    listed.add_argument('--workspace');listed.add_argument('--all', action='store_true', help='include removed items')
+    removed = inner.add_parser('remove', help='remove one of your remembered items')
+    removed.add_argument('id')
+    importer = sub.add_parser('import-memory', help='import a Claude Code auto-memory folder as remembered items '
+                              '(dry run unless --apply; prints counts only; never changes the folder)')
+    importer.add_argument('--from', dest='folder', help='the memory folder (default: this repository\'s, under '
+                          'the Claude Code configuration folder)')
+    importer.add_argument('--workspace', help='workspace that stores entries of a folder that maps to no repository')
+    importer.add_argument('--claude-config-dir', help='Claude Code configuration folder (default: CLAUDE_CONFIG_DIR or ~/.claude)')
+    mode = importer.add_mutually_exclusive_group()
+    mode.add_argument('--dry-run', action='store_true', default=True, help='count only (the default)')
+    mode.add_argument('--apply', action='store_true', help='write the items')
+
+
+def _remember_command(config, home, args):
+    from agentclient import remembered
+    if args.command == 'import-memory':
+        folder = args.folder
+        if not folder:
+            from agentclient.claude_code import config_dir
+            from agentclient.hooks import git_common_dir
+            from agentclient.origin import slug
+            common = git_common_dir(Path(os.getcwd()))
+            top = common.parent if common and common.name == '.git' else Path(os.getcwd()).resolve()
+            folder = config_dir(args.claude_config_dir) / 'projects' / slug(str(top)) / 'memory'
+        return remembered.import_memory(config, home, folder, workspace=args.workspace, apply=args.apply)
+    if args.remember_command == 'list':
+        return remembered.listing(config, workspace=args.workspace, include_withdrawn=args.all)
+    if args.remember_command == 'remove':
+        return remembered.remove(config, args.id)
+    text = sys.stdin.read(remembered.MAX_TEXT + 1) if args.text == '-' else args.text
+    return remembered.add(config, text, workspace=args.workspace, title=args.title, always_load=args.always_load,
+                          personal=args.personal, replace=args.replace)
+
+
 def _add_group_commands(sub):
     """`vaelius-client group` subcommands over /enterprise/v3/groups/*."""
     group = sub.add_parser('group', help='manage local groups and inspect synced ones')
@@ -169,6 +217,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             command.add_argument('--yes',action='store_true',help='preview and apply in one step')
     notice=sub.add_parser('notice',help='show what is captured for a workspace, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
+    _add_remember_commands(sub)
     _add_workspace_commands(sub)
     _add_group_commands(sub)
     _add_github_commands(sub)
@@ -268,6 +317,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 'notice_version':value.get('notice_version'),'source':value.get('source'),
                 'capture':'paused' if config.get('paused') else ('disabled' if args.project in config.get('capture_disabled_projects',[]) else 'on')}
             if args.acknowledge:result['acknowledgement']=capture_notice.record(home,args.project,value,'cli')
+        elif args.command in ('remember','import-memory'):
+            result=_remember_command(config,home,args)
         elif args.command=='workspace':
             result=_workspace_command(config,args)
         elif args.command=='group':

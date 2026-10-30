@@ -1380,7 +1380,8 @@ class WorkspaceAccessMixin:
 # Recall routes that honor a session label (`session_label` in the body; the MCP
 # endpoint passes its connection's label the same way). The label only narrows.
 LABELLED_ROUTES = ('/enterprise/v3/search', '/enterprise/v3/document-evidence', '/enterprise/v3/document-context',
-                   '/enterprise/v3/timeline', '/enterprise/v3/project-history', '/enterprise/v3/project-episode')
+                   '/enterprise/v3/timeline', '/enterprise/v3/project-history', '/enterprise/v3/project-episode',
+                   '/enterprise/v3/preferences')
 # The client refreshes its descriptor after 15 minutes and stops trusting it after 24 hours.
 DESCRIPTOR_REFRESH = 900
 DESCRIPTOR_EXPIRY = 86400

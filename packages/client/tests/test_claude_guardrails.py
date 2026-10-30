@@ -61,7 +61,10 @@ class ProfileTests(unittest.TestCase):
         from agentclient.claude_guardrails import PROFILES
         for name in PROFILES:
             self.assertEqual(json.loads((GUARDRAILS / (name + '.json')).read_text()), self.render(name), name)
-        self.assertEqual(json.loads((GUARDRAILS / 'managed-settings.json').read_text()), self.render('standard'))
+        managed = json.loads((GUARDRAILS / 'managed-settings.json').read_text())
+        # The managed template also switches Claude Code auto memory off (agentclient.claude_memory).
+        self.assertIs(managed.pop('autoMemoryEnabled'), False)
+        self.assertEqual(managed, self.render('standard'))
 
     def test_standard_is_a_denylist_without_sandbox(self):
         from agentclient.claude_guardrails import MATCHER

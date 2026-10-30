@@ -489,6 +489,7 @@ can read what this session captures could already read the source.
 | `project` / `scoped` in workspace W listed in `contains_session_audience` | Allow; W is carried |
 | `project` / `scoped` in any other workspace, including one the person cannot read or that does not exist | **Deny** |
 | `claude_state` | As the folder it belongs to |
+| `claude_memory` (`~/.claude/projects/<name>/memory/`, Claude Code auto memory) | Allow; the session becomes **private** (backstop). Any earlier session, whatever it read, may have written it |
 | `claude_config`, `tooling`, `temp`, `system`, `allowed_path` | Allow, nothing carried |
 | `unscoped_repo`, `unknown` (an existing path outside every scoped folder) | Allow; the session becomes **private** (backstop) |
 | `missing` | Allow (no content) |
@@ -528,8 +529,9 @@ shared adds a scope file to it.
   whose audience does: non-private items whose workspace and every carried workspace
   are in that set, shared items whose share subject's audience contains the session
   audience, and the person's own private items only in a private session.
-  Preferences (the person's own standing instructions) are always delivered, as
-  today. Clients that do not send a label keep today's #32 behavior.
+  The person's own private preferences reach only a private session, like their
+  other private items (since migration 051; before it they were always delivered).
+  Clients that do not send a label keep today's #32 behavior.
   **(decisions, PR B)** The label travels as `session_label` in the body of the
   recall routes (search, evidence, context, timeline, project history and episode)
   and, for the MCP connection, as the `X-Vaelius-Session-Label` header the header
@@ -539,7 +541,11 @@ shared adds a scope file to it.
   recalled, so this is never wider than the session's own label. A share qualifies
   when its grantee is a group whose members contain the session audience (or the
   person alone, which makes the session private); the person's own private items
-  never qualify through a share. The filter is a fourth term of the one predicate in
+  never qualify through a share. **(Since migration 051)** private preferences and
+  "always load" remembered items follow the same rule (see "Remembered items and
+  preferences" below), and the header helper narrows the folder's label by the
+  label of the session last active in that folder, recorded by the hooks; the
+  composition can only narrow it (`agentclient.session_label.compose`). The filter is a fourth term of the one predicate in
   all three layers (`_session_admits`, `search_permissions.SESSION`,
   `search_session_admits`), computed on every request; nothing is cached on the
   server. The label replaces the cross-project `scope = "all"` search option of #28:
@@ -577,6 +583,31 @@ Capture events keep the #32 `origin_label` contract, re-read in workspace terms:
 `ceiling: "private"` means `origin_private`. New clients never send `ceiling:
 "team"`; the server keeps accepting it from old clients (section 9). Events add
 `workspace` (alias of `project`) and `remote` (section 4).
+
+### Remembered items and preferences
+
+- **Remembered items** (`agenthub.remember`, migration 051) are what a person asks
+  Vaelius to keep: an owner-private source holding their own words and one
+  owner-reviewed note over it, the same item `submit_memory_candidate` installs.
+  Writing needs `ingest` and the writer role in the workspace that stores it (the
+  person's explicit command is the review, so not `curate`); a new version is a
+  lifecycle correction and removal a lifecycle withdrawal of the item's source,
+  applied for the item's owner only. The item's audience is its source's: private
+  until the owner shares it with the ordinary owner controls. Nothing here is a new
+  permission path.
+- **Always load.** An item marked so is delivered at session start and with recall
+  to every session whose audience admits it (`_document_allowed` under the session
+  label): an owner-private one only to the owner's private sessions, a shared one to
+  sessions of its workspace's readers. `personal` items are considered in every
+  workspace of their owner, not only the one that stores them.
+- **Preferences** (`cloud_preferences`, the observer's extracted defaults) are the
+  owner's private memory too: since migration 051 they reach only private sessions
+  and unlabelled requests, like other private items. Organization-required
+  preferences are not private and are always delivered.
+- **Echoes.** Delivered preference and remembered-item cards, and MCP preference
+  results, carry `"sharing": "private"` (or the item's level); the client's taint
+  carries them like any recalled item, so restating one in a session limits that
+  session's capture to the people who could read it.
 
 ## 8. Roles and credential actions
 
@@ -968,6 +999,8 @@ Points the owner's brief left open, decided in this document:
 | Session audience privacy (PR B) | Decided by the service: label `private`, a private sharing request, `contributions_default`, `item_default`, or an audience of the person alone | 7 |
 | Which session `use` narrows (PR B) | `--session`, else `CLAUDE_CODE_SESSION_ID`, else the session active most recently in this scoped folder | 7 |
 | MCP recall label (PR B) | The connection folder's label in `X-Vaelius-Session-Label`; never wider than the session's own | 7 |
+| MCP recall label (migration 051) | Claude Code gives the header helper no session ID, so the folder's label is narrowed by the label of the session last active there (last writer wins, 12 h, removed at its SessionEnd); never wider than the folder's | 7 |
+| Preferences and remembered items (migration 051) | Private ones reach only private sessions; writing a remembered item needs `ingest`, not `curate` | 7 |
 | Shares in a labelled recall (PR B) | Qualify when the grantee group's members contain the session audience; own private items only in a private session | 7 |
 | `scope = "all"` (PR B) | Folded into the label: labelled recall reaches the superset list; removed from the MCP tool | 7 |
 | Superset caching (PR B) | Computed per request, never cached | 9 |

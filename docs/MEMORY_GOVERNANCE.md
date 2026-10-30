@@ -93,9 +93,34 @@ The client's hook context starts with:
 
 followed by the JSON cards exactly as the service delivered them, provenance
 included. The user's own private preferences are labelled `"author": "you"` and
-`"origin": {"project": ..., "sharing": "private"}`. The MCP
+`"origin": {"project": ..., "sharing": "private"}`; "always load" remembered items
+carry their own provenance and origin and `"always_load": true`, with at most 300
+characters of their text (`excerpt_truncated` when there is more, which
+`fetch_memory` reads from the source). The MCP
 server instructions say the same. Prefix and cards together stay within 1,500
 characters; the client drops whole cards to fit.
+
+## Remembered items
+
+What a person explicitly asks to keep is a remembered item, never an observer
+inference:
+
+- **Grounding.** The person's own command (`vaelius-client remember add`, or their
+  agent's `remember` call after they agreed to its preview) is the review, so no quote
+  matching or `curate` action is involved. The full text (up to 8 KB) is the source;
+  the note over it holds the title and the first 1,200 characters.
+- **Lifecycle.** A new version (`--replace`) corrects the source: the note keeps its
+  id and gains a revision, the earlier source is retired. Removal withdraws the
+  source and blocks the note. Each add, version and removal is audited
+  (`operation = 'remember'`).
+- **Delivery.** "Always load" items are delivered like preferences, under the
+  session label; others are recalled like any item. Delivered text is reference
+  data, framed and labelled like every card; `instruction_like` applies to it too.
+- **Import.** `vaelius-client import-memory` reads a Claude Code auto-memory folder:
+  `user` and `feedback` entries become "always load" items, `project` and
+  `reference` entries ordinary ones, each in the workspace of the repository the
+  folder belongs to, or personal. The observer's automatic preference extraction is
+  unchanged and writes no remembered items.
 
 ## Instruction-shaped content
 

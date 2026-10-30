@@ -467,6 +467,11 @@ def apply_use(home, session, entry, descriptor, *, private=False, keyed=False):
     result = labels._locked(change)
     if result is None:
         raise UseRefused('the session ended')
+    try:
+        # The MCP connection picks the narrower label up when it next connects.
+        record_mcp_label(home, None, result, key=session if keyed else _key(session))
+    except OSError:
+        pass
     # Capture follows the narrowing: later events carry the narrowed workspaces, or are private.
     label = (origin.Label('private', ('project',), 'explicit_private', 'use private') if private else
              origin.Label(origin.OPEN, ('other_project',), 'other_project', ', '.join(narrowed), narrowed))
@@ -504,3 +509,80 @@ def use_result(response):
                     return found
         return None
     return walk(response)
+
+
+# The MCP connection's label ----------------------------------------------------------
+#
+# Claude Code runs the MCP header helper once per connection (session start and
+# reconnect) and gives it no session ID, only the server's name and URL. The hooks
+# therefore record the label of the session most recently active in each scoped
+# folder (`mcp-labels/<folder hash>.json`, 0600), and the helper sends it. The record
+# may only make the folder's own label narrower or equal (`compose`): same workspace,
+# same sharing request, extra narrowed workspaces, or private. Narrower means fewer
+# people, so recall may return more of what the person can already read; it is never
+# a wider audience than a session starting in that folder gets.
+
+MCP_LABELS = 'mcp-labels'
+MCP_LABEL_SECONDS = ACTIVE_SECONDS
+
+
+def mcp_label_path(home, root):
+    digest = hashlib.sha256(os.path.realpath(str(root)).encode()).hexdigest()[:32]
+    return Path(home) / MCP_LABELS / (digest + '.json')
+
+
+def record_mcp_label(home, session, entry, *, private=False, key=None):
+    """Record this session's current label for its starting folder (last writer wins).
+
+    `key` is the stored session key when the caller has no host session ID."""
+    root = (entry or {}).get('root') or (entry or {}).get('cwd')
+    if not root or not NAME.fullmatch(str(entry.get('workspace'))):
+        return None
+    value = {'root': os.path.realpath(str(root)), 'session': key or _key(session), 'workspace': entry['workspace'],
+             'narrowed': [n for n in entry.get('narrowed') or () if isinstance(n, str) and NAME.fullmatch(n)],
+             'private': bool(entry.get('private') or private), 'updated': time.time()}
+    path = mcp_label_path(home, root)
+    _write(path, value)
+    return value
+
+
+def clear_mcp_label(home, session, entry):
+    """Drop the folder's record when this session wrote it (the session ended)."""
+    root = (entry or {}).get('root') or (entry or {}).get('cwd')
+    if not root:
+        return
+    path = mcp_label_path(home, root)
+    if _read(path).get('session') == _key(session):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def compose(folder, recorded, *, now=None):
+    """The header label: the folder's label, narrowed (never widened) by the record.
+
+    `folder` is the label a session starting in the folder gets ({workspace,
+    sharing?}); `recorded` is the folder's record, or None. A record for another
+    workspace, a stale one or a malformed one is ignored."""
+    if not folder:
+        return folder
+    now = time.time() if now is None else now
+    if (not isinstance(recorded, dict) or recorded.get('workspace') != folder.get('workspace')
+            or not isinstance(recorded.get('updated'), (int, float))
+            or now - recorded['updated'] > MCP_LABEL_SECONDS):
+        return folder
+    label = dict(folder)
+    extra = [n for n in recorded.get('narrowed') or () if isinstance(n, str) and NAME.fullmatch(n)]
+    if extra:
+        label['narrowed'] = list(dict.fromkeys([*(folder.get('narrowed') or []), *extra]))[:16]
+    if recorded.get('private') is True or folder.get('private'):
+        label['private'] = True
+    return label
+
+
+def mcp_label(home, root, folder):
+    """`compose` over the folder's record, read from the profile."""
+    if not folder or not root:
+        return folder
+    return compose(folder, _read(mcp_label_path(home, root)))

@@ -48,18 +48,23 @@ def headers(home, *, project=None, project_dir=None, url=None):
     result={'Authorization':'Bearer '+backend.token,'X-AgentNetwork-Session':'mcp-'+uuid.uuid4().hex}
     if selected:result['X-AgentNetwork-Project']=selected
     label=session_label(scope,selected)
-    if label:result['X-Vaelius-Session-Label']=json.dumps(label,separators=(',',':'))
+    if label:
+        # The label of the session last active in this folder, when the hooks recorded
+        # one: only ever narrower than or equal to the folder's own (session_label.compose).
+        from agentclient.session_label import mcp_label
+        try:label=mcp_label(home,scope.get('root'),label)
+        except Exception:pass
+        result['X-Vaelius-Session-Label']=json.dumps(label,separators=(',',':'))
     return result
 
 
 def session_label(scope, selected):
-    """The connection's session label: the workspace the folder starts a session in.
+    """The folder's session label: the workspace the folder starts a session in.
 
-    The header helper cannot tell which conversation will use the connection, so it
-    sends the label a session starting in that folder gets (agentclient.session_label);
-    a later narrowing only widens what such a session may recall, so this is never
-    wider than the session's own label. No label (old behavior) outside a workspace
-    folder with capture on."""
+    Claude Code gives the header helper no session ID, so `headers` narrows this by
+    the label the hooks recorded for the session last active in the folder
+    (session_label.compose), never wider. No label (old behavior) outside a
+    workspace folder with capture on."""
     from agentclient.session_label import LABELLED_ORIGINS, NAME
     if (not scope or not selected or scope.get('project')!=selected or scope.get('capture')!='on'
             or scope.get('origin') not in LABELLED_ORIGINS or not NAME.fullmatch(str(selected))):

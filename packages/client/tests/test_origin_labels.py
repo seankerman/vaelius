@@ -931,6 +931,11 @@ class ScopedFolderTest(unittest.TestCase):
             (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'memory/MEMORY.md', 'claude_memory',
              None, None, None),
             (self.home / '.claude/CLAUDE.md', 'claude_config', None, None, None),
+            *[(self.home / '.claude' / folder / 'x.md', 'claude_config', None, None, None)
+              for folder in ('skills/s', 'agents', 'commands', 'hooks', 'output-styles')],
+            (self.home / '.claude.json', 'credential', None, None, None),
+            (self.home / '.claude/.credentials.json', 'credential', None, None, None),
+            (self.home / '.codex/auth.json', 'credential', None, None, None),
             (self.home / 'Documents/taxes.pdf', 'personal', None, None, None),
             (self.repo / '.env', 'credential', None, None, None),
             (self.home / 'notes.txt', 'unknown', None, None, None),

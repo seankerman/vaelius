@@ -76,12 +76,34 @@ class ProfileTests(unittest.TestCase):
         # Tools read their own configuration: ~/.aws/config, ~/.ssh/config and ~/.gitconfig stay open.
         for path in ('~/.aws/config', '~/.ssh/config', '~/.gitconfig', '~/.aws/**', '~/.ssh/**'):
             self.assertNotIn('Read(' + path + ')', deny)
-        self.assertNotIn('ask', value['permissions'])
+        self.assertNotIn('allow', value['permissions'])
         self.assertEqual(value['hooks']['PreToolUse'][0]['matcher'], MATCHER)
         # Letters and | only: Claude Code compares an exact list of tool names, never mcp__ tools.
         self.assertRegex(MATCHER, r'^[A-Za-z|]+$')
         self.assertEqual(set(MATCHER.split('|')), {'Read', 'Grep', 'Glob', 'LSP', 'Edit', 'Write', 'MultiEdit',
                                                    'NotebookEdit', 'Bash'})
+
+    def test_agent_configuration_asks_and_agent_credentials_are_denied(self):
+        for name in ('standard', 'strict'):
+            permissions = self.render(name)['permissions']
+            ask, deny = permissions['ask'], permissions['deny']
+            for path in ('~/.claude/CLAUDE.md', '~/.claude/settings.json', '~/.claude/settings.local.json',
+                         '~/.claude/skills/**', '~/.claude/agents/**', '~/.claude/commands/**', '~/.claude/hooks/**',
+                         '~/.claude/output-styles/**', '~/.claude/reference/**', '~/.claude.json',
+                         '~/.codex/config.toml', '~/.codex/hooks.json', '~/.codex/AGENTS.md'):
+                self.assertIn('Edit(' + path + ')', ask, (name, path))
+            # Plan mode writes ~/.claude/plans; no rule may cover it, and nothing broad.
+            for rule in ask:
+                self.assertTrue(rule.startswith('Edit(~/'), rule)
+                self.assertNotIn('plans', rule);self.assertNotIn(rule, ('Edit(~/.claude/**)', 'Edit(~/.codex/**)'))
+            self.assertFalse([r for r in ask + deny if r.startswith('Write(')])
+            for path in ('~/.claude/.credentials.json', '~/.claude.json', '~/.codex/auth.json'):
+                self.assertIn('Read(' + path + ')', deny, (name, path))
+            self.assertNotIn('Edit(~/.claude.json)', deny)
+        for template in ('managed-settings.json', 'managed-settings-strict.json'):
+            permissions = json.loads((GUARDRAILS / template).read_text())['permissions']
+            self.assertEqual(permissions['ask'], self.render('standard')['permissions']['ask'], template)
+            self.assertIn('Read(~/.claude.json)', permissions['deny'], template)
 
     def test_strict_confines_to_the_repository(self):
         value = self.render('strict')
@@ -132,6 +154,23 @@ class InstallerTests(GuardrailFixture):
         self.assertEqual(self.receipt()['installs'], {})
         backups = list((self.home / 'claude-code-backups').iterdir())
         self.assertEqual([b.read_text() for b in backups], [self.original[self.settings]])
+
+    def test_ask_rules_merge_with_the_persons_own_and_come_out_exactly(self):
+        settings = self.read()
+        settings['permissions']['ask'] = ['Bash(git push *)', 'Edit(~/.claude/CLAUDE.md)']
+        self.settings.write_text(json.dumps(settings, indent=2) + '\n');original = self.settings.read_text()
+        self.install(guardrails='standard', guardrails_only=True)
+        ask = self.read()['permissions']['ask']
+        self.assertEqual(ask[:2], ['Bash(git push *)', 'Edit(~/.claude/CLAUDE.md)'])
+        self.assertIn('Edit(~/.codex/config.toml)', ask);self.assertEqual(len(ask), len(set(ask)))
+        recorded = self.receipt()['guardrails']
+        owned = next(iter(recorded.values()))['lists']['permissions.ask']
+        # The person's identical rule stays theirs: it is not recorded, so removal keeps it.
+        self.assertNotIn('Edit(~/.claude/CLAUDE.md)', owned)
+        self.install(guardrails='standard', guardrails_only=True)
+        self.assertEqual(self.read()['permissions']['ask'], ask)
+        self.uninstall()
+        self.assertEqual(self.settings.read_text(), original)
 
     def test_uninstall_restores_the_original_exactly(self):
         for profile in ('standard', 'strict'):
@@ -378,6 +417,47 @@ class CheckTests(unittest.TestCase):
         self.assertIsNone(self.decide('Write', 'strict', file_path=str(h / '.claude/plans/plan.md')))
         self.assertIsNone(self.decide('Write', 'strict', file_path=str(h / '.claude/projects/p/memory/MEMORY.md')))
         self.assertIsNone(self.decide('Write', 'standard', file_path='/tmp/elsewhere.txt'))
+
+    def test_bash_writes_to_agent_configuration_ask(self):
+        h = str(self.homedir)
+        (self.homedir / '.claude/skills/s').mkdir(parents=True);(self.homedir / '.claude/agents').mkdir()
+        for command in ('echo "- prefer uv" >> ~/.claude/CLAUDE.md', 'echo x > $HOME/.claude/settings.json',
+                        'printf x | tee -a ~/.claude/settings.local.json', "sed -i '' 's/a/b/' ~/.claude/skills/s/SKILL.md",
+                        'perl -pi -e s/a/b/ ' + h + '/.claude/hooks/h.sh', 'cp reviewer.md ~/.claude/agents/',
+                        'cp reviewer.md -t ~/.claude/commands', 'mv new.toml ~/.codex/config.toml',
+                        'cd ~/.codex && cat > hooks.json', 'cat <<EOF > ~/.claude/output-styles/x.md\nhi\nEOF',
+                        'bash -c "echo x >> ~/.codex/AGENTS.md"', 'ln -sf /tmp/x ~/.claude/reference/r.md',
+                        'rm ~/.claude/CLAUDE.md', 'mv ~/.claude/CLAUDE.md /tmp/old.md',
+                        "python3 -c \"open('" + h + "/.claude/CLAUDE.md', 'a').write('x')\""):
+            self.assertEqual(self.decide('Bash', command=command), 'ask', command)
+        os.environ['CLAUDE_CONFIG_DIR'] = str(self.homedir / 'moved');os.environ['CODEX_HOME'] = str(self.homedir / 'cx')
+        self.addCleanup(os.environ.pop, 'CODEX_HOME', None)
+        self.assertEqual(self.decide('Bash', command='echo x >> ~/moved/CLAUDE.md'), 'ask')
+        self.assertEqual(self.decide('Bash', command='echo x >> ~/cx/config.toml'), 'ask')
+        # Reads, plan files, the project's own files and other targets are left alone.
+        for command in ('cat ~/.claude/CLAUDE.md', 'ls ~/.claude/skills', 'grep -n model ~/.claude/settings.json',
+                        'cp ~/.claude/CLAUDE.md /tmp/copy.md', 'echo plan > ~/.claude/plans/p.md', 'echo x > notes.md',
+                        'cat ~/.codex/config.toml | head', 'diff ~/.claude/agents/a.md agents/a.md'):
+            self.assertIsNone(self.decide('Bash', command=command), command)
+        # File tools are left to the profile's ask rules, so there is one prompt, not two.
+        self.assertIsNone(self.decide('Edit', file_path=h + '/.claude/CLAUDE.md'))
+
+    def test_agent_credential_files_are_never_read(self):
+        h = str(self.homedir)
+        os.environ['CODEX_HOME'] = h + '/cx';self.addCleanup(os.environ.pop, 'CODEX_HOME', None)
+        for tool, values in (('Read', {'file_path': h + '/.claude.json'}), ('Read', {'file_path': '~/.claude/.credentials.json'}),
+                             ('Read', {'file_path': h + '/.codex/auth.json'}), ('Read', {'file_path': h + '/cx/auth.json'}),
+                             ('Grep', {'path': h + '/.claude', 'pattern': 'token'}), ('Edit', {'file_path': h + '/.claude.json'}),
+                             ('Bash', {'command': 'jq .mcpServers ~/.claude.json'}), ('Bash', {'command': 'cat ~/.codex/auth.json'}),
+                             ('Bash', {'command': 'grep -r token ~/.claude'}), ('Bash', {'command': 'cp ~/.claude.json x.json'}),
+                             ('Bash', {'command': 'echo {} > ~/.claude.json'})):
+            for profile in ('standard', 'strict'):
+                self.assertEqual(self.decide(tool, profile, **values), 'deny', (tool, values))
+        # VAELIUS_GUARDRAIL_ALLOW never opens them.
+        os.environ['VAELIUS_GUARDRAIL_ALLOW'] = h
+        self.assertEqual(self.decide('Read', file_path=h + '/.claude.json'), 'deny')
+        self.assertIsNone(self.decide('Read', file_path=h + '/.claude/CLAUDE.md'))
+        self.assertIsNone(self.decide('Grep', path=h + '/.claude/skills', pattern='x'))
 
     def test_symlink_out_of_the_project_is_followed(self):
         (self.homedir / 'Documents/diary.txt').write_text('x')

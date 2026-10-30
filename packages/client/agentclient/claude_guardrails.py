@@ -12,6 +12,12 @@ standard (default) keeps normal engineering work unhindered. It is a denylist:
     personal content folders (Documents, Desktop, Downloads, Mail, iCloud
     Drive ...) unless the project itself lives there. Deny rules cannot do this
     part: a deny rule for ~/Documents would also block a project inside it.
+  * Agent configuration that loads into every later session (~/.claude/CLAUDE.md,
+    settings, skills, agents, commands, hooks, output styles, reference, ~/.claude.json,
+    ~/.codex/config.toml, hooks.json, AGENTS.md): `ask` rules, which prompt in every
+    interactive mode, and the hook answers `ask` for Bash commands that write there.
+    Agent sign-in files (~/.claude/.credentials.json, ~/.claude.json, ~/.codex/auth.json)
+    are never read: deny rules plus the hook, Bash included.
   No Bash sandbox: its network isolation breaks git over SSH on macOS, database
   clients and localhost services, and its read denylist also applies to the
   child processes of a tool, so it cannot tell `cat ~/.aws/credentials` from
@@ -46,6 +52,17 @@ PERSONAL_DIRS = ('Documents', 'Desktop', 'Downloads', 'Pictures', 'Movies', 'Mus
 CREDENTIAL_FILES = ('.aws/credentials', '.aws/sso/cache/**', '.aws/cli/cache/**', '.ssh/id_*', '.netrc',
                     '.git-credentials', '.config/gh/hosts.yml', '.docker/config.json', '.npmrc', '.pypirc',
                     '.kube/config')
+# Agent configuration that loads into every later session. A write here outlives the session
+# that made it, so it asks the person first, in every mode (ask rules) and in Bash (the hook).
+# ~/.claude/plans is left out on purpose: plan mode writes there.
+CLAUDE_CONFIG_FILES = ('CLAUDE.md', 'settings.json', 'settings.local.json', 'skills/**', 'agents/**', 'commands/**',
+                       'hooks/**', 'output-styles/**', 'reference/**')
+CODEX_CONFIG_FILES = ('config.toml', 'hooks.json', 'AGENTS.md', 'AGENTS.override.md')
+# Agent files that hold sign-in tokens, or (~/.claude.json) account state and MCP server
+# configuration that often carries tokens: never read, by any tool.
+CLAUDE_CREDENTIAL_FILES = ('.credentials.json',)
+CODEX_CREDENTIAL_FILES = ('auth.json',)
+CLAUDE_STATE = '.claude.json'
 # strict: package caches sandboxed commands may read and write. Specific subfolders:
 # ~/.cache, ~/.cargo, ~/.m2 and ~/.gradle also hold credentials.
 CACHE_PATHS = ('~/.cache/uv', '~/.cache/pip', '~/.cache/pre-commit', '~/.cache/go-build',
@@ -78,6 +95,23 @@ def credential_rules():
     return rules
 
 
+def agent_credential_rules():
+    """Read deny rules for agent credential files, and Edit deny rules except for ~/.claude.json.
+
+    ~/.claude.json is also agent configuration, so it carries an ask rule instead; Claude
+    Code's Read deny already refuses edits of a denied path, so the agent cannot change it."""
+    paths = (['~/.claude/' + p for p in CLAUDE_CREDENTIAL_FILES] + ['~/.codex/' + p for p in CODEX_CREDENTIAL_FILES])
+    return ['Read(~/' + CLAUDE_STATE + ')'] + [rule for path in paths for rule in ('Read(' + path + ')', 'Edit(' + path + ')')]
+
+
+def agent_config_rules():
+    """Ask rules for agent configuration. `Edit` covers Write, MultiEdit and NotebookEdit;
+    a `Write(...)` rule would never match."""
+    paths = (['~/.claude/' + p for p in CLAUDE_CONFIG_FILES] + ['~/' + CLAUDE_STATE]
+             + ['~/.codex/' + p for p in CODEX_CONFIG_FILES])
+    return ['Edit(' + path + ')' for path in paths]
+
+
 def protected_settings_rules(settings_file):
     """Edit rules for the files that could switch the profile off mid-session."""
     rules = [_rule_path(settings_file), './.claude/settings.json', './.claude/settings.local.json']
@@ -87,7 +121,8 @@ def protected_settings_rules(settings_file):
 def profile(name, *, hook_command, settings_file):
     """{'scalars': {dotted key: value}, 'lists': {dotted key: [entries]}, 'hook': {...}}."""
     if name not in PROFILES:raise ValueError('invalid_guardrail_profile')
-    scalars, lists = {}, {'permissions.deny': credential_rules()}
+    scalars, lists = {}, {'permissions.deny': credential_rules() + agent_credential_rules(),
+                          'permissions.ask': agent_config_rules()}
     if name == 'strict':
         scalars = {'permissions.blockReadsOutsideWorkingDirectories': True, 'sandbox.enabled': True,
                    # No unsandboxed retry, and no unsandboxed fallback when the sandbox can't start.
@@ -377,23 +412,156 @@ def _contains_personal(path, home):
     return None
 
 
-def _decision(reason):
-    return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+def _decision(reason, decision='deny'):
+    return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': decision,
             'permissionDecisionReason': reason}}
 
 
-def check(event, profile_name, env=None, home=None):
-    """The hook's answer for one PreToolUse event: {} (no opinion) or deny, never `ask`.
+# ---- Agent configuration and credential files ------------------------------------------
 
-    With the client profile folder (`home`), a labelled session also gets the fixed
-    session-label read rule (agentclient.session_label): reads of scoped folders whose
-    workspace is narrower than the session, unreadable or unknown are denied. Local
-    files only; no network call."""
+def _agent_homes(env, home):
+    """(Claude Code folders, Codex folders, ~/.claude.json locations): the defaults, plus
+    CLAUDE_CONFIG_DIR and CODEX_HOME when they move them."""
+    claude, codex = [Path(home, '.claude')], [Path(home, '.codex')]
+    state = [Path(home, CLAUDE_STATE)]
+    if env.get('CLAUDE_CONFIG_DIR'):
+        moved = Path(os.path.expanduser(env['CLAUDE_CONFIG_DIR']));claude.append(moved);state.append(moved / CLAUDE_STATE)
+    if env.get('CODEX_HOME'):codex.append(Path(os.path.expanduser(env['CODEX_HOME'])))
+    real = lambda paths: list(dict.fromkeys(p for path in paths for p in (Path(os.path.abspath(path)), _real(path))))
+    return real(claude), real(codex), real(state)
+
+
+def _matches(relative, patterns):
+    text = relative.as_posix()
+    return any(text == p[:-3] or text.startswith(p[:-2]) if p.endswith('/**') else text == p for p in patterns)
+
+
+def agent_file(path, env, home):
+    """'credential' (never read), 'config' (writes ask) or None for one path."""
+    claude, codex, state = _agent_homes(env, home)
+    for candidate in dict.fromkeys((Path(os.path.abspath(path)), _real(path))):
+        if candidate in state:return 'credential'
+        for bases, credentials, config in ((claude, CLAUDE_CREDENTIAL_FILES, CLAUDE_CONFIG_FILES),
+                                           (codex, CODEX_CREDENTIAL_FILES, CODEX_CONFIG_FILES)):
+            for base in bases:
+                if not _inside(candidate, base) or candidate == base:continue
+                relative = candidate.relative_to(base)
+                if _matches(relative, credentials):return 'credential'
+                if _matches(relative, config):return 'config'
+    return None
+
+
+def _holds_agent_credentials(path, env, home):
+    """Whether a search rooted at `path` would walk into an agent credential file."""
+    claude, codex, state = _agent_homes(env, home)
+    files = state + [b / f for b in claude for f in CLAUDE_CREDENTIAL_FILES] + [b / f for b in codex for f in CODEX_CREDENTIAL_FILES]
+    root = Path(os.path.normpath(path))
+    return any(_inside(f, root) and f != root for f in files if not _inside(root, f))
+
+
+# Commands whose file operands they rewrite or remove; for these, every operand is written.
+REWRITERS = {'tee', 'rm', 'unlink', 'truncate', 'touch', 'shred'}
+# Commands that write their last operand (or the -t folder): copy, move, link.
+COPIERS = {'cp', 'mv', 'install', 'ln', 'rsync', 'ditto', 'gcp', 'gmv'}
+IN_PLACE = {'sed', 'gsed', 'perl', 'ruby'}
+
+
+def _in_place(args):
+    return any(a == '--in-place' or a.startswith('--in-place=') or (a.startswith('-') and not a.startswith('--') and 'i' in a[1:].split('=')[0])
+               for a in args)
+
+
+def _bash_access(command, cwd, home, depth=0):
+    """(written, read, inline) paths of a shell command, with the origin-label command parser.
+
+    written: output redirections, tee, sed/perl -i, rm/truncate/touch operands, and the
+    destination of cp/mv/install/ln/rsync (plus the file it lands as in a folder).
+    read: every other path word. inline: paths inside a larger word, such as quoted code
+    (`python -c "open('/x', 'w')"`), which could be either."""
+    from agentclient import origin
+    written, read, inline = [], [], []
+    text = origin._script(command)
+    if text is None or depth > 4:return written, read, inline
+    try:tokens = origin._tokens(text)
+    except ValueError:return written, _bash_paths(text, cwd, home), inline
+    base = cwd
+
+    def name(word, into):
+        into.extend(_targets(word, base, home))
+        for piece in PATH_TEXT.findall(word):
+            if piece != word:inline.extend(_targets(piece, base, home))
+
+    for words, redirects in origin._commands(tokens, directed=True):
+        for operator, target in redirects:name(target, written if '>' in operator else read)
+        words = list(words)
+        while words and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', words[0]):name(words.pop(0).split('=', 1)[1], read)
+        while words and Path(words[0]).name in origin.PREFIXES and len(words) > 1:
+            program = Path(words.pop(0)).name
+            while words and (words[0].startswith('-') or (program == 'env' and '=' in words[0])):words.pop(0)
+            if program in ('timeout', 'gtimeout') and words:words.pop(0)
+        if not words:continue
+        program, args = Path(words[0]).name, words[1:]
+        if program in ('cd', 'pushd'):
+            target = next((a for a in args if not a.startswith('-')), '~')
+            base = os.path.normpath(os.path.join(base, _home_expand(target, home)))
+            continue
+        if program == 'eval' or (program in origin.SHELLS and origin._dash_c([a for a in args if a.startswith('-')])):
+            script = ' '.join(args) if program == 'eval' else next((a for a in args if not a.startswith('-')), '')
+            for into, found in zip((written, read, inline), _bash_access(script, base, home, depth + 1)):into += found
+            continue
+        operands, destination, after = [], set(), None
+        for i, arg in enumerate(args):
+            if after is not None:
+                # A heredoc line's trailing `> file` arrives as words.
+                destination.add(i);after = None;continue
+            if REDIRECT_WORD.fullmatch(arg):
+                after = i;continue
+            if not arg.startswith('-'):operands.append(i)
+        if program in REWRITERS or (program in IN_PLACE and _in_place(args)):destination.update(operands)
+        elif program in COPIERS:
+            folder = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ('-t', '--target-directory')), None)
+            folder = folder or next((a.split('=', 1)[1] for a in args if a.startswith('--target-directory=')), None)
+            sources = [args[i] for i in operands if args[i] != folder]
+            if folder is None and len(sources) >= 2:folder = sources.pop()
+            if folder is not None:
+                into = _targets(folder, base, home);written.extend(into)
+                # `cp CLAUDE.md ~/.claude/` writes ~/.claude/CLAUDE.md.
+                written.extend(os.path.join(t, os.path.basename(src.rstrip('/'))) for t in into for src in sources)
+                if program in ('mv', 'gmv'):
+                    for src in sources:name(src, written)
+            destination.update(i for i in operands if args[i] == folder)
+        for i, arg in enumerate(args):
+            if REDIRECT_WORD.fullmatch(arg) or (program in COPIERS and i in destination):continue
+            if arg.startswith('-'):
+                value = arg.split('=', 1)[1] if '=' in arg else ''
+                if value:name(value, read)
+                continue
+            name(arg, written if i in destination else read)
+    return written, read, inline
+
+
+REDIRECT_WORD = re.compile(r'\d*(?:>|>>|>\||&>|&>>)')
+
+
+def check(event, profile_name, env=None, home=None):
+    """The hook's answer for one PreToolUse event: {} (no opinion), deny, or `ask`.
+
+    `ask` is used for one thing only: a Bash command that writes agent configuration
+    (`~/.claude/CLAUDE.md`, skills, hooks, `~/.codex/config.toml`, ...), which loads into
+    every later session. Such writes are rare, so the prompt costs little. Every other
+    refusal is a deny. With the client profile folder (`home`), a labelled session also
+    gets the fixed session-label read rule (agentclient.session_label): reads of scoped
+    folders whose workspace is narrower than the session, unreadable or unknown are
+    denied, and a deny wins over an ask. Local files only; no network call."""
     result = _check(event, profile_name, env)
-    if result or home is None:return result
+    if _denied(result) or home is None:return result
     from agentclient.session_label import hook_reason
     reason = hook_reason(home, event)
-    return _decision(reason) if reason else {}
+    return _decision(reason) if reason else result
+
+
+def _denied(result):
+    return (result.get('hookSpecificOutput') or {}).get('permissionDecision') == 'deny'
 
 
 def _check(event, profile_name, env=None):
@@ -404,11 +572,14 @@ def _check(event, profile_name, env=None):
     values = event.get('tool_input') if isinstance(event.get('tool_input'), dict) else {}
     cwd, roots = _roots(event, env)
     home = os.path.expanduser('~')
-    searched = []
+    searched, written, inline, agent_paths = [], [], [], []
     if tool == 'Bash':
         command = values.get('command')
         targets = _bash_paths(command, cwd, home) if isinstance(command, str) else []
         if isinstance(command, str) and _recursive(command):searched = targets
+        if isinstance(command, str):
+            written, read, inline = _bash_access(command, cwd, home)
+            agent_paths = written + read + inline + targets
     else:
         targets = [v for k in ('file_path', 'notebook_path', 'filePath', 'path') for v in [values.get(k)]
                    if isinstance(v, str) and v]
@@ -416,6 +587,7 @@ def _check(event, profile_name, env=None):
         if isinstance(pattern, str) and pattern.startswith(('/', '~')):targets.append(pattern)
         if tool in ('Grep', 'Glob'):searched = [os.path.join(cwd, _home_expand(values.get('path') or cwd, home))]
         targets = [path for t in targets for path in _targets(t, cwd, home)]
+        agent_paths = targets
     for target in searched:
         # A search from the home folder (or above) walks into the personal folders too.
         name = _contains_personal(target, home)
@@ -430,6 +602,10 @@ def _check(event, profile_name, env=None):
             return _decision('Vaelius ' + profile_name + ' guardrails: ' + target + ' is ' + reason
                              + ', which agents in captured projects do not read or change. If the person wants it '
                              'used, they can paste the content or start Claude Code with ' + ALLOW_ENV + ' set.')
+    for target in dict.fromkeys(agent_paths + searched):
+        if agent_file(target, env, home) == 'credential' or (target in searched and _holds_agent_credentials(target, env, home)):
+            return _decision('Vaelius ' + profile_name + ' guardrails: ' + target + ' holds agent sign-in or account '
+                             'credentials, which agents in captured projects do not read or change.')
     if profile_name == 'strict' and tool in EDIT_TOOLS:
         for target in targets:
             path = _real(target)
@@ -439,6 +615,11 @@ def _check(event, profile_name, env=None):
             if _inside(path, claude / 'plans'):continue
             if _inside(path, claude / 'projects') and 'memory' in path.relative_to(claude / 'projects').parts[1:2]:continue
             return _decision('Vaelius strict guardrails: edits outside the project folder are not allowed.')
+    # Edit tools are covered by the profile's `ask` rules; Bash writes only by this check.
+    for target in dict.fromkeys(written + inline):
+        if agent_file(target, env, home) == 'config':
+            return _decision('Vaelius guardrails: this command may change ' + target + ', agent configuration that '
+                             'loads into every later session. Allow it only if you asked for this change.', 'ask')
     return {}
 
 

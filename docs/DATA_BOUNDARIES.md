@@ -275,12 +275,12 @@ hosts, older clients) keep the #32 behavior described below unchanged.
 
 | Touched | Label |
 | --- | --- |
-| Credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, ...), anywhere, including inside the project. Checked-in templates (`.env.example`, `.env.sample`, `.env.template`, ...) are not credentials | always `private`; no allowlist opens them |
+| Credentials (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.netrc`, `.env`, `*.pem`, `id_*` keys, agent sign-in files `~/.claude/.credentials.json`, `~/.claude.json`, `~/.codex/auth.json`, ...), anywhere, including inside the project. Checked-in templates (`.env.example`, `.env.sample`, `.env.template`, ...) are not credentials | always `private`; no allowlist opens them |
 | A path inside a [scoped folder](#scoped-folders) of the **same workspace**: the current root, another checkout or worktree, a sibling folder whose scope file names the same `workspace` (legacy `project`). Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
 | A path inside a scoped folder of a **different workspace** | tagged as a carried workspace: a non-owner reader must be at least `reader` in that other workspace too, so the item is readable only by people in **every** workspace the session carried |
 | A path inside a scoped folder whose scope file is off or invalid | `private` |
 | Claude Code's own state, `~/.claude/projects/<folder>/` (saved tool output, task output, auto-memory, transcripts) | follows the folder the name encodes: the current session's folder is unrestricted, a scoped folder follows that folder's project as above, anything else is `private` |
-| Claude Code user configuration already loaded into sessions: `~/.claude/CLAUDE.md`, `~/.claude/reference/`, `~/.claude/plans/`, `~/.claude/settings*.json`, `~/.claude/plugins/` | no restriction |
+| Claude Code user configuration already loaded into sessions: `~/.claude/CLAUDE.md`, `~/.claude/reference/`, `~/.claude/plans/`, `~/.claude/settings*.json`, `~/.claude/plugins/`, `~/.claude/skills/`, `~/.claude/agents/`, `~/.claude/commands/`, `~/.claude/hooks/`, `~/.claude/output-styles/` | no restriction |
 | Personal folders under home (`Documents`, `Desktop`, `Downloads`, `Pictures`, `Movies`, `Music`, iCloud and cloud-drive folders, `Library/Mail`, `Library/Messages`) outside every scoped folder | always `private`; no allowlist opens them |
 | Temporary folders (`$TMPDIR`, `/tmp`, `/private/var/folders`, including Claude Code's scratch and task folders), tool caches and package folders (`~/.cache`, `~/.npm`, `~/.cargo`, `site-packages`, `node_modules`, ...), read-only system locations (`/usr`, `/opt/homebrew`, `/etc`, `/Library/Developer`) | no restriction |
 | A Git repository with no governing scope file | `private` |
@@ -541,7 +541,12 @@ leaves the tools that read their own configuration working. The opt-in `strict`
 profile confines file tools and the Bash sandbox to the repository. Both are
 best-effort settings that the person controls unless an organisation deploys them
 as managed settings. `standard` is a denylist, and it does not stop a program that
-opens a file without naming it. Both profiles also apply the fixed session-label read
+opens a file without naming it. Both profiles also refuse agent sign-in files
+(`~/.claude/.credentials.json`, `~/.claude.json`, `~/.codex/auth.json`) and ask the
+person before the agent changes its own configuration (`~/.claude/CLAUDE.md`,
+settings, skills, hooks, Codex `config.toml`, ...), which would otherwise carry into
+every later session; Bash writes there are covered only by the guardrail hook. Both
+profiles also apply the fixed session-label read
 rule to labelled sessions: folders of narrower, unreadable or unknown workspaces are
 denied. The exact coverage and gaps are in
 [least privilege for agents](CLIENT.md#least-privilege-for-agents).

@@ -97,8 +97,11 @@ TOOLS.append(tool('fetch_memory_episode','Expand a cited project-history episode
 # Explicit narrowing (docs/ACCESS_MODEL.md section 7). Served here so the call is never
 # captured; the client's PostToolUse hook records the narrowing for its session.
 TOOLS.append(tool('use_workspace','Narrow this session to also use another workspace (or make it private), so its '
-    'folders become readable and recall covers it; capture is then limited to people who can read both. Call it '
-    'only when the person asks for it. Narrowing lasts for this session and cannot be undone except by /clear.',
+    'folders become readable and recall covers it; capture is then limited to people who can read both. When a read '
+    'is denied because a workspace is visible to fewer people than this session, you may offer this to the person, '
+    'saying what it changes (the same as `vaelius-client session use <workspace>`). Never call it on your own: only '
+    'when the person asks for it or agrees to your offer. Narrowing lasts for this session and cannot be undone '
+    'except by /clear.',
     {'workspace':{'type':'string','minLength':1,'maxLength':200,
                   'description':'A workspace name, a linked repository remote, or "private".'}},['workspace']))
 TOOLS.append(tool('report_memory_outcome','Report whether this exact memory revision helped the task. This is your self-report, not independently verified success; it never edits the memory or establishes that it is true.',

@@ -584,6 +584,63 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.session_descriptor(self.alice, {'workspace': 'maple', 'extra': 1})
 
+    def test_descriptor_names_only_missing_people_from_the_sessions_own_access_list(self):
+        # frank reads birch only; he is in nobody's session audience but birch's.
+        self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'frank',
+                                          'role': 'reader'})
+        descriptor = self.store.session_descriptor(self.alice, {'workspace': 'maple'})
+        narrower = {item['id']: item for item in descriptor['narrower']}
+        self.assertEqual(sorted(narrower), ['birch', 'oak'], 'readable but not containing maple')
+        birch = narrower['birch']['missing_readers']
+        self.assertEqual(birch['count'], 3, 'carol, dave and quinn are in maple, not birch')
+        self.assertEqual(birch['names'], ['maple-members (group)', 'platform (group)'],
+                         "named only through maple's own entries")
+        self.assertEqual(birch['more'], 0)
+        self.assertEqual(narrower['oak']['missing_readers']['count'], 1, 'quarantined quinn is outside oak')
+        shown = json.dumps(descriptor['narrower'])
+        for name in ('frank', 'alice', 'bob', 'erin', 'core'):
+            self.assertNotIn(name, shown, 'never a member of the target, nor anyone outside the session audience')
+        self.assertEqual(narrower['birch']['hidden_items'], self.shared_items('birch'))
+        alone = self.store.session_descriptor(self.alice, {'workspace': 'maple', 'narrowed': ['birch']})
+        self.assertEqual(alone['narrower'], [], 'maple ∩ birch is contained by every readable workspace')
+        self.assertEqual(self.store.session_descriptor(self.alice, {'workspace': 'maple', 'private': True})['narrower'],
+                         [], 'a private session has no narrower workspace')
+
+    def shared_items(self, workspace):
+        with self.store.open() as state:
+            return state.db.execute('''SELECT count(*) FROM enterprise_sources WHERE tenant='acme'
+                AND external_project=? AND active=1 AND private=0''', (workspace,)).fetchone()[0]
+
+    def test_access_changes_report_newly_unreadable_workspaces(self):
+        added = self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal',
+                                                  'subject': 'erin', 'role': 'reader'})
+        self.assertEqual(added['newly_unreadable'], ['maple'], 'erin is not in maple; oak still contains her')
+        self.assertIn('sessions in birch can no longer read maple', added['newly_unreadable_note'])
+        self.assertNotIn('\n', added['newly_unreadable_note'])
+        again = self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal',
+                                                  'subject': 'erin', 'role': 'reader'})
+        self.assertEqual(again['newly_unreadable'], [], 'an unchanged entry loses nothing')
+        joined = self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
+        self.assertEqual(joined['newly_unreadable'], [], 'widening maple loses nothing for birch')
+        left = self.store.remove_group_member(self.alice, {'group': 'core', 'member_kind': 'principal',
+                                                           'member': 'erin'})
+        self.assertEqual(left['newly_unreadable'], ['maple'], 'removing someone from another workspace')
+        removed = self.store.remove_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal',
+                                                       'subject': 'erin'})
+        self.assertEqual(removed['newly_unreadable'], [], 'narrowing birch only widens what its sessions read')
+        # A synced group change has no admin to answer: it is logged.
+        self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
+        self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'erin',
+                                          'role': 'reader'})
+        with self.assertLogs('agenthub.workspace_access', 'WARNING') as logged:
+            with self.store.open() as state, state.db:
+                before = self.store.sync_containment(state.db, 'acme', ['core'])
+                state.db.execute("DELETE FROM group_edges WHERE tenant='acme' AND group_id='core'")
+                self.store._refresh_groups(state.db, 'acme', ['core'])
+                self.store.log_newly_unreadable(state.db, 'acme', before,
+                                                self.store.sync_containment(state.db, 'acme', ['core']), 'test')
+        self.assertIn('"newly_unreadable": ["maple"]', logged.output[0], 'erin left maple')
+
     def test_labelled_search_and_mcp_carry_the_filter(self):
         from agenthub.mcp_tools import MemoryTools
         from types import SimpleNamespace

@@ -331,6 +331,9 @@ or a linked remote:
                                {"id": "platform-docs", "name": "platform-docs"}],
  "readable": [{"id": "birch", "name": "birch"}, {"id": "handbook", "name": "handbook"},
               {"id": "platform-docs", "name": "platform-docs"}],
+ "narrower": [{"id": "birch", "name": "birch", "hidden_items": 12,
+               "missing_readers": {"count": 3, "names": ["carol", "platform (group)"],
+                                   "more": 0}}],
  "repos": ["example.com/example-org/maple"],
  "fetched_at": 1793000000, "refresh_after": 1793000900, "expires_at": 1793086400}
 ```
@@ -338,6 +341,9 @@ or a linked remote:
 `contains_session_audience` lists the workspaces the person can read whose audience
 is a superset of this workspace's audience (section 7). `epoch` changes whenever
 anything that feeds the descriptor changes (entries, group membership, settings).
+`narrower` lists the readable workspaces that do not contain the session audience,
+with who of that audience they leave out and how many shared memories recall leaves
+out (section 7, "Why can't this session read X?").
 
 - **Where it lives (decision).** In the client profile
   (`workspaces/<id>.json` for a workspace's own label, and per session in
@@ -533,12 +539,15 @@ shared adds a scope file to it.
   message names the folder, the two workspaces and the way forward, for example:
 
   ```text
-  vaelius: denied — ~/src/birch (workspace "birch") is visible to fewer people than
-  this session (maple). Start a session there, or ask the person to run
-  `vaelius-client session use birch`; capture is then limited to people in both.
+  vaelius: denied — ~/src/birch: birch isn't visible to carol, dave and 1 more (in
+  this session's audience, maple). The person can run 'vaelius-client session use
+  birch' for this session, or ask birch's admin to add them.
   ```
 
-  (As implemented, one line.) A workspace the person cannot read, an unknown one
+  (As implemented, one line; the names come from the descriptor's `narrower`
+  summary, see "Why can't this session read X?" below. Against a service without
+  that summary the earlier wording stays: "is visible to fewer people than this
+  session".) A workspace the person cannot read, an unknown one
   and a scope file that does not parse get their own one-line denials. After the
   descriptor expires the message says it could not be refreshed. Edit tools are
   not policed by the label; Bash paths use the origin-label command parser.
@@ -592,9 +601,49 @@ shared adds a scope file to it.
   set, every later capture carries it, and the status line says so:
   `vaelius: session uses maple ∩ birch — capture limited to people in both`.
 - Narrowing is one-way within a session; `/clear` starts over. Narrowing is always
-  safe for confidentiality (it only shrinks who can read the capture), so the agent
-  may call the tool, but the denial message tells it to ask the person first,
-  keeping the narrowing intentional.
+  safe for confidentiality (it only shrinks who can read the capture), but it stays
+  intentional: the denial says what the person can run, and the tool's description
+  lets the agent offer it and forbids calling it unless the person asks or agrees.
+
+### Why can't this session read X?
+
+Repo1's workspace is read by Team A; repo2's by Team A plus Carol. A repo2 session's
+audience includes Carol, who cannot read repo1, so the session may not read repo1
+and recall leaves repo1 out. The rule is unchanged; **(decision)** Vaelius explains
+it instead of only refusing:
+
+- **Missing readers.** For each workspace the person can read that does not contain
+  the session audience (at most 64), the descriptor's `narrower` entry carries
+  `missing_readers`: `count`, the people of the session audience who are not
+  readers of it, and `names`, at most three labels with `more` for the people they
+  do not cover. **Name-disclosure rule:** labels come only from the access list of
+  the session's own workspace, which every reader of it already sees in `workspace
+  show`: a principal entry by id, else the group entry (by group name) that brings
+  the person in. People reached only through the organization entry are counted,
+  never named. Only people in the session audience who are *not* readers of the
+  target are considered, so nothing about the target's own members is revealed
+  beyond "these people from your audience are not in it" (mutation-tested in
+  `test_workspace_access`).
+- **The denial** names them and both fixes in one line (above). It stays a plain
+  deny, never `ask`, and uses only the cached descriptor (no network call per read).
+- **Recall.** `hidden_items` counts the workspace's active, non-private sources
+  (a partial index, migration 052). The first prompt of a session whose descriptor
+  lists any shows a status line for the person only (`systemMessage`, never
+  `additionalContext`), once per session:
+  `vaelius: 12 memories from repo1 hidden (not visible to carol); 'vaelius-client
+  session use repo1' to include them`.
+- **Access-list changes.** Adding or removing an entry and adding or removing a
+  local group member return `newly_unreadable` (workspace names) and
+  `newly_unreadable_note` when the change ends `audience(T) ⊇ audience(S)` for a
+  pair of workspaces the caller can read, so sessions of S can no longer read T.
+  Checked when the caller reads at most 200 workspaces (otherwise the note says it
+  was not checked). GitHub and SCIM group sync log the same finding on the server.
+- **The agent.** The MCP tool `use_workspace` says the agent may offer it after
+  such a denial and must never call it unless the person asks or agrees.
+
+The ways forward: add the missing people as readers of repo1; `session use repo1`
+for one session (capture is then limited to people in both); or keep the work
+separate and start a session in repo1.
 
 ### On the wire
 

@@ -29,6 +29,9 @@ def descriptor(narrowed=(), private=False, *, now=None, role='writer', epoch=7):
             'session': {'workspace': 'team-a', 'narrowed': list(narrowed), 'private': private},
             'contains_session_audience': contains,
             'readable': [{'id': n, 'name': n} for n in ('narrow-b', 'org-c', 'team-a')],
+            'narrower': [] if 'narrow-b' in narrowed or private else [
+                {'id': 'narrow-b', 'name': 'narrow-b', 'hidden_items': 12,
+                 'missing_readers': {'count': 4, 'names': ['carol', 'dave', 'contractors (group)'], 'more': 1}}],
             'repos': [], 'fetched_at': int(now), 'refresh_after': int(now + 900), 'expires_at': int(now + 86400)}
 
 
@@ -201,15 +204,36 @@ class HookDecisionTest(LabelFixture):
         self.assertIsNone(self.read(self.src / 'a-docs/notes.md'), 'another folder of the same workspace')
         self.assertIsNone(self.read(self.src / 'c/notes.md'), 'an organization workspace contains the session')
         reason = self.read(self.src / 'b/notes.md')
-        self.assertEqual(reason, 'vaelius: denied — ~/src/b (workspace "narrow-b") is visible to fewer people than '
-                                 'this session (team-a). Start a session there, or ask the person to run '
-                                 '`vaelius-client session use narrow-b`; capture is then limited to people in both.')
+        self.assertEqual(reason, "vaelius: denied — ~/src/b: narrow-b isn't visible to carol, dave, contractors "
+                                 "(group) and 1 more (in this session's audience, team-a). The person can run "
+                                 "'vaelius-client session use narrow-b' for this session, or ask narrow-b's admin "
+                                 "to add them.")
         self.assertNotIn('\n', reason)
         self.assertIn('cannot read or which does not exist', self.read(self.src / 'ghost/notes.md'))
         self.assertIn('scope file Vaelius cannot read', self.read(self.src / 'bad/notes.md'))
         self.assertIn('personal folder', self.read(self.home_dir / 'Documents/plan.md'), 'unchanged')
         self.assertIsNone(self.read(self.home_dir / 'dotfile'), 'unscoped: allowed, the backstop applies')
         self.assertIsNone(self.read(self.src / 'plain/readme.md'), 'unscoped repository: allowed')
+
+    def test_narrower_denial_names_who_is_missing_from_the_cached_descriptor(self):
+        entry = self.label()
+        summary = session_label.narrower(entry, 'narrow-b')
+        cases = (({'count': 1, 'names': ['carol'], 'more': 0}, 'carol'),
+                 ({'count': 2, 'names': ['carol', 'dave'], 'more': 0}, 'carol and dave'),
+                 ({'count': 9, 'names': ['carol', 'dave', 'erin'], 'more': 6}, 'carol, dave, erin and 6 more'),
+                 ({'count': 3, 'names': [], 'more': 3}, '3 people'),
+                 ({'count': 1, 'names': [], 'more': 1}, '1 person'),
+                 ({}, ''))
+        for missing, expected in cases:
+            with self.subTest(expected):
+                self.assertEqual(session_label.who(dict(summary, missing_readers=missing)), expected)
+        # An older service sends no summary: the earlier denial, still one line and still a deny.
+        old = dict(entry['descriptor'])
+        old.pop('narrower')
+        session_label.SessionLabels(self.home).update('s1', descriptor=old)
+        reason = self.read(self.src / 'b/notes.md')
+        self.assertIn('is visible to fewer people than this session (team-a)', reason)
+        self.assertNotIn('\n', reason)
 
     def test_every_read_tool_and_shell_paths(self):
         b = str(self.src / 'b')
@@ -259,6 +283,31 @@ class HookDecisionTest(LabelFixture):
             decision = json.loads(out.getvalue()).get('hookSpecificOutput', {}).get('permissionDecision')
             self.assertEqual(decision, 'deny' if denied else None)
         self.assertFalse((self.tmp / 'no-profile').exists())
+
+
+class RecallNoteTest(LabelFixture):
+    def test_hidden_memories_are_announced_once_per_session_to_the_person_only(self):
+        self.start()
+        first = self.hook('UserPromptSubmit', prompt='first')
+        line = ("vaelius: 12 memories from narrow-b hidden (not visible to carol, dave, contractors (group) and 1 "
+                "more); 'vaelius-client session use narrow-b' to include them")
+        self.assertIn(line, first.get('systemMessage', ''))
+        self.assertNotIn('narrow-b', json.dumps(first.get('hookSpecificOutput', {})), 'never model-facing')
+        second = self.hook('UserPromptSubmit', prompt='second')
+        self.assertNotIn('hidden', second.get('systemMessage', ''), 'once per session')
+        self.start(session='s2')
+        self.assertIn(line, self.hook('UserPromptSubmit', session='s2', prompt='other').get('systemMessage', ''))
+
+    def test_no_line_when_nothing_is_hidden_and_several_workspaces_are_summarized(self):
+        entry = {'descriptor': {'narrower': [{'id': 'b', 'name': 'b', 'hidden_items': 0,
+                                              'missing_readers': {'count': 1, 'names': ['carol'], 'more': 0}}]}}
+        self.assertIsNone(session_label.hidden_line(entry))
+        entry['descriptor']['narrower'] += [{'id': 'c', 'name': 'c', 'hidden_items': 1, 'missing_readers': {}},
+                                            {'id': 'd', 'name': 'd', 'hidden_items': 5,
+                                             'missing_readers': {'count': 2, 'names': [], 'more': 2}}]
+        self.assertEqual(session_label.hidden_line(entry),
+                         "vaelius: 5 memories from d hidden (not visible to 2 people); also 1 from c; "
+                         "'vaelius-client session use <workspace>' to include them")
 
 
 class NarrowingTest(LabelFixture):

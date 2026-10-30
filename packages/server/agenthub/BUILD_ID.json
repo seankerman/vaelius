@@ -1,7 +1,7 @@
 {
-  "build_id": "dd568192328c9dd508ee0a185d7cf1a88cf24e82855d5379fea0795613d5e89c",
+  "build_id": "abb8020c6208dc85e755ab06234fb0379ceef1176e72eb1ace3e78e6d3e2c2d7",
   "files": {
-    "CLIENT_PIPELINE_PIN.json": "55cae77ec0ba44a44e738eef5533430bf4fa646d06569bd4cc3129dcec60bba4",
+    "CLIENT_PIPELINE_PIN.json": "3f0b820d212f00e91e611e21630d19cb294da7783999f867afbce26869ccba4d",
     "__init__.py": "503e3989491150929dc39486fcf64ad6e4e1703aadbc2c1eea08c42da3f8ee04",
     "access_review.py": "9dea36142a8205ab354255cb315fafcb6f2cebd2c1dbc044387379c3cfe51ca8",
     "aws_sts.py": "5075d4bc8f1e8747e7c0db31fc8ca7c1b90392f8a5cc4dff7c3464cf912f7284",
@@ -13,7 +13,7 @@
     "cloud_api.py": "dbf74275b9288a6774953faa2a6c7d9966a278bb96c758333d763ab064f60892",
     "cloud_container.py": "bd98486e9aeb229f9aa759cd0898c25d2f3ed99318c025ae4dbd2064e30a7e95",
     "cloud_execution.py": "74dcb8930d767ecc2d7af5f3660c582b27bebd10bcf7c785704dde8e992da1d7",
-    "cloud_identity.py": "0c7c13827b75597e65db748db62922b98b82a1992832c41964ecacba2102e95d",
+    "cloud_identity.py": "3aa8c56b4f4412320079983bb74def1d0e94c13ae4dc391b1333749d5b567a93",
     "cloud_local.py": "8801f781b6e5b1a53793c70600ba886665993b659da8555cda324558ba9cecb3",
     "cloud_maintenance.py": "a80b92efe66689869cd2129409cc0576e639fcc6f2499f2cb7bcc66aa804c257",
     "cloud_migration.py": "00801ea93905828dd3a8acf292a16d3532d9f84a2350419da8b6d969f135c5a7",
@@ -33,14 +33,14 @@
     "enterprise.py": "d512814afb530c8e5aa823778687e172168b335341fc076ae0afdeee1d36d15d",
     "feedback.py": "00283f94f8def7b66dd036abbd1624bf3647f46f10ebd702030c8213dde89b87",
     "general_sources.py": "b29b94bdc83d6b09ad34fbcc4cba54f9af3d5891f4146c6e5c6b1dc4138709d1",
-    "github_sync.py": "f1c6dee34ef6a2d1d07a099ccf22d8624c003bad0f8245ba20ce9643a3844e3e",
+    "github_sync.py": "2e5e2bde0d9ed4091a3a4760457dd7bf5bca70e06665bce71827252218a9bbc8",
     "governance.py": "dc8eb6f6fca0372edbed79ed37854f1bf6abf54bfdbb2e760ecc3e38828a526b",
     "historical_review.py": "22412ce9277e4a70fd6c13f84e4e1fcba244c8805b581f58af1eac486fdff51f",
     "instruction_shape.py": "286ab5674176680be12f86ecad9bf9e726a582b54351c3ef61e8dd67a9f70509",
     "intake_redaction.py": "05b3c000768ef284c7270db3b6a2ad97aadc0cbef055d60be0eda241129ea282",
     "local_connectors.py": "2a99876af3ea4f97627fa4f38c21fce448ce840af18a468b6ac59b0b81559759",
     "mcp_server.py": "4dbdcafeeb2d8833471268acc2139d46184f8a0242d68cc3a7168c0166464591",
-    "mcp_tools.py": "c3ce3dfe87a6b6428294396adb93d9ba142fe5500cab8233b46b6b86304cf84d",
+    "mcp_tools.py": "851442a1a82be01ec1ce366990d361632b9432ba12df9c474e6e8fb1998099d2",
     "migrations/001_canonical.sql": "f0d6b66147e540cdc466cd5d14b16496586041595a258d5feb75413a4b366352",
     "migrations/002_control.sql": "431fdc39c5445163021a9711eb88a130eacc36b97ee3d3153ad36c0e5ee65856",
     "migrations/003_objects.sql": "931dc0a5d377d7650a0b1a1fcac2fb214dcddc94c6eed89e83acd41b420a189b",
@@ -88,6 +88,7 @@
     "migrations/049_session_labels.sql": "f5e79026f19b4692847c4c40f11d1d1f2009d4db55f1f65608ac47fc38c707e9",
     "migrations/050_github_sync.sql": "1bab343123b0a180aca4c366ff837af4ad0ad1458139d0ae6f2c9633ad3064c9",
     "migrations/051_remembered_items.sql": "7b553cd7f446e595522fa098a30f4c1ef62d4883c007c12bbda22bfa63c65bbd",
+    "migrations/052_workspace_item_counts.sql": "1ed25e5a2cc725ccc11cc2eae520804625cf8e750e969b996baf4ae33ac4ff67",
     "model_policy.py": "6107217377ef5fab502666aaaea95e738ab92210bcdf28e40a75e18a38650950",
     "model_resources.py": "55112c3d9609c1bcbda04ddf57822a13c7b1c6135d3f8ee2a5e52a0fbaf74958",
     "oauth_provider.py": "6f3ae00dd941f041e5d749b9012e15c0ebc28fc85f8391b5fc0c4e5723a951dc",
@@ -138,7 +139,7 @@
     "source_evidence.py": "7c54882a1ff8e59f97f70568f4e8410bcf6d8bbc3f3745b74110dd1291b6f1d9",
     "source_index.py": "00b76e5a91ca35395990bd3d569f47b30e87633e623cf49e88e896d1607c3ae2",
     "source_objects.py": "c0a1cefef1f4428c3866f12b64025e48eda393c0d1b3945abae3dddac265d369",
-    "workspace_access.py": "21e110c77cb97c44f8b29e7591a25f3b1f57ce331c900dbb1fe40fb9e0958276",
+    "workspace_access.py": "4de99e24a7afb75d8dc755a2743f083464cf6919d2741a1c7aa16517511c825c",
     "write_limits.py": "892e82ce74cef2ae98199fe987bdc5b6907bb64d9e3e00c469537ad3dc495274"
   }
 }

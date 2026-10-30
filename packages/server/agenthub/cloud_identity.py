@@ -759,6 +759,8 @@ class CloudIdentityMixin:
         out-of-order event) is `stale` and an inactive one is inactive: both
         contribute no members (agenthub.workspace_access, migration 048)."""
         groups=[]
+        known=[r[0] for r in db.execute("SELECT id FROM groups WHERE tenant=%s AND source='scim'",(tenant,))]
+        before=self.sync_containment(db,tenant,known) if hasattr(self,'sync_containment') else None
         for row in db.execute("SELECT * FROM cloud_directory_resources WHERE kind='group'").fetchall():
             ident=self._scim_group(db,tenant,row['external_id'])
             payload=json.loads(row['payload_json'])
@@ -776,6 +778,10 @@ class CloudIdentityMixin:
                         (tenant,ident,user['principal'],time.time()))
             groups.append(ident)
         if groups:self._refresh_groups(db,tenant,groups)
+        if before is not None:
+            # Sync has no admin to warn: a change that ends a workspace pair's containment is logged.
+            self.log_newly_unreadable(db,tenant,before,self.sync_containment(db,tenant,sorted({*known,*groups})),
+                                      'scim_sync')
 
     def set_membership(self,tenant,project,principal,active):
         if tenant != self.tenant_id: raise ValueError('wrong_tenant')

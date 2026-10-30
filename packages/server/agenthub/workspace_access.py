@@ -465,6 +465,81 @@ class WorkspaceAccessMixin:
             ON g.tenant=e.tenant AND g.id=e.group_id WHERE e.tenant=? AND e.member_kind='principal'
             AND e.member=? AND g.source='local' ''', (tenant, principal)).fetchall()]
 
+    # Containment changes ---------------------------------------------------------------
+    #
+    # Sessions of workspace S may read workspace T while audience(T) ⊇ audience(S)
+    # (section 7). An access-list or group change can end that for some pairs; the
+    # admin is told which (`newly_unreadable`), and group sync logs it. The rule itself
+    # is unchanged: this only reports what a change did to it.
+
+    def _contained_pairs(self, db, tenant, scope, focus):
+        """{(S, T)}: S != T, both in `scope`, one of them in `focus`, audience(T) ⊇ audience(S)
+        (current materialized state, the same superset query as the session filter).
+        None when the scope is too large to check within one request."""
+        scope = sorted(set(scope))
+        if len(scope) > CONTAINMENT_SCOPE:
+            return None
+        focus = set(focus)
+        pairs = set()
+        for source in scope:
+            candidates = [w for w in scope if w != source and (source in focus or w in focus)]
+            if not candidates:
+                continue
+            rows = db.execute(self._SUPERSET_SQL.format(audience=self._AUDIENCE_SQL), (
+                tenant, source, source, tenant, tenant, tenant, candidates, tenant, [], tenant, candidates,
+                tenant, [], '')).fetchall()
+            if not any(r['kind'] == 'self' and r['total'] for r in rows):
+                continue  # nobody can start a session in a workspace with an empty audience
+            pairs |= {(source, r['id']) for r in rows if r['kind'] == 'workspace' and r['contains']}
+        return pairs
+
+    def _newly_unreadable(self, db, tenant, before, after):
+        """`newly_unreadable` (target names) and a one-line explanation, from two
+        `_contained_pairs` results."""
+        if before is None or after is None:
+            return {'newly_unreadable': [], 'newly_unreadable_note': 'not checked: too many workspaces'}
+        lost = sorted(before - after)
+        if not lost:
+            return {'newly_unreadable': []}
+        ids = sorted({w for pair in lost for w in pair})
+        names = {r['id']: r['name'] for r in db.execute(
+            'SELECT id,name FROM enterprise_projects WHERE tenant=? AND id=ANY(?::text[])', (tenant, ids))}
+        name = lambda ident: names.get(ident, ident)
+        by_source = {}
+        for source, target in lost:
+            by_source.setdefault(name(source), []).append(name(target))
+        clauses = ['sessions in ' + source + ' can no longer read ' + ', '.join(sorted(targets))
+                   for source, targets in sorted(by_source.items())]
+        return {'newly_unreadable': sorted({name(t) for _, t in lost}),
+                'newly_unreadable_note': '; '.join(clauses) + ' (those workspaces no longer include everyone in '
+                                         'the sessions\' audience). Add the same people as readers there, or use '
+                                         "'vaelius-client session use <workspace>' per session."}
+
+    def _containment_scope(self, db, ctx, focus):
+        """The caller's readable workspaces (reported pairs never name others) and the
+        focus workspaces among them."""
+        readable = {w for w, (role, _) in self._roles(db, ctx).items() if role >= READER}
+        return readable, readable & set(focus)
+
+    def log_newly_unreadable(self, db, tenant, before, after, cause):
+        """Group sync: report lost containment in the server log only."""
+        found = self._newly_unreadable(db, tenant, before, after)
+        if found['newly_unreadable']:
+            import logging
+            logging.getLogger('agenthub.workspace_access').warning(json.dumps(
+                {'event': 'newly_unreadable', 'tenant': tenant, 'cause': cause, **found}, sort_keys=True))
+        return found
+
+    def sync_containment(self, db, tenant, groups):
+        """`_contained_pairs` for the workspaces a group sync can change (all active ones)."""
+        focus = set()
+        for group in groups:
+            focus.update(self._group_workspaces(db, tenant, group))
+        if not focus:
+            return set()
+        scope = [r[0] for r in db.execute('SELECT id FROM enterprise_projects WHERE tenant=? AND active=1', (tenant,))]
+        return self._contained_pairs(db, tenant, scope, focus)
+
     # Authority -----------------------------------------------------------------------
 
     def _settings_admin(self, db, ctx):
@@ -676,7 +751,11 @@ class WorkspaceAccessMixin:
                                 (ctx['tenant'],)).fetchone()['widest_entry']
             if self._suspended(widest, kind, role):
                 raise ValueError('entry_wider_than_tenant_allows')
+            scope, focus = self._containment_scope(db, ctx, [row['id']])
+            before = self._contained_pairs(db, ctx['tenant'], scope, focus)
             result = self._write_entry(db, ctx, row['id'], kind, subject, role, override=override)
+            after = self._contained_pairs(db, ctx['tenant'], scope, focus)
+            result.update(self._newly_unreadable(db, ctx['tenant'], before, after))
         return result
 
     def _write_entry(self, db, ctx, workspace, kind, subject, role, *, override=False):
@@ -720,7 +799,11 @@ class WorkspaceAccessMixin:
             subject = '' if kind == 'organization' else subject
             if not isinstance(subject, str):
                 raise ValueError('invalid_subject')
+            scope, focus = self._containment_scope(db, ctx, [row['id']])
+            before = self._contained_pairs(db, ctx['tenant'], scope, focus)
             result = self._delete_entry(db, ctx, row['id'], kind, subject, override=override)
+            after = self._contained_pairs(db, ctx['tenant'], scope, focus)
+            result.update(self._newly_unreadable(db, ctx['tenant'], before, after))
         return result
 
     def _delete_entry(self, db, ctx, workspace, kind, subject, *, override=False):
@@ -915,7 +998,11 @@ class WorkspaceAccessMixin:
                 if role != 'member':
                     raise ValueError('invalid_group_member')
                 self._refuse_cycle(db, ctx['tenant'], group['id'], member)
+            scope, focus = self._containment_scope(db, ctx, self._group_workspaces(db, ctx['tenant'], group['id']))
+            before = self._contained_pairs(db, ctx['tenant'], scope, focus)
             result = self._write_member(db, ctx, group, kind, member, role, override=override)
+            after = self._contained_pairs(db, ctx['tenant'], scope, focus)
+            result.update(self._newly_unreadable(db, ctx['tenant'], before, after))
         return result
 
     @staticmethod
@@ -957,8 +1044,13 @@ class WorkspaceAccessMixin:
             if value['member_kind'] == 'group':
                 found = self._resolve_group(db, ctx['tenant'], member)
                 member = found['id'] if found else member
+            scope, focus = self._containment_scope(db, ctx, self._group_workspaces(db, ctx['tenant'], group['id']))
+            before = self._contained_pairs(db, ctx['tenant'], scope, focus)
             removed = self._delete_member(db, ctx, group, value['member_kind'], member, override=override)
-        return {'group': group['id'], 'member_kind': value['member_kind'], 'member': member, 'removed': removed}
+            after = self._contained_pairs(db, ctx['tenant'], scope, focus)
+            changes = self._newly_unreadable(db, ctx['tenant'], before, after)
+        return {'group': group['id'], 'member_kind': value['member_kind'], 'member': member, 'removed': removed,
+                **changes}
 
     def _delete_member(self, db, ctx, group, kind, member, *, override=False):
         workspaces = self._group_workspaces(db, ctx['tenant'], group['id'])
@@ -1193,15 +1285,17 @@ class WorkspaceAccessMixin:
         SELECT 'workspace' kind,p.id,
             CASE WHEN p.org_role>0 AND o.widest_entry='organization' THEN coalesce(c.nq,0)=t.nq
                 ELSE coalesce(c.n,0)=t.n END AS contains,
-            coalesce(c.n,0)=t.n AS direct,t.n total
+            coalesce(c.n,0)=t.n AS direct,t.n total,
+            CASE WHEN p.org_role>0 AND o.widest_entry='organization' THEN t.nq-coalesce(c.nq,0)
+                ELSE t.n-coalesce(c.n,0) END AS missing
         FROM enterprise_projects p JOIN enterprise_organizations o ON o.id=p.tenant CROSS JOIN total t
         LEFT JOIN covered c ON c.workspace=p.id
         WHERE p.tenant=? AND p.id=ANY(?::text[]) AND p.active=1
         UNION ALL
-        SELECT 'group',g.id,coalesce(x.n,0)=t.n,false,t.n FROM groups g CROSS JOIN total t
+        SELECT 'group',g.id,coalesce(x.n,0)=t.n,false,t.n,0 FROM groups g CROSS JOIN total t
         LEFT JOIN grouped x ON x.group_id=g.id WHERE g.tenant=? AND g.id=ANY(?::text[])
         UNION ALL
-        SELECT 'self',max(member.principal),count(*)=1 AND bool_and(member.principal=?),false,count(*) FROM member'''
+        SELECT 'self',max(member.principal),count(*)=1 AND bool_and(member.principal=?),false,count(*),0 FROM member'''
 
     def _session_label(self, db, ctx, label):
         """The recall filter for one session label (docs/ACCESS_MODEL.md section 7).
@@ -1255,8 +1349,56 @@ class WorkspaceAccessMixin:
             return dict(result, private=True)
         result.update(workspaces=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['contains']),
                       direct=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['direct']),
-                      groups=sorted(r['id'] for r in rows if r['kind'] == 'group' and r['contains']))
+                      groups=sorted(r['id'] for r in rows if r['kind'] == 'group' and r['contains']),
+                      missing={r['id']: int(r['missing']) for r in rows if r['kind'] == 'workspace' and not r['contains']})
         return result
+
+    # Who of a session's audience a narrower workspace leaves out, named only through
+    # the access list of the session's own workspace (what any of its readers sees in
+    # `workspace show`): a principal entry by id, else the group entry that brings the
+    # person in. People who come in only through the organization entry are counted,
+    # never named. Only people in the session audience who are NOT readers of the
+    # target are considered, so nothing about the target's own members is revealed.
+    _MISSING_SQL = '''WITH sa AS MATERIALIZED ({audience}),
+        named AS MATERIALIZED (SELECT sa.principal,
+                min(CASE e.subject_kind WHEN 'principal' THEN '0:'||e.subject ELSE '1:'||g.name END) label
+            FROM sa JOIN workspace_entries e ON e.tenant=? AND e.workspace=? AND e.subject_kind IN ('principal','group')
+            LEFT JOIN groups g ON g.tenant=e.tenant AND g.id=e.subject AND e.subject_kind='group'
+            WHERE (e.subject_kind='principal' AND e.subject=sa.principal)
+                OR (g.id IS NOT NULL AND EXISTS(SELECT 1 FROM group_closure c WHERE c.tenant=e.tenant
+                    AND c.group_id=e.subject AND c.principal=sa.principal))
+            GROUP BY sa.principal)
+        SELECT t.w,named.label,count(*) n FROM unnest(?::text[]) t(w) CROSS JOIN named
+        WHERE coalesce((search_workspace_role(?,named.principal,t.w,NULL)).role,0)<1
+        GROUP BY t.w,named.label'''
+
+    def _missing_readers(self, db, ctx, session, targets):
+        """{workspace: {'count', 'names', 'more'}} for narrower workspaces of a shared session.
+
+        `count` is how many people of the session audience cannot read the target;
+        `names` at most MISSING_NAMES labels (principal ids, then group names) drawn
+        from the session workspace's own access list; `more` the people not covered
+        by those labels."""
+        targets = sorted(targets)[:MISSING_WORKSPACES]
+        if not targets:
+            return {}
+        names = [session['workspace'], *session['narrowed']]
+        audience = ' INTERSECT '.join('(' + self._AUDIENCE_SQL + ')' for _ in names)
+        args = [value for name in names for value in (ctx['tenant'], name, name, ctx['tenant'])]
+        labels = {}
+        for row in db.execute(self._MISSING_SQL.format(audience=audience),
+                              (*args, ctx['tenant'], session['workspace'], targets, ctx['tenant'])).fetchall():
+            labels.setdefault(row['w'], []).append((row['label'], int(row['n'])))
+        found = {}
+        for workspace in targets:
+            count = int(session.get('missing', {}).get(workspace, 0))
+            shown = sorted(labels.get(workspace, ()))[:MISSING_NAMES]
+            covered = sum(n for _, n in shown)
+            found[workspace] = {'count': count,
+                                'names': [label[2:] if label[0] == '0' else label[2:] + ' (group)'
+                                          for label, _ in shown],
+                                'more': max(count - covered, 0)}
+        return found
 
     def _label(self, db, ctx):
         """This request's session-label recall filter, computed once, on first use, inside
@@ -1350,6 +1492,15 @@ class WorkspaceAccessMixin:
             repos = [r[0] for r in db.execute('SELECT remote FROM workspace_repos WHERE tenant=? AND workspace=? '
                                               'ORDER BY remote', (ctx['tenant'], workspace['id']))]
             epoch = session['epoch']
+            narrower = []
+            if not session['private']:
+                outside = sorted(set(session['readable']) - set(session['workspaces']))
+                missing = self._missing_readers(db, ctx, session, outside)
+                hidden = {r[0]: int(r[1]) for r in db.execute('''SELECT external_project,count(*) FROM enterprise_sources
+                    WHERE tenant=? AND external_project=ANY(?::text[]) AND active=1 AND private=0
+                    GROUP BY external_project''', (ctx['tenant'], sorted(missing)))} if missing else {}
+                narrower = [{'id': ident, 'name': names.get(ident, ident), 'missing_readers': missing[ident],
+                             'hidden_items': hidden.get(ident, 0)} for ident in sorted(missing)]
         listed = lambda ids: [{'id': ident, 'name': names.get(ident, ident)} for ident in ids]
         return {'workspace': {'id': workspace['id'], 'name': workspace['name']}, 'epoch': int(epoch),
                 'role': role_name(roles.get(workspace['id'], (0, 0))[0]), 'item_default': workspace['item_default'],
@@ -1357,7 +1508,7 @@ class WorkspaceAccessMixin:
                 'session': {'workspace': workspace['id'], 'narrowed': session['narrowed'],
                             'private': session['private']},
                 'contains_session_audience': listed(session['workspaces']), 'readable': listed(session['readable']),
-                'repos': repos, 'fetched_at': int(now), 'refresh_after': int(now + DESCRIPTOR_REFRESH),
+                'narrower': narrower, 'repos': repos, 'fetched_at': int(now), 'refresh_after': int(now + DESCRIPTOR_REFRESH),
                 'expires_at': int(now + DESCRIPTOR_EXPIRY)}
 
     def _narrow_target(self, db, ctx, ref):
@@ -1385,6 +1536,12 @@ LABELLED_ROUTES = ('/enterprise/v3/search', '/enterprise/v3/document-evidence', 
 # The client refreshes its descriptor after 15 minutes and stops trusting it after 24 hours.
 DESCRIPTOR_REFRESH = 900
 DESCRIPTOR_EXPIRY = 86400
+# A narrower workspace's "missing readers" summary names at most this many people or
+# groups; the descriptor summarizes at most this many narrower workspaces.
+MISSING_NAMES = 3
+MISSING_WORKSPACES = 64
+# `newly_unreadable` is computed when the caller reads at most this many workspaces.
+CONTAINMENT_SCOPE = 200
 SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing'}
 MAX_NARROWED = 16
 

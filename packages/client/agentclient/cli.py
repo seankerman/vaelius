@@ -83,6 +83,33 @@ def _add_remember_commands(sub):
     mode.add_argument('--apply', action='store_true', help='write the items')
 
 
+def _add_push_commands(sub):
+    """`vaelius-client push-session` (agentclient.push_session): one past conversation, by hand."""
+    push = sub.add_parser('push-session', help='send one of your own past Claude Code or Codex conversations '
+                          'from a scoped folder, owner-private (dry run unless --apply; counts only)')
+    push.add_argument('target', nargs='?', help='a session id or the transcript file')
+    push.add_argument('--list-recent', nargs='?', type=int, const=20, metavar='N',
+                      help='list your N most recent conversations (default 20) and whether each can be pushed')
+    push.add_argument('--apply', action='store_true', help='queue the events for delivery (default: counts only)')
+    push.add_argument('--claude-config-dir', help='Claude Code configuration folder (default: CLAUDE_CONFIG_DIR or ~/.claude)')
+    push.add_argument('--codex-home', help='Codex home folder (default: CODEX_HOME or ~/.codex)')
+
+
+def _push_command(config, home, args):
+    from agentclient import push_session
+    claude = push_session.claude_dir(args.claude_config_dir)
+    codex = push_session.codex_dir(args.codex_home)
+    if args.list_recent is not None:
+        if args.target or args.apply:raise SystemExit(json.dumps({'error': 'list_recent_takes_no_session'}))
+        return push_session.recent(config, limit=args.list_recent, claude=claude, codex=codex)
+    if not args.target:raise SystemExit(json.dumps({'error': 'session_required', 'reason': 'pass a session id, '
+                                                    'a transcript path or --list-recent'}))
+    try:
+        return push_session.push(config, home, args.target, apply=args.apply, claude=claude, codex=codex)
+    except push_session.PushRefused as refused:
+        raise SystemExit(json.dumps({'error': 'push_refused', 'reason': str(refused)})) from None
+
+
 def _remember_command(config, home, args):
     from agentclient import remembered
     if args.command == 'import-memory':
@@ -218,6 +245,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     notice=sub.add_parser('notice',help='show what is captured for a workspace, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     _add_remember_commands(sub)
+    _add_push_commands(sub)
     _add_workspace_commands(sub)
     _add_group_commands(sub)
     _add_github_commands(sub)
@@ -319,6 +347,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             if args.acknowledge:result['acknowledgement']=capture_notice.record(home,args.project,value,'cli')
         elif args.command in ('remember','import-memory'):
             result=_remember_command(config,home,args)
+        elif args.command=='push-session':
+            result=_push_command(config,home,args)
         elif args.command=='workspace':
             result=_workspace_command(config,args)
         elif args.command=='group':

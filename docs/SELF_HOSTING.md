@@ -127,6 +127,85 @@ retention commitment; export the content-free deletion journal separately and ru
 against a user's live database. [Source-first rollback](../packages/server/docs/SOURCE_FIRST.md)
 documents the raw-passage hold required before returning to an older binary.
 
+## Backfilling past conversations
+
+`vaelius backfill` imports conversation history that already lives where the service
+runs, such as a transcript archive or another memory service's export. It is an
+operator command. People push their own earlier conversations from their computers
+one at a time instead ([client guide](CLIENT.md#pushing-a-past-conversation)); there
+is no bulk client import.
+
+```sh
+vaelius backfill --profile /absolute/private/profile --tenant acme \
+  --input /absolute/export --map /absolute/private/backfill-map.json            # dry run: counts only
+vaelius backfill --profile ... --tenant acme --input ... --map ... --apply --max-seconds 3600
+vaelius backfill --profile ... --tenant acme --refresh-connections              # at least every 30 days
+```
+
+**Input.** One JSON file (`.jsonl`) or a folder of them, read in name order. Each
+line is one event:
+
+```json
+{"session": "chat-0001", "timestamp": "2026-03-01T17:04:05Z", "author": "alice@example.org",
+ "workspace": "maple-repo", "role": "user", "text": "Where is the import file kept?"}
+{"session": "chat-0001", "timestamp": "2026-03-01T17:04:09Z", "author": "alice@example.org",
+ "workspace": "maple-repo", "role": "tool", "tool": "Read", "paths": ["src/import.py"], "text": "def load(): ..."}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `session` | yes | The conversation; events of one session become one capture session |
+| `timestamp` | yes | ISO 8601 text or epoch seconds, stored as the time the event occurred |
+| `author` | yes | The author as the source names them; mapped to a principal |
+| `workspace` | yes | The workspace as the source names it; mapped to a workspace |
+| `role` | yes | `user` (a prompt), `assistant` (a reply) or `tool` (a tool call and its result) |
+| `text` | yes | The text, or for `tool` the result |
+| `tool`, `paths` | no | For `tool`: the tool name and up to 100 paths it named |
+| `id` | no | A stable event id within the session; default: the event's position in its session |
+
+A line with any other field (including any sharing field), another role or a value
+of the wrong type is skipped and counted as `invalid`. Lines are at most 4 MB.
+
+**Mapping file.** It names, for each input author and workspace, the principal and
+workspace (name or id) they become:
+
+```json
+{"principals": {"alice@example.org": "alice", "bob@example.org": "bob"},
+ "workspaces": {"maple-repo": "maple"}}
+```
+
+Nothing is guessed. An author or workspace missing from the file, a principal that
+does not exist or is inactive, an unknown workspace, and an author who is not a
+writer in the mapped workspace are skipped and counted (`unmapped_author`,
+`unmapped_workspace`, `unknown_principal`, `unknown_workspace`, `not_writer`).
+
+**Always owner-private.** The service cannot see the author's computer, so it cannot
+apply scoped folders or origin labels; every imported item is therefore private to
+its author, whatever the workspace default or the author's own setting. Each author
+gets one connection per workspace (`backfill-...`, enrolled `private`), and no event
+carries a sharing request. The command has no sharing options. Owners share
+afterwards, per session, with `vaelius-client share --session ...` or the
+`share_memories` tool.
+
+**Dry run, idempotent, resumable, rate limited.** Without `--apply` it prints counts
+per principal and workspace and the skip counts, never content. With `--apply` each
+event goes through the same intake as live capture (server redaction, the tenant's
+write limits as the author, legal holds, retention and erasure), with a source id
+made from the principal, workspace, session and position, so running it again
+reports `duplicate` instead of writing twice. `--max-events` (default 5000) and
+`--max-seconds` bound one run; a run that stops says so, and the next run continues.
+Every run writes one operator audit row (`server_backfill`, `dry_run` or `applied`)
+with the operating-system user that ran it and the counts; each item is also
+audited as an ordinary ingest by its author, with `operator-backfill:<run>` as the
+request id. Retention ages backfilled items from the time they were imported.
+
+**Keeping them readable.** Like every connection, a backfill connection hides its
+items, from their owner too, once its permission has not been observed for 30 days.
+`--refresh-connections` re-observes the backfill connections of authors who are
+still active writers in the workspace (an `--apply` run also refreshes the ones it
+writes to); the others are left to expire. Schedule it with the other maintenance
+commands.
+
 ## Upgrading to this release (workspaces, migration 048)
 
 This release replaces the per-item sharing ladder with **workspace access

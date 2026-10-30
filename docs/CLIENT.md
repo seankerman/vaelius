@@ -842,6 +842,48 @@ everything else (tags, team, search filters, nested keys) is ignored:
 A legacy file without `workspace` or `project` only adjusts an explicitly
 enrolled project.
 
+## Pushing a past conversation
+
+Capture is forward-only. To add one earlier conversation of your own, push it:
+
+```sh
+vaelius-client --home /absolute/private/client-profile push-session --list-recent
+vaelius-client --home /absolute/private/client-profile push-session SESSION_ID           # counts only
+vaelius-client --home /absolute/private/client-profile push-session SESSION_ID --apply
+```
+
+`--list-recent` lists your most recent Claude Code and Codex conversations (host,
+session id, time, the folder each started in and whether it can be pushed); it
+shows no content. Pass a session id or the transcript file. One session per command;
+there is no bulk mode.
+
+- **Only your own.** The transcript must be under this computer's Claude Code
+  configuration folder (`CLAUDE_CONFIG_DIR` or `~/.claude`, the `projects/` folder)
+  or Codex home (`CODEX_HOME` or `~/.codex`, the `sessions/` folder). A subagent's
+  transcript goes with its parent session and cannot be pushed alone.
+- **Only from a scoped folder where you are a writer.** The session must have started
+  in a folder whose scope file (or enrollment) has capture on; with `--apply` the
+  service must report the writer or admin role there. Anything else is refused.
+- **Always private to you**, whatever the workspace default: no sharing request is
+  sent. Share it afterwards with `vaelius-client share --session SESSION_ID ...`.
+- **The live rules, replayed.** Events are replayed in order through the same origin
+  labels, session taint and redaction as live capture: a read of a personal folder,
+  an unknown path, auto memory, another MCP server or another workspace restricts
+  that event and every later one, and other workspaces read are carried. Only what
+  live capture would have captured is sent: prompts, tool calls with their results,
+  and the final reply of each turn.
+- **Counts only by default.** The dry run prints the number of events by kind, how
+  many the replayed taint made private, carried workspaces and how many were pushed
+  before. `--apply` queues the events in the outbox, which delivers them at the
+  service's rate; run it again to continue if it stops.
+- **Idempotent.** Each event's source id comes from the session id and its position
+  in the file; the profile's `pushed-sessions.json` records what was queued, so
+  pushing a session again sends nothing twice.
+- Transcript files are only read, never changed or deleted.
+
+Operators can import history that already lives server-side with `vaelius backfill`
+([self-hosting](SELF_HOSTING.md#backfilling-past-conversations)).
+
 ## Capture notice and status
 
 Login and `enroll-project` print the organization's capture notice: what is
@@ -861,7 +903,8 @@ rate-limited capture (HTTP 429) stays in the outbox until the service's
 `Retry-After`. See [shared-memory governance](MEMORY_GOVERNANCE.md).
 
 Desktop capture is forward-only at enrollment. Capture is an explicit finite poll;
-installation does not start a recurring collector or import past conversations.
+installation does not start a recurring collector or import past conversations
+(push one with [`push-session`](#pushing-a-past-conversation)).
 Pausing or uninstalling does not delete server records; use `vaelius-client forget`
 (above) to delete what was captured.
 

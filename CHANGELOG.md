@@ -18,6 +18,8 @@ The release workflow publishes the section whose heading matches the tag.
   never read: deny rules plus the hook, Bash included. Re-run
   `install --claude-code` to add the rules. Reading `~/.claude/skills`, `agents`,
   `commands`, `hooks` and `output-styles` no longer makes a session private.
+- Runtime base image updated to Python 3.12.16 (`python:3.12.16-slim-trixie`,
+  CVE-2026-115557), and `joserfc` to 1.7.6 (GHSA-9pg5-8c7x-5hfx).
 - Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is
   switched off in captured repositories: `install --claude-code` writes
   `autoMemoryEnabled: false` into each enrolled or scoped project's

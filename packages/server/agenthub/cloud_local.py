@@ -148,7 +148,7 @@ def main(argv=None):
         'doctor','up','worker-run','status','stop','reindex',
         'source-index-reconcile',
         'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
-        *GOVERNANCE_COMMANDS,'workspace','tenant-policy','github'])
+        *GOVERNANCE_COMMANDS,'workspace','tenant-policy','github','backfill'])
     parser.add_argument('github_command',nargs='?',choices=['status','sync'],
         help='github: status (installations, last sync, stale groups, unlinked members) or sync')
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',default='acme',type=tenant_id)
@@ -163,7 +163,7 @@ def main(argv=None):
     # Memory-governance operator commands (see docs/MEMORY_GOVERNANCE.md).
     parser.add_argument('--principal');parser.add_argument('--reason')
     parser.add_argument('--since',help='epoch seconds or ISO-8601 with offset');parser.add_argument('--until')
-    parser.add_argument('--apply',action='store_true',help='principal-withdraw: apply; default is a dry run')
+    parser.add_argument('--apply',action='store_true',help='principal-withdraw, backfill: apply; default is a dry run')
     parser.add_argument('--limit',type=int,default=200)
     # Workspaces and tenant policy (see docs/ACCESS_MODEL.md).
     parser.add_argument('--workspace',help='workspace: the workspace (name or id); omit to list every workspace')
@@ -178,6 +178,12 @@ def main(argv=None):
     parser.add_argument('--widest-entry',choices=['none','people_and_groups','organization'],help='tenant-policy')
     parser.add_argument('--owner-sharing',choices=['allowed','lower_only'],help='tenant-policy')
     parser.add_argument('--now',action='store_true',help='github sync: reconcile now instead of at the next tick')
+    # Operator backfill of server-side conversation history (agenthub.server_backfill, docs/SELF_HOSTING.md).
+    parser.add_argument('--input',help='backfill: a JSONL event file or a folder of them')
+    parser.add_argument('--map',help='backfill: the principal and workspace mapping file')
+    parser.add_argument('--max-events',type=int,default=5000,help='backfill: events written per run')
+    parser.add_argument('--refresh-connections',action='store_true',
+        help='backfill: re-observe the backfill connections of active writers (run at least every 30 days)')
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
@@ -242,6 +248,14 @@ def main(argv=None):
             value=Meter(store).status()
         elif args.command=='readiness':store.require_ready();value={'ready':True,'tenant':args.tenant}
         elif args.command in GOVERNANCE_COMMANDS:value=governance_command(store,args,parser)
+        elif args.command=='backfill':
+            from agenthub import server_backfill
+            if args.refresh_connections:value=server_backfill.refresh_connections(store)
+            else:
+                if not args.input or not args.map:parser.error('backfill requires --input and --map')
+                # Always owner-private: there are no sharing options (docs/ACCESS_MODEL.md).
+                value=server_backfill.run(store,args.input,args.map,apply=args.apply,max_events=args.max_events,
+                    max_seconds=args.max_seconds)
         elif args.command=='github':
             # GitHub App team sync (docs/ACCESS_MODEL.md section 3, docs/ENTERPRISE_AUTH.md).
             if args.github_command=='status':value=store.github_status()

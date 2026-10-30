@@ -411,6 +411,26 @@ audience(item) =
   | Connection visibility | A connection enrolled `private` makes its items private; otherwise its items inherit the workspace **(decision)** |
   | Origin ceiling and other projects | `origin_private` and carried workspaces |
 
+### Past conversations
+
+Conversations from before capture enter only as **owner-private** items
+(`private = 1`), whatever the workspace's `item_default` or the person's
+`contributions_default`. The import itself never sets `origin_private`, so the owner
+can share them afterwards with the ordinary owner controls (per session or per
+source); only a pushed session's replayed taint can, exactly as live capture would:
+
+- **Push** (`vaelius-client push-session`): one session at a time, by its author,
+  only from a scoped folder where they are a writer. It is replayed through the
+  origin labels and session taint as live capture, so its carried workspaces and any
+  `origin_private` taint are recorded too, and it sends no sharing request.
+- **Server backfill** (`vaelius backfill`, operator only): the service cannot
+  evaluate the author's scoped folders or origin labels, so items are owner-private
+  through a per-author connection enrolled `private` and no sharing request; the
+  command has no sharing options. Authors and workspaces come only from the
+  operator's mapping file, and the author must hold `writer` in the workspace.
+
+Neither path can create an item with a wider audience than its owner alone.
+
 ### Originals
 
 Originals keep their separate tier: readable by the owner, or by a grantee of an

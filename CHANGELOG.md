@@ -72,6 +72,17 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Added
 
+- `vaelius-client push-session`: push one of your own past Claude Code transcripts
+  or Codex rollouts, one session per command, from a scoped folder where you are a
+  writer. Replayed through the live origin labels, session taint and redaction;
+  always owner-private; dry run (counts only) unless `--apply`; idempotent source
+  ids from the session id and event position; `--list-recent` to pick one.
+- `vaelius backfill`: operator import of conversation history already held
+  server-side (a generic JSONL event stream plus a principal and workspace mapping
+  file). Always owner-private, no sharing options, unmapped authors and workspaces
+  skipped, dry run by default, idempotent, rate limited and audited;
+  `--refresh-connections` keeps backfilled items readable. See
+  [self-hosting](docs/SELF_HOSTING.md#backfilling-past-conversations).
 - Remembered items (migration 051): `vaelius-client remember add|list|remove`, the
   MCP tools `remember`, `list_remembered` and `forget_remembered` (two-step confirm),
   and `POST /enterprise/v3/remember[/list|/forget]`. The person's own words, up to
@@ -213,6 +224,11 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Removed
 
+- The client-side bulk Codex backfill (`python -m agentclient.enterprise_backfill`)
+  and its server wrappers `agenthub.historical_backfill` and
+  `agenthub.historical_campaign`. They imported every allowlisted rollout without
+  origin labels or session labels. Use `push-session` for one conversation, or
+  `vaelius backfill` for history already held server-side.
 - The MCP tool `search_memory` no longer takes `scope`: the session label decides
   which workspaces recall reaches. Unlabelled HTTP search requests still accept
   `"scope": "all"`.

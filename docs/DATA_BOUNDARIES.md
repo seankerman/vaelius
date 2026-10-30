@@ -492,6 +492,28 @@ from elsewhere enters a session. They are not a sandbox.
   the carried set then limits; after 24 hours without a refresh only the session's
   own workspaces are readable.
 
+## Past conversations
+
+Two paths add conversations that predate capture. Both store every item private to
+its author, and the author shares afterwards with the ordinary owner tools.
+
+- **`vaelius-client push-session`** (the person, one session at a time, from their
+  own computer). It replays the session through the same origin labels, session
+  taint and redaction as live capture, so a pushed session is never captured wider
+  than live capture would have captured it, and it never sends a sharing request.
+  Only sessions that started in a scoped folder where the person is a writer, and
+  only transcripts under their own Claude Code or Codex folders
+  ([client guide](CLIENT.md#pushing-a-past-conversation)).
+- **`vaelius backfill`** (the operator, for history already held server-side). The
+  service cannot see the author's computer, so it cannot evaluate scoped folders or
+  origin labels: every item is owner-private (a private per-author connection and no
+  sharing request), there are no sharing options, unmapped authors and workspaces are
+  skipped, and redaction, write limits, legal holds, retention and erasure apply as to
+  any ingest ([self-hosting](SELF_HOSTING.md#backfilling-past-conversations)).
+
+The earlier client-side bulk Codex backfill (`python -m agentclient.enterprise_backfill`)
+has been removed: it did not apply origin labels.
+
 ## Retention guidance
 
 - Keep only what you need: withdraw or delete sources (`/enterprise/v1/lifecycle`)

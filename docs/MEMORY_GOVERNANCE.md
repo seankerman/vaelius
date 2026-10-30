@@ -198,8 +198,9 @@ audited (`ingest_rate_limit` / `rejected_principal` or `rejected_tenant`); later
 rejections in that window are not, so a flooding client cannot amplify audit writes.
 
 The client outbox keeps a rate-limited event and waits at least `Retry-After`
-seconds (at most one hour) before retrying it. Historical backfill reports
-`transport_blocked` and resumes from its cursor.
+seconds (at most one hour) before retrying it. `push-session --apply` stops when the
+outbox is blocked and continues on the next run; the operator's `vaelius backfill`
+writes as each author under these limits and waits out a rejection.
 
 ## Operator quarantine
 

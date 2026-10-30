@@ -77,6 +77,8 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
+# Where a scope file is ignored (UNSCOPABLE, NEVER_SCOPED): one rule, shared with capture discovery.
+from agentclient.scope_file import NEVER_SCOPED, UNSCOPABLE, ignored_scope_root  # noqa: F401
 from agentclient.general_contract import (ORIGIN_KINDS as KINDS, ORIGIN_LEVELS as LEVELS,
                                           ORIGIN_MAX_PROJECTS as MAX_PROJECTS, ORIGIN_REASONS as REASONS)
 
@@ -98,12 +100,6 @@ CREDENTIAL_NAMES = ('id_rsa*', 'id_dsa*', 'id_ecdsa*', 'id_ed25519*', '*.pem', '
                     '.env', '.env.*', 'credentials', 'credentials.json', '.netrc', '.pgpass')
 # Checked-in templates that hold placeholders, not secrets.
 CREDENTIAL_TEMPLATES = ('.env.example', '.env.sample', '.env.template', '.env.dist', '.env.defaults')
-# A scope file directly here is ignored: it would scope a whole personal area.
-UNSCOPABLE = ('Documents', 'Desktop', 'Downloads', 'Pictures', 'Movies', 'Music', 'iCloud Drive',
-              'Library/Mobile Documents', 'Library/Mobile Documents/com~apple~CloudDocs', 'Library/CloudStorage',
-              'Dropbox', 'OneDrive', 'Google Drive')
-# Mail and chat stores: a scope file anywhere inside is ignored.
-NEVER_SCOPED = ('Library/Mail', 'Library/Messages', 'Library/Containers/com.apple.mail', 'Library/Group Containers')
 # Claude Code user configuration already loaded into every session (under ~/.claude).
 CLAUDE_CONFIG = ('CLAUDE.md', 'reference', 'plans', 'plugins')
 CLAUDE_SETTINGS = 'settings*.json'
@@ -222,8 +218,6 @@ class Context:
             root = str(top) if top else None
         self.root = _real(root) if root else None
         self.sharing = (scope or {}).get('sharing')
-        self.unscopable = {self.home / p for p in UNSCOPABLE}
-        self.never_scoped = [self.home / p for p in NEVER_SCOPED]
         if self.root is not None and self._unscopable(self.root):
             self.root = None  # a scope file at home or a personal folder governs nothing here
         self.claude = self.home / '.claude'
@@ -262,8 +256,7 @@ class Context:
 
     def _unscopable(self, directory):
         """A scope file directly in `directory` is ignored: home, above home, a top-level personal folder."""
-        return (_within(self.home, directory) or directory in self.unscopable
-                or any(_within(directory, p) for p in self.never_scoped))
+        return ignored_scope_root(directory, self.home)
 
     def _request(self, found):
         if found not in self._requests:

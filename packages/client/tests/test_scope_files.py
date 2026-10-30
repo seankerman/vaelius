@@ -377,3 +377,122 @@ class SharingContractTest(unittest.TestCase):
         for key in ('sharing', 'originals'):
             with self.assertRaises(ValueError):
                 normalize_capture(event, 'example-repo', 'synthetic-connection', **{key: 'everyone'})
+
+
+class IgnoredLocationTest(unittest.TestCase):
+    """A scope file at home, above it, or directly in a top-level personal folder never activates capture."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.top = self.tmp / 'root'  # stands in for `/` above the temporary home
+        self.home = self.top / 'Users/person'
+        self.home.mkdir(parents=True)
+        self.enterContext(mock.patch.dict(os.environ, {'HOME': str(self.home)}))
+
+    def place(self, *files):
+        for relative in files:
+            path = self.home / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('workspace = "example-ws"\n')
+
+    def test_discovery_table(self):
+        rows = [
+            # (name, scope files relative to home, git dirs, cwd relative to home, expected root or None)
+            ('home file, scratch folder, no git', ['.vaelius'], [], 'scratch', None),
+            ('Documents file, notes folder', ['Documents/.vaelius'], [], 'Documents/notes', None),
+            ('Desktop file', ['Desktop/.vaelius'], [], 'Desktop/scratch', None),
+            ('above home (filesystem-root stand-in)', ['../../.vaelius'], [], 'scratch', None),
+            ('mail store, any depth', ['Library/Mail/V10/.vaelius'], [], 'Library/Mail/V10/box', None),
+            ('dotfiles repo at home', ['.vaelius'], ['.git'], 'scratch', None),
+            ('project folder in Documents, no git', ['Documents/proj/.vaelius'], [], 'Documents/proj/sub', 'Documents/proj'),
+            ('repo with its own file in Documents', ['Documents/repo/.vaelius', 'Documents/.vaelius'],
+             ['Documents/repo/.git'], 'Documents/repo/src', 'Documents/repo'),
+            ('project under home, home file too', ['.vaelius', 'code/app/.vaelius'], [], 'code/app/x', 'code/app'),
+        ]
+        for name, files, gits, cwd, expected in rows:
+            with self.subTest(name):
+                shutil.rmtree(self.top)
+                self.home.mkdir(parents=True)
+                self.place(*files)
+                for g in gits:
+                    (self.home / g).mkdir(parents=True)
+                (self.home / cwd).mkdir(parents=True, exist_ok=True)
+                found = discover(self.home / cwd)
+                if expected is None:
+                    self.assertIsNone(found)
+                else:
+                    self.assertEqual(found['root'], str(self.home / expected))
+                    self.assertEqual(found['project'], 'example-ws')
+
+    def test_ignored_file_is_skipped_not_a_stop_and_is_reported(self):
+        self.place('Documents/.vaelius', '.vaelius')
+        (self.home / 'Documents/notes').mkdir()
+        ignored = []
+        self.assertIsNone(discover(self.home / 'Documents/notes', ignored=ignored))
+        # The walk went past the first ignored file and reported both.
+        self.assertEqual(ignored, [self.home / 'Documents/.vaelius', self.home / '.vaelius'])
+
+    def test_legacy_names_follow_the_same_rule(self):
+        (self.home / '.mindshare').write_text('mode: default\n')
+        (self.home / 'scratch').mkdir()
+        names = scope_file.scope_names({'scope_files': ['.vaelius', '.mindshare']})
+        self.assertIsNone(discover(self.home / 'scratch', names))
+
+    @unittest.skipUnless(shutil.which('git'), 'git required')
+    def test_worktree_fallback_follows_the_same_rule(self):
+        # A dotfiles-style repository at home: the main checkout's file is at home, so it is ignored.
+        git('init', '-q', cwd=self.home)
+        self.place('.vaelius')
+        (self.home / 'a.txt').write_text('a\n')
+        git('add', 'a.txt', cwd=self.home)
+        git('commit', '-qm', 'init', cwd=self.home)
+        git('worktree', 'add', '-q', str(self.tmp / 'wt'), cwd=self.home)
+        self.assertIsNone(discover(self.tmp / 'wt'))
+
+    def test_enrollment_is_never_recorded_or_reported_for_an_ignored_root(self):
+        profile = self.tmp / 'profile'
+        profile.mkdir()
+        self.assertFalse(scope_file.record_enrollment(profile, {'root': str(self.home), 'project': 'example-ws'}))
+        self.assertFalse((profile / scope_file.ENROLLMENTS).exists())
+        # A root recorded before the rule existed is no longer reported.
+        (profile / scope_file.ENROLLMENTS).write_text(json.dumps({
+            str(self.home): {'project': 'example-ws'}, str(self.home / 'code/app'): {'project': 'example-ws'}}))
+        self.assertEqual(list(scope_file.enrollments(profile)), [str(self.home / 'code/app')])
+
+    def test_predicate_parity_with_origin_labels(self):
+        from agentclient import origin
+        self.assertIs(origin.ignored_scope_root, scope_file.ignored_scope_root)
+        context = origin.Context(None, str(self.home), {})
+        self.assertEqual(context.home, self.home)
+        cases = {self.top: True, self.top / 'Users': True, self.home: True, self.home / 'Documents': True,
+                 self.home / 'Desktop': True, self.home / 'Downloads': True, self.home / 'Library/CloudStorage': True,
+                 self.home / 'Library/Mail/V10/box': True, self.home / 'Library/Messages': True,
+                 self.home / 'Documents/proj': False, self.home / 'code': False, self.home / 'Library': False,
+                 self.tmp / 'elsewhere': False}
+        for directory, expected in cases.items():
+            with self.subTest(str(directory)):
+                self.assertEqual(scope_file.ignored_scope_root(directory), expected)
+                self.assertEqual(scope_file.ignored_scope_root(directory, self.home), expected)
+                self.assertEqual(context._unscopable(directory), expected)
+
+    def test_session_start_warns_the_person_once_and_never_the_model(self):
+        from agentclient.hooks import handle
+        profile = self.tmp / 'profile'
+        profile.mkdir()
+        (profile / 'config.json').write_text(json.dumps({'projects': {}, 'sessions': {}, 'knowledge_backend': {
+            'mode': 'enterprise_local', 'capture_version': 'enterprise-local-2', 'capture_owner': 'hooks',
+            'api_version': 'cloud-local-1', 'connection_id': 'synthetic-connection'}}))
+        self.place('.vaelius')
+        (self.home / 'scratch').mkdir()
+        Outbox.events = []
+        results = []
+        for _ in range(2):
+            with mock.patch('agentclient.transport.enterprise_client', return_value=Backend()), \
+                    mock.patch('agentclient.capture_outbox.Outbox', Outbox):
+                results.append(handle(profile, {'hook_event_name': 'SessionStart', 'cwd': str(self.home / 'scratch'),
+                                                'session_id': 's1'}))
+        self.assertIn(str(self.home / '.vaelius') + ' is ignored', results[0]['systemMessage'])
+        self.assertNotIn('hookSpecificOutput', results[0])
+        self.assertEqual(results[1], {})
+        self.assertEqual(Outbox.events, [])

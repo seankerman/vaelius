@@ -401,6 +401,15 @@ every worktree of a repository resolves to the same request. Without a scope fil
 nothing changes: an explicitly enrolled project captures privately, and any other
 folder is neither captured nor recalled.
 
+A scope file at the home folder, at any folder above it (including `/`), directly in
+a top-level personal folder (`~/Documents`, `~/Desktop`, `~/Downloads`,
+`~/Pictures`, `~/Movies`, `~/Music`, iCloud Drive and the cloud-drive roots) or
+anywhere inside the mail and chat stores never activates capture. Discovery skips
+it and keeps walking up to the Git root or the filesystem root, so a stray
+`~/.vaelius` does not turn capture on for every folder under home. The person sees
+a one-time status line naming the ignored file; the agent is never told. A scope
+file deeper down, such as `~/Documents/proj/.vaelius`, works normally.
+
 A scope file naming a project enrolls its root automatically. Like `enroll-project`
 this is forward-only: nothing earlier is imported. The enrollment is recorded in
 the profile's `scope-enrollments.json`, never in `config.json`, so the file stays

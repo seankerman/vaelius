@@ -8,6 +8,11 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Security
 
+- Capture discovery ignores a scope file at the home folder, above it, or directly
+  in a top-level personal folder, the same rule the origin labels already applied
+  (one shared predicate). A session started outside any repository under a stray
+  `~/.vaelius` or `~/Documents/.vaelius` is no longer captured; the person sees a
+  one-time status line naming the ignored file.
 - Installed hook and MCP header-helper commands run Python with `-P`, so a project
   folder's own `agentclient` package can no longer run in place of the client.
   Installations made by 0.3.0 must re-run `install` (Codex) or

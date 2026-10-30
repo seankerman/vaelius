@@ -560,6 +560,24 @@ def _scope_warnings(home, scope):
     return '\n'.join(lines) if lines else None
 
 
+def _ignored_scope_notice(home, config, event):
+    """SessionStart line (person only, never model context): a scope file skipped
+    because of where it is (`scope_file.ignored_scope_root`), once per folder."""
+    from agentclient.scope_file import discover, scope_names, record_warning_once, WARN_IGNORED_LOCATION
+    try:
+        cwd=local_cwd(event.get('cwd'))
+        ignored=[]
+        discover(cwd,scope_names(config),ignored)
+    except Exception:
+        return None
+    lines=[]
+    for path in ignored:
+        if record_warning_once(home,str(path.parent),WARN_IGNORED_LOCATION):
+            lines.append('vaelius: '+str(path)+' is ignored. A scope file in the home folder, above it, or directly '
+                         'in a top-level personal folder never turns capture on; put it in a project folder instead.')
+    return '\n'.join(lines) or None
+
+
 def _guardrail_line(config, event):
     """SessionStart line (person only) when a captured project runs without guardrails."""
     from agentclient.claude_guardrails import NOTICE_KEY, status_line
@@ -604,10 +622,11 @@ def handle(home, event, *, host='codex', via='settings'):
         # and later moves into a captured folder stays restricted.
         if kind in TOOL_EVENTS:_origin_label(Path(home),config,None,event)
         state,disabled=capture_state(config,event) if kind=='SessionStart' else (None,None)
+        ignored_notice=_ignored_scope_notice(home,config,event) if kind=='SessionStart' else None
         if state=='disabled':
             from agentclient.capture_notice import status
-            return {'systemMessage':status(state,disabled)}
-        return {}
+            return {'systemMessage':'\n'.join(x for x in (status(state,disabled),ignored_notice) if x)}
+        return {'systemMessage':ignored_notice} if ignored_notice else {}
     project=scope['project']
     if scope['origin']=='scope_file':
         from agentclient.scope_file import record_enrollment
@@ -648,6 +667,8 @@ def handle(home, event, *, host='codex', via='settings'):
         result=dict(result,systemMessage='\n'.join(x for x in (label_line,result.get('systemMessage')) if x))
     # One-time scope-file warnings for workspace-model migrations.
     warning_notice=_scope_warnings(home,scope)
+    if kind=='SessionStart':
+        warning_notice='\n'.join(x for x in (warning_notice,_ignored_scope_notice(home,config,event)) if x) or None
     if warning_notice:
         result=dict(result,systemMessage='\n'.join(x for x in (result.get('systemMessage'),warning_notice) if x))
     if origin_notice and entry is not None and _explained_by_narrowing(Path(home),event,entry):

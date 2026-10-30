@@ -45,6 +45,13 @@ directory holding `.git`) or the filesystem root. A linked worktree whose
 checkout lacks the file falls back to the same relative place in the main
 worktree, so every worktree of a repository resolves to the same request.
 
+A scope file at an ignored location (`ignored_scope_root`) is skipped
+entirely: the home folder, any folder above it (including `/`), a top-level
+personal folder such as `~/Documents` or a cloud-drive root, or anywhere in a
+mail or chat store. It neither applies nor stops the walk, so a stray
+`~/.vaelius` never turns capture on for every folder under home. The origin
+labels (`agentclient.origin`) apply the same predicate.
+
 Operators may add legacy names through the profile's `scope_files` option (for
 example `[".vaelius", ".mindshare"]`). A legacy file that is not TOML is read
 as plain `key: value` / `key = value` lines; only `workspace`, `project`,
@@ -77,6 +84,16 @@ MAX_DEPTH = 64
 # One-time warnings per scope file for keys the workspace model drops.
 WARN_SHARING_IGNORED = 'scope_file_sharing_ignored_under_workspace'
 WARN_ORIGINALS_IGNORED = 'scope_file_originals_ignored'
+# One-time warning for a scope file skipped because of where it is.
+WARN_IGNORED_LOCATION = 'scope_file_ignored_location'
+
+# Relative to the home folder. A scope file directly in one of these would scope a
+# whole personal area, so it is ignored.
+UNSCOPABLE = ('Documents', 'Desktop', 'Downloads', 'Pictures', 'Movies', 'Music', 'iCloud Drive',
+              'Library/Mobile Documents', 'Library/Mobile Documents/com~apple~CloudDocs', 'Library/CloudStorage',
+              'Dropbox', 'OneDrive', 'Google Drive')
+# Mail and chat stores: a scope file anywhere inside is ignored.
+NEVER_SCOPED = ('Library/Mail', 'Library/Messages', 'Library/Containers/com.apple.mail', 'Library/Group Containers')
 
 
 class ScopeFileError(ValueError):
@@ -99,6 +116,28 @@ def _regular_file(path):
         return stat.S_ISREG(os.stat(path).st_mode)
     except OSError:
         return False
+
+
+def user_home():
+    """The person's home folder, symlinks resolved (follows `$HOME`)."""
+    return Path(os.path.realpath(os.path.expanduser('~')))
+
+
+def ignored_scope_root(directory, home=None):
+    """True when a scope file directly in `directory` must be ignored.
+
+    Ignored: the home folder, any ancestor of it (up to `/`), a top-level personal
+    or cloud-drive folder (`UNSCOPABLE`), and anything inside a mail or chat store
+    (`NEVER_SCOPED`). `directory` and `home` are compared as given, so pass
+    resolved paths. The single rule shared by discovery and the origin labels.
+    """
+    directory = Path(directory)
+    home = user_home() if home is None else Path(home)
+    if directory == home or directory in home.parents:
+        return True
+    if any(directory == home / p for p in UNSCOPABLE):
+        return True
+    return any(directory == home / p or home / p in directory.parents for p in NEVER_SCOPED)
 
 
 def _lenient(text):
@@ -204,13 +243,22 @@ def parse(path):
             'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp, 'warnings': warnings}
 
 
-def _walk(start, names, stop=None):
-    """(file, root) for the nearest scope file from start up to the Git root."""
+def _walk(start, names, stop=None, home=None, ignored=None):
+    """(file, root) for the nearest scope file from start up to the Git root.
+
+    A scope file at an ignored location is skipped (appended to `ignored` when a
+    list is given); the walk carries on past it and still stops at the Git root,
+    `stop` or the filesystem root."""
+    home = user_home() if home is None else home
     current = start
     for _ in range(MAX_DEPTH):
         for name in names:
             candidate = current / name
             if _regular_file(candidate):
+                if ignored_scope_root(current, home):
+                    if ignored is not None and candidate not in ignored:
+                        ignored.append(candidate)
+                    break  # a lower-priority name in the same folder is ignored too
                 return candidate, current
         if (current / '.git').exists() or current == stop or current.parent == current:
             return None, current
@@ -232,12 +280,13 @@ def _main_worktree(top):
     return None if main == top else main
 
 
-def discover(cwd, names=DEFAULT_NAMES):
+def discover(cwd, names=DEFAULT_NAMES, ignored=None):
     """The scope request governing cwd, or None when no scope file applies.
 
     Returns the fields documented on ``parse`` plus ``root``; an invalid file
     yields capture 'off' with an ``error`` so the caller fails closed rather
-    than open.
+    than open. Scope files skipped by ``ignored_scope_root`` are appended to
+    ``ignored`` when a list is given.
     """
     try:
         start = Path(cwd).resolve(strict=True)
@@ -245,7 +294,8 @@ def discover(cwd, names=DEFAULT_NAMES):
         return None
     if not start.is_dir():
         start = start.parent
-    found, top = _walk(start, names)
+    home = user_home()
+    found, top = _walk(start, names, home=home, ignored=ignored)
     if found is None and (top / '.git').is_file():
         main = _main_worktree(top)
         if main is not None:
@@ -256,7 +306,7 @@ def discover(cwd, names=DEFAULT_NAMES):
             target = main / relative
             while not target.is_dir() and target != main:
                 target = target.parent
-            found, _ = _walk(target, names, stop=main)
+            found, _ = _walk(target, names, stop=main, home=home, ignored=ignored)
     if found is None:
         return None
     try:
@@ -329,13 +379,23 @@ def discover_remote(root):
 ENROLLMENTS = 'scope-enrollments.json'
 
 
-def enrollments(home):
+def _read_enrollments(home):
     try:
         import json
         value = json.loads((Path(home) / ENROLLMENTS).read_text())
         return value if isinstance(value, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def enrollments(home):
+    """Recorded scope-file enrollments, minus roots at an ignored location.
+
+    `home` is the client profile folder. A root recorded before the location
+    rule existed (for example the home folder itself) is no longer reported."""
+    person = user_home()
+    return {root: value for root, value in _read_enrollments(home).items()
+            if not ignored_scope_root(Path(root), person)}
 
 
 def record_enrollment(home, scope):
@@ -350,11 +410,11 @@ def record_enrollment(home, scope):
     import time
     home = Path(home)
     root = scope.get('root')
-    if not root or root in enrollments(home):
+    if not root or ignored_scope_root(Path(root)) or root in _read_enrollments(home):
         return False
     with (home / 'scope-enrollments.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        value = enrollments(home)
+        value = _read_enrollments(home)
         if root in value:
             return False
         value[root] = {'project': scope['project'], 'scope_file': scope.get('scope_file'),

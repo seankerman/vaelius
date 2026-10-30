@@ -300,7 +300,8 @@ allowed_mcp_servers = ["docs"]
 - The current [scoped-folder](DATA_BOUNDARIES.md#scoped-folders) allowlist rules
   (#40) apply unchanged: any folder holding a scope file is in scope with its
   subtree; the nearest scope file wins; files at home, above home or directly at a
-  top-level personal folder are ignored; Claude Code's own `~/.claude` state for
+  top-level personal folder are ignored, both for labelling and for capture
+  discovery (one shared predicate), so they never activate capture; Claude Code's own `~/.claude` state for
   in-scope folders is in scope; and `Context.scope_of(path)` in `agentclient.origin`
   returns the scope label of any path. Sections 5 and 7 build on that function.
 - **Legacy keys** are still read:

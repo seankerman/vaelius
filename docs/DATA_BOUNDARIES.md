@@ -337,6 +337,12 @@ A scope file deeper inside a personal folder, for example
 file sits at an ignored place has no in-scope root for labelling: everything it
 reads outside temporary, tool and system folders makes it private.
 
+Capture discovery applies the same rule, through the same predicate
+(`scope_file.ignored_scope_root`): a scope file at the home folder, above it, or
+directly in a top-level personal folder never activates capture, never enrolls its
+folder and never selects a workspace or session label. A session started in
+`~/scratch` under a stray `~/.vaelius` is simply not captured.
+
 Reading another scoped folder changes the label only when its audience is
 narrower: the same `workspace` changes nothing and never shows a status line; a
 different workspace adds that workspace to the carried-workspace tag set as

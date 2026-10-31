@@ -495,6 +495,8 @@ class ReadOnlyChatTest(LabelFixture):
         self.hook('PostToolUse', tool_name='Read', tool_input={'file_path': str(self.src / 'a/notes.md')},
                   tool_response={})
         self.assertEqual(len(Outbox.events), captured, 'nothing captured after the switch')
+        self.hook('PostCompact', trigger='auto')
+        self.assertNotIn('/enterprise/v1/boundary', [p for p, _ in self.service.calls], 'no boundary write')
         with mock.patch('agentclient.transport.enterprise_client', return_value=backend), \
                 mock.patch('agentclient.transport.require_backend', return_value={}), \
                 mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):

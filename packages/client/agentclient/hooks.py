@@ -444,6 +444,7 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         except Exception:pass
         return {}
     if event['kind']=='PostCompact':
+        if event.get('capture','on')!='on':return {}  # read-only: the service records nothing for it
         try:
             backend=enterprise_client(config,timeout=0.5)
             backend.request('/enterprise/v1/boundary',{'version':VERSION,'event':{
@@ -507,11 +508,13 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True,
             sharing=event.get('sharing'),labelled=bool(event.get('session_label'))))
         try:
+            if event.get('capture','on')!='on':raise _ReadOnly()  # read-only: no delivery ledger write
             backend.request('/enterprise/v1/receipts',{'version':VERSION,
                 'session':event['session'] or 'unknown-session',
                 'request_id':event['turn'] or 'unknown-turn',
                 'cards':[{'id':card['id'],'revision':card['revision']} for card in cards],
                 'serialized_chars':len(context)})
+        except _ReadOnly:pass
         except Exception:
             _enterprise_gap(home,event,'receipt_unconfirmed')
         result={'hookSpecificOutput':{'hookEventName':event['kind'],'additionalContext':context}}
@@ -523,6 +526,10 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
             return {'systemMessage':service_status(config,service_problem(error),_pending(home))}
         return {}
 
+
+
+class _ReadOnly(Exception):
+    """A read-only chat or folder writes no receipt."""
 
 
 def capture_state(config, event):

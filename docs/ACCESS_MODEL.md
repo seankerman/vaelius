@@ -6,9 +6,8 @@ labels, the read rule in the guardrail hook and the recall filter) and PR C
 (migration 050: GitHub App team sync and the device-flow identity link) are
 implemented. The repository-read check of section 4 is deferred (decision, PR C).
 Since migration 053: reads of folders without a scope file are denied in a labelled
-session, workspace visibility is chosen on the server at creation, the scope file's
-`read` list sets the default recall scope, and chats can be made read-only (sections
-2, 5 and 7).** Three pull requests implement the
+session, workspace visibility is chosen on the server at creation (default org), and
+chats can be made read-only (sections 2 and 7).** Three pull requests implement the
 design in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)). The
 [privacy model](PRIVACY_MODEL.md) describes what the service enforces today; where
 PR A or PR B resolved a point left open here, the text below says so and the
@@ -99,17 +98,24 @@ The common modes are combinations, not separate settings:
   and becomes its first `admin` through a `principal` entry. Admins are the creator
   plus whoever an admin adds with the `admin` role.
 - **Visibility is chosen at creation, on the server only (migration 053).**
-  `vaelius-client workspace create <name> --visibility private|org` (route
-  `POST /enterprise/v3/workspaces/create`) requires it: `private` is only the creator
-  as admin plus whoever the admins add; `org` also adds an `organization → reader`
-  entry, refused (`entry_wider_than_tenant_allows`) when `widest_entry` does not
-  allow one. Changing it later is an admin operation: `vaelius-client workspace
-  set-visibility <name> private|org` (`POST /enterprise/v3/workspaces/visibility`)
-  adds or removes the organization entry, or the entry commands below; both return
-  `newly_unreadable` (section 7). There is no visibility key in the scope file: a
+  `vaelius-client workspace create <name>` (route `POST
+  /enterprise/v3/workspaces/create`) defaults to **org**: an `organization → reader`
+  entry, so everyone signed in to the tenant can read it (there is no
+  internet-public tier). The command prints `visible to everyone in the org (use
+  --private to restrict)`. `--private` (`visibility: private`; no reason needed) is
+  only the creator as admin plus whoever the admins add. `widest_entry` still caps
+  org: an explicit org is refused (`entry_wider_than_tenant_allows`) and the default
+  falls back to private, saying so. Changing it later is an admin operation:
+  `vaelius-client workspace set-visibility <name> private|org` (`POST
+  /enterprise/v3/workspaces/visibility`), or the entry commands below. Private to org
+  reports `items_now_visible_to_org` (the workspace's active shared items with no
+  narrower origin); org to private needs no confirmation. Both return
+  `newly_unreadable` (section 7). The first session in a folder whose workspace is
+  org-visible (including a newly linked repository) shows the person, once, that it
+  is visible to everyone in the org. There is no visibility key in the scope file: a
   `visibility` there is ignored with a one-time warning for the person. `workspace
-  show` and `workspace list` report `visibility` (`org` while an organization entry
-  exists).
+  show`, `workspace list` and the descriptor report `visibility` (`org` while an
+  organization entry exists).
 - Two tenant settings on `enterprise_organizations` restrict this:
   - `workspace_creation`: `anyone` (default) or `admins` (only principals with the
     tenant `settings_admin` flag);
@@ -313,7 +319,6 @@ read a workspace is derived from GitHub (owner decision).
 # .vaelius
 workspace = "maple"      # a workspace name the person can see
 capture = "on"           # on | read-only | off
-read = ["maple", "handbook"]   # optional default recall scope; ["*"] for everything allowed
 
 [capture]                # optional table form, as today
 mode = "on"
@@ -375,21 +380,10 @@ out (section 7, "Why can't this session read X?").
   descriptor is per person (it lists what *that* person may read), it changes
   whenever an access list does, and anyone who can edit the repository can edit the
   scope file. An allow decision must not rest on repository-writable content. The
-  scope file carries only `workspace`, `capture` and `read` (below); `read` is a
-  convenience that can only narrow recall, never an allow decision.
-- **`read` (migration 053).** The workspaces recall covers by default:
-  `read = ["ws-a", "ws-b"]` or `["*"]`. Without it, recall covers the current
-  workspace only. The client sends it in the session label (hook injection, and the
-  MCP connection through the header helper); the service intersects it with what
-  the label allows, always keeping the session's own and narrowed workspaces, and
-  uses it only to choose which workspaces search ranks from, never to authorize, so
-  it can never widen anything. `["*"]` is everything the session may read (the
-  earlier behavior). The MCP `search_memory` tool takes `scope: "all"` or workspace
-  names to broaden one search on request, still capped by the label. The guardrail
-  hook (file reads) ignores `read`. An invalid `read` makes the file invalid (fail
-  closed).
+  scope file carries only `workspace` and `capture`.
 - **`visibility`** is not a scope-file key: it is ignored with a one-time warning,
-  because who can read a workspace is set on the server (section 2).
+  because who can read a workspace is set on the server (section 2). A `read` key
+  (a recall list from an earlier draft, never shipped) is ignored the same way.
 - **Refresh.** At SessionStart, then at the next prompt once `refresh_after`
   (15 minutes) has passed, and immediately when a labelled search response reports
   a newer `session_epoch`. **(decision, PR B)** The epoch is the sum of the tenant's
@@ -628,10 +622,13 @@ with no restriction; read-only, off and unlabelled sessions get no label rule. T
   all three layers (`_session_admits`, `search_permissions.SESSION`,
   `search_session_admits`), computed on every request; nothing is cached on the
   server. The label replaces the cross-project `scope = "all"` search option of #28:
-  with a label, recall reaches every workspace in the superset list, the current one
-  first, narrowed to the label's `read` list (section 5); the MCP tool's `scope`
-  (since migration 053) only broadens that list, and unlabelled HTTP requests keep
-  the old option.
+  with a label, recall reaches every workspace in the superset list: the current
+  workspace's results ranked first, then org workspaces the session may read, and the
+  person's own private items only in a private session (private-team memory stays out
+  of org sessions by the same rule). The MCP tool no longer offers `scope`, and
+  unlabelled HTTP requests keep it. A read-only chat's label (`read_only`) is treated
+  as private for recall: it writes nothing, so it may recall everything the person
+  can read.
 - **Backstop.** The #32 floating taint stays, demoted to the cases the hook cannot
   see: programs that open files without naming them (`make`, test runners,
   scripts), MCP servers other than Vaelius, non-public web addresses and unknown
@@ -683,7 +680,8 @@ with no restriction; read-only, off and unlabelled sessions get no label rule. T
 - `push-session` refuses a chat that ran read-only (recorded in the profile's
   `read-only-sessions.json`, which outlives `/clear`).
 - A read-only chat captures nothing, so the label read rule does not apply to it
-  (as for `capture = "read-only"` folders).
+  (as for `capture = "read-only"` folders), and recall treats it as private: it may
+  recall everything the person can read.
 
 ### Why can't this session read X?
 
@@ -708,7 +706,7 @@ it instead of only refusing:
   deny, never `ask`, and uses only the cached descriptor (no network call per read).
 - **Recall.** `hidden_items` counts the workspace's active, non-private sources
   (a partial index, migration 052). The first prompt of a session whose descriptor
-  lists any **in its `read` list** (or any, with `["*"]`) shows a status line for the
+  lists any shows a status line for the
   person only (`systemMessage`, never `additionalContext`), once per session:
   `vaelius: 12 memories from repo1 hidden (not visible to carol); 'vaelius-client
   session use repo1' to include them`.
@@ -1166,6 +1164,6 @@ Points the owner's brief left open, decided in this document:
 | Reconcile (PR C) | `reconcile_seconds` in `runtime.json` (default 6 h); background thread per API process, claimed through the database | 3 |
 | Group naming (PR C) | `gh-<team id>`, named `gh_<org>_<slug>`; the prefixes are reserved | 3 |
 | Repository-read check (PR C) | Deferred; not on the capture path yet | 4 |
-| Workspace visibility (migration 053, by the owner) | Required at creation (`private` or `org`), changed only on the server; never derived from GitHub; a scope-file `visibility` is ignored | 2 |
-| `read` list (migration 053) | Default recall scope in the scope file; retrieval narrowing only, intersected with the label; default the current workspace | 5 |
+| Workspace visibility (migration 053, by the owner) | Chosen at creation, default org (everyone signed in to the tenant; capped by `widest_entry`), `--private` to restrict; changed only on the server by admins; never derived from GitHub; a scope-file `visibility` (or `read`) is ignored | 2 |
+| Recall of a read-only chat (by the owner) | Treated as a private session: the person's full readable set, since it writes nothing | 7 |
 | Read-only chats (migration 053) | One-way per chat; the service refuses every write for the header, a `read_only` label or a registered session id | 7 |

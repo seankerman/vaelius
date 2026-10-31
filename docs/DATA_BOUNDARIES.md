@@ -153,18 +153,15 @@ workspace ([client side](CLIENT.md#repository-scope-files)):
 # .vaelius at the repository root
 workspace = "example-repo"   # the Vaelius workspace this capture belongs to
 capture = "on"               # on | read-only | off
-read = ["example-repo"]      # optional default recall scope; ["*"] for everything allowed
 # sharing = "private"        # optional owner opt-out; omit to inherit the audience
 ```
 
 The file is a **request, never a grant**: anyone who can edit the repository
 can edit it, and `workspace =` only works when the person already holds a role
-in that workspace. Its keys are `workspace`, `capture` and `read`. `read` only
-narrows which workspaces recall ranks from; the service intersects it with the
-session label. Who can read a workspace (its **visibility**) is chosen on the
-server when the workspace is created (`--visibility private|org`) and changed
-there by its admins; a `visibility` key in the file is ignored with a one-time
-warning. A workspace needs no repository: any folder whose scope file names it
+in that workspace. Its keys are `workspace` and `capture`. Who can read a
+workspace (its **visibility**) is chosen on the server when the workspace is
+created (org by default, `--private` to restrict) and changed there by its admins;
+a `visibility` (or `read`) key in the file is ignored with a one-time warning. A workspace needs no repository: any folder whose scope file names it
 captures into it for a writer. Legacy keys (`project`, `sharing`, `originals`) are read as
 an upper bound and are mapped as described in
 [the client guide](CLIENT.md#repository-scope-files) and
@@ -297,7 +294,9 @@ migration 053), and the MCP connection sends `X-Vaelius-Read-Only: 1` and a
 `read_only` label. Every write route and tool is then refused with `403
 read_only_session` (captures, boundaries, receipts, remember, feedback,
 corrections, withdrawals, shares, workspace administration); reads keep working.
-`capture = "read-only"` folders get the same refusal. Anything captured before the
+`capture = "read-only"` folders get the same refusal. A read-only chat recalls
+everything the person can read (its label counts as private), since it saves
+nothing. Anything captured before the
 switch stays until the person deletes it (`vaelius-client forget --session
 current`); `push-session` refuses a chat that ran read-only.
 

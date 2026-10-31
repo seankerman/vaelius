@@ -492,16 +492,15 @@ class VisibilityAndReadOnlyTests(WorkspaceFixture, unittest.TestCase):
                 "SELECT subject_kind,subject,role FROM workspace_entries WHERE tenant='acme' AND workspace=?",
                 (workspace,))}
 
-    def test_visibility_is_required_and_decides_the_first_entries(self):
-        with self.assertRaisesRegex(ValueError, 'visibility_required'):
-            self.store.create_workspace(self.bob, {'name': 'nothing'})
-        with self.assertRaisesRegex(ValueError, 'visibility_required'):
+    def test_org_is_the_default_private_is_explicit_and_both_decide_the_first_entries(self):
+        with self.assertRaisesRegex(ValueError, 'invalid_visibility'):
             self.store.create_workspace(self.bob, {'name': 'nothing', 'visibility': 'public'})
         private = self.store.create_workspace(self.bob, {'name': 'pine', 'visibility': 'private'})
         self.assertEqual((private['role'], private['workspace']['visibility']), ('admin', 'private'))
         self.assertEqual(self.entries('pine'), {('principal', 'bob', 'admin')}, 'only the creator')
-        org = self.store.create_workspace(self.bob, {'name': 'cedar', 'visibility': 'org'})
-        self.assertEqual(org['workspace']['visibility'], 'org')
+        org = self.store.create_workspace(self.bob, {'name': 'cedar'})
+        self.assertEqual(org['workspace']['visibility'], 'org', 'the default')
+        self.assertEqual(org['notice'], 'visible to everyone in the org (use --private to restrict)')
         self.assertEqual(self.entries('cedar'), {('principal', 'bob', 'admin'), ('organization', '', 'reader')})
         self.assertEqual(self.store.show_workspace(self.erin, {'workspace': 'cedar'})['role'], 'reader',
                          'everyone in the organization reads it')
@@ -510,14 +509,21 @@ class VisibilityAndReadOnlyTests(WorkspaceFixture, unittest.TestCase):
             self.store.create_workspace(self.bob, {'name': 'spruce', 'visibility': 'org'})
         with self.store.open() as state:
             self.assertIsNone(state.db.execute("SELECT 1 FROM enterprise_projects WHERE id='spruce'").fetchone(),
-                              'nothing is created when the tenant caps org')
+                              'nothing is created when an explicit org is capped')
+        capped = self.store.create_workspace(self.bob, {'name': 'spruce'})
+        self.assertEqual(capped['workspace']['visibility'], 'private', 'the default falls back under the cap')
+        self.assertIn('does not allow', capped['notice'])
 
     def test_set_visibility_is_an_admin_operation_and_reports_newly_unreadable(self):
         self.store.create_workspace(self.bob, {'name': 'pine', 'visibility': 'private'})
         with self.assertRaises(Denied):
             self.store.set_visibility(self.carol, {'workspace': 'pine', 'visibility': 'org'})
+        self.store.enroll_connection(self.bob, 'b-pine', 'b-pine', 'pine', ['agent'], visibility='organization')
+        self.ingest('pine', tag='p1', ctx=self.bob, connection='b-pine')
+        self.ingest('pine', tag='p2', ctx=self.bob, connection='b-pine', sharing='private', index=1)
         opened = self.store.set_visibility(self.bob, {'workspace': 'pine', 'visibility': 'org'})
         self.assertEqual((opened['visibility'], opened['operation']), ('org', 'added'))
+        self.assertEqual(opened['items_now_visible_to_org'], 1, 'the shared item, not the private one')
         self.assertIn('newly_unreadable', opened)
         self.assertEqual(self.store.set_visibility(self.bob, {'workspace': 'pine', 'visibility': 'org'})['operation'],
                          'unchanged')
@@ -733,7 +739,5 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         tools.call('search_memory', {'query': 'synthetic'})
         self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple'})
         self.assertNotIn('scope', sent[-1][1])
-        # `scope: "all"` widens only the read list, which the service intersects with the label.
-        tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})
-        self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple', 'read': ['*']})
-        self.assertNotIn('scope', sent[-1][1])
+        with self.assertRaises(ValueError):
+            tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})

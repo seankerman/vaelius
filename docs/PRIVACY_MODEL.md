@@ -305,8 +305,8 @@ check.
 ## Session labels and recall
 
 Workspace **visibility** is chosen on the server when a workspace is created
-(`private`: its admins and whoever they add; `org`: also an organization reader
-entry, capped by `widest_entry`) and changed only by its admins on the server; it is
+(default `org`: an organization reader entry, everyone signed in to the tenant,
+capped by `widest_entry`; `--private`: its admins and whoever they add) and changed only by its admins on the server; it is
 never set by a scope file or derived from GitHub.
 
 A captured Claude Code session takes a fixed label when it starts: the workspace of
@@ -344,10 +344,10 @@ preferences and private "always load" remembered items follow the same rule: onl
 a private session receives them (organization-required preferences always arrive).
 Requests without a label (older clients) keep today's behavior. The label
 replaces the cross-project `scope = "all"` option: recall reaches every workspace in
-`S`, the current one first, ranked only from the label's `read` list (the scope
-file's `read`, default the current workspace, plus narrowed workspaces). `read`
-narrows retrieval and is never an authorization input, so it cannot widen what is
-returned; the MCP `search_memory` tool's `scope` broadens it for one search.
+`S`: current-workspace results first, then org workspaces the session may read, and
+the person's own private items only in a private session. A read-only chat's label
+is treated as private for recall: it writes nothing, so it may recall everything the
+person can read.
 
 **Read rule.** The client caches an advisory descriptor (the service's `S` for the
 session) in its profile and the PreToolUse guardrail hook denies reads of scoped

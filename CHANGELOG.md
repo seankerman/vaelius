@@ -214,19 +214,19 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Changed
 
-- **Workspace visibility is chosen on the server at creation.** `vaelius-client
-  workspace create NAME --visibility private|org` (and `POST
-  /enterprise/v3/workspaces/create`) now require it; `org` adds an organization
-  reader entry, capped by `widest_entry`. Admins change it with `workspace
-  set-visibility NAME private|org` (`POST /enterprise/v3/workspaces/visibility`),
-  which reports `newly_unreadable`. A `visibility` key in `.vaelius` is ignored
-  with a one-time warning. Scripts that create workspaces must add the flag.
-- **`read` in `.vaelius`**: the default recall scope (`read = ["ws-a", "ws-b"]` or
-  `["*"]`). Without it, recall covers the current workspace only (before: every
-  workspace the label allowed; add `read = ["*"]` to keep that). The service
-  intersects it with the session label and uses it only to narrow retrieval. The
-  MCP `search_memory` tool takes `scope: "all"` or workspace names to broaden one
-  search; the "memories hidden" note only names workspaces in the list.
+- **Workspace visibility is chosen on the server at creation, default org.**
+  `vaelius-client workspace create NAME` now adds an organization reader entry
+  (everyone signed in to the tenant; capped by `widest_entry`, where the default
+  falls back to private) and prints `visible to everyone in the org (use --private
+  to restrict)`; `--private` keeps it to its admins and whoever they add. Before,
+  a new workspace had only its creator. Admins change it with `workspace
+  set-visibility NAME private|org` (`POST /enterprise/v3/workspaces/visibility`):
+  private to org reports `items_now_visible_to_org`, both report
+  `newly_unreadable`. The first session in a folder of an org workspace says so
+  once. `visibility` and `read` keys in `.vaelius` are ignored with a one-time
+  warning.
+- A read-only chat recalls everything the person can read (its label counts as
+  private), since it saves nothing.
 
 - **Role-bound credential actions.** A credential's effective actions in a
   workspace are its credential actions ∩ the actions the role implies

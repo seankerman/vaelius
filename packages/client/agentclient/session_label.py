@@ -125,11 +125,8 @@ class SessionLabels:
             key = _key(session)
             entry = state.get(key)
             if not isinstance(entry, dict):
-                read = scope.get('read')
                 entry = {'workspace': scope['project'], 'root': scope.get('root'), 'cwd': cwd,
                          'session_id': str(session),
-                         # Default recall scope (`.vaelius` `read`): the current workspace only.
-                         'read': list(read) if read else [scope['project']],
                          'scope_file': scope.get('scope_file'), 'sharing': scope.get('sharing', 'organization'),
                          'allowed_paths': list(scope.get('allowed_paths') or ()),
                          'allowed_mcp_servers': list(scope.get('allowed_mcp_servers') or ()),
@@ -193,8 +190,6 @@ def request_label(entry):
              'private': bool(entry.get('private'))}
     if entry.get('sharing') in ('private', 'team', 'organization'):
         label['sharing'] = entry['sharing']
-    if isinstance(entry.get('read'), list) and entry['read']:
-        label['read'] = list(entry['read'])
     if entry.get('read_only'):
         label['read_only'] = True
     return label
@@ -393,13 +388,24 @@ def who(summary):
     return ''
 
 
+def org_visible_line(home, entry):
+    """The first session in a folder whose workspace is org-visible, once: a line for the person."""
+    descriptor = (entry or {}).get('descriptor') or {}
+    root = (entry or {}).get('root') or (entry or {}).get('cwd')
+    if descriptor.get('visibility') != 'org' or not root:
+        return None
+    name = (descriptor.get('workspace') or {}).get('name') or entry['workspace']
+    from agentclient.scope_file import record_warning_once
+    if not record_warning_once(home, root, 'org_visible:' + str(name)):
+        return None
+    return ('vaelius: workspace ' + name + ' is visible to everyone in the org (an admin can restrict it: '
+            "'vaelius-client workspace set-visibility " + name + " private')")
+
+
 def hidden_line(entry):
     """The once-per-session status line for memories the session's recall leaves out, or None."""
-    read = (entry or {}).get('read')
     found = [item for item in ((entry or {}).get('descriptor') or {}).get('narrower') or ()
-             if isinstance(item, dict) and type(item.get('hidden_items')) is int and item['hidden_items'] > 0
-             # Only workspaces recall would otherwise cover: those in the `read` list (or all, with "*").
-             and (not isinstance(read, list) or '*' in read or item.get('id') in read or item.get('name') in read)]
+             if isinstance(item, dict) and type(item.get('hidden_items')) is int and item['hidden_items'] > 0]
     if not found:
         return None
     found.sort(key=lambda item: (-item['hidden_items'], str(item.get('name') or item.get('id'))))

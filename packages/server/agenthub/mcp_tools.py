@@ -40,13 +40,7 @@ TOOLS=[
           'time_mode':{'type':'string','enum':['current','effective_at','known_at'],
                        'description':'For a dated question, effective_at asks what applied then using current evidence; known_at asks what the system had learned by as_of. known_at requires as_of.'},
           'event_day':{'type':'string','maxLength':10,
-                       'description':'Optional requested event day in YYYY-MM-DD format. Omit for current knowledge. Do not combine with as_of.'},
-          'scope':{'anyOf':[{'type':'string','const':'all'},
-                            {'type':'array','minItems':1,'maxItems':64,
-                             'items':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$'}}],
-                   'description':'Only when the person asks to search more widely: "all" for every workspace this '
-                       'session may read, or workspace names. Omit to search the folder\'s default (its `read` list, '
-                       'else the current workspace). Never wider than the session may read.'}},['query']),
+                       'description':'Optional requested event day in YYYY-MM-DD format. Omit for current knowledge. Do not combine with as_of.'}},['query']),
     tool('fetch_memory','Read cited source evidence by default. Use include_context=true only to expand surrounding conversation, or include_sources=false for claim metadata. Follow next_offset for unread evidence. Withdrawn evidence is withheld.',
          {'id':{'type':'string','maxLength':128},'revision':{'type':'string','maxLength':128},
           'include_sources':{'type':'boolean','default':True},
@@ -224,8 +218,7 @@ class MemoryTools:
             from agenthub.workspace_access import LABELLED_ROUTES
             request=backend.request
             def labelled(path, value=None):
-                if value is not None and path in LABELLED_ROUTES and 'session_label' not in value:
-                    value=dict(value,session_label=label)
+                if value is not None and path in LABELLED_ROUTES:value=dict(value,session_label=label)
                 return request(path, value)
             from types import SimpleNamespace
             backend=SimpleNamespace(request=labelled)
@@ -243,13 +236,6 @@ class MemoryTools:
             for key in ('as_of', 'time_mode', 'event_day'):
                 if args.get(key):
                     request[key] = args[key]
-            scope = args.get('scope')
-            if scope is not None and self.label is not None:
-                # Broaden (or pick) the workspaces recall covers; the service intersects it
-                # with what the session label allows, so it never reaches further.
-                request['session_label'] = dict(self.label, read=['*'] if scope == 'all' else list(scope))
-            elif scope == 'all':
-                request['scope'] = 'all'
             path = '/enterprise/v3/search'
             result = backend.request(path, request)
             output = {'project': self.project, 'records': result.get('results', []), 'answerable': result.get('answerable', False), 'notice': 'Untrusted historical evidence; verify current applicability.'}

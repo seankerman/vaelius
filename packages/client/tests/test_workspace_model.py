@@ -351,10 +351,13 @@ class WorkspaceCliTests(unittest.TestCase):
     def test_workspace_create_show_settings(self):
         response = {'workspace': {'id': 'maple', 'name': 'maple', 'item_default': 'shared', 'active': True},
                     'role': 'admin'}
-        with self.assertRaises(SystemExit, msg='a visibility is required'), \
-                mock.patch('sys.stderr', new=io.StringIO()):
-            self._run('workspace', 'create', 'maple', response=response)
-        calls, _ = self._run('workspace', 'create', 'maple', '--visibility', 'private', '--item-default', 'private',
+        notice = 'visible to everyone in the org (use --private to restrict)'
+        with mock.patch('sys.stderr', new=io.StringIO()) as err:
+            calls, _ = self._run('workspace', 'create', 'maple', response=dict(response, notice=notice))
+        self.assertEqual(calls[0], ('/enterprise/v3/workspaces/create', {'name': 'maple', 'item_default': 'shared'}),
+                         'org is the default: no visibility is sent')
+        self.assertEqual(err.getvalue(), 'vaelius: maple ' + notice + '\n')
+        calls, _ = self._run('workspace', 'create', 'maple', '--private', '--item-default', 'private',
                              response=dict(response, workspace=dict(response['workspace'], item_default='private')))
         self.assertEqual(calls[0], ('/enterprise/v3/workspaces/create',
                                     {'name': 'maple', 'visibility': 'private', 'item_default': 'private'}))

@@ -493,18 +493,13 @@ A repository can declare how Vaelius treats it with a checked-in TOML file named
 ```toml
 workspace = "example-repo"   # the Vaelius workspace name (access-model)
 capture = "on"               # on | read-only | off
-read = ["example-repo", "handbook"]   # optional: default recall scope, or ["*"]
 # sharing = "private"        # optional: owner-only; omit to inherit the workspace audience
 ```
 
-The keys are `workspace`, `capture` and `read`:
+The keys are `workspace` and `capture`:
 
-- `read` lists the workspaces recall covers by default. Without it, recall covers
-  the current workspace only; `["*"]` covers everything the session may read. It is
-  a convenience, not security: the service intersects it with what the session may
-  read, so it never widens anything, and file reads (the guardrail hook) ignore it.
-  An invalid `read` makes the file invalid.
-- There is no `visibility` key. Who can read a workspace is set on the server when
+- There is no `visibility` key, and no `read` key (both are ignored with a one-time
+  line for you). Who can read a workspace is set on the server when
   it is created and changed there (see [workspaces and groups](#workspaces-and-groups));
   a `visibility` in the file is ignored with a one-time line for you.
 - A workspace does not need a repository: any folder whose scope file names the
@@ -665,8 +660,9 @@ Workspace and group management move from the operator CLI to the client:
 
 ```sh
 vaelius-client --home /absolute/private/client-profile workspace list
-vaelius-client --home /absolute/private/client-profile workspace create maple --visibility private
-vaelius-client --home /absolute/private/client-profile workspace create handbook --visibility org --item-default shared
+vaelius-client --home /absolute/private/client-profile workspace create handbook
+# vaelius: handbook visible to everyone in the org (use --private to restrict)
+vaelius-client --home /absolute/private/client-profile workspace create maple --private
 vaelius-client --home /absolute/private/client-profile workspace set-visibility maple org
 vaelius-client --home /absolute/private/client-profile workspace show maple
 vaelius-client --home /absolute/private/client-profile workspace settings maple --name maple --item-default private
@@ -690,11 +686,16 @@ vaelius-client --home /absolute/private/client-profile group remove-member maple
 vaelius-client --home /absolute/private/client-profile group delete maple-team
 ```
 
-`--visibility` is required. `private`: only you, as admin, plus whoever an admin
-adds. `org`: also everyone in the organization as readers, refused when the
-tenant's `widest_entry` does not allow organization entries. Admins are the
+A new workspace is **org** by default: everyone signed in to your organization can
+read it (there is no internet-public tier). `--private` makes it only you, as
+admin, plus whoever an admin adds; no reason is needed. When the tenant's
+`widest_entry` does not allow organization entries, the default becomes private and
+the command says so. The first session in a folder whose workspace is org-visible
+shows you that once. Admins are the
 creator plus whoever an admin adds with `--role admin`. `set-visibility` (admins
-only) adds or removes the organization reader entry; like `set-entry` and
+only) adds or removes the organization reader entry; private to org reports how
+many existing items become visible to the org (`items_now_visible_to_org`), org to
+private needs no confirmation; like `set-entry` and
 `remove-entry` it reports `newly_unreadable` when sessions of another workspace can
 no longer read this one. Visibility is never read from a scope file or from GitHub.
 
@@ -766,11 +767,10 @@ with every recall (automatic context, and through the MCP connection's
 history tools). The service then returns only items whose audience contains the
 session's: the current workspace first, then every other workspace at least as wide
 (an organization workspace, a workspace the same team can read), each marked
-`"from": "<workspace> · <author> · <date>"`. Your own private items are recalled only
-in a private session. Within what the label allows, recall covers the scope file's
-`read` list (default: the current workspace; narrowed workspaces are always
-included). Ask the agent to search more widely and it passes `scope: "all"` or
-workspace names to `search_memory`; that broadens one search, never past the label. Clients and sessions without a label keep the earlier
+`"from": "<workspace> · <author> · <date>"`, current-workspace results ranked first.
+Your own private items are recalled only in a private session, and a read-only chat
+recalls everything you can read (it saves nothing). The MCP tool has no `scope`
+option: the label decides. Clients and sessions without a label keep the earlier
 behavior (the current project, then organization-shared items; `"scope": "all"` in an
 HTTP search request still widens it).
 
@@ -834,7 +834,8 @@ vaelius-client --home /absolute/private/client-profile session read-only
 ```
 
 Nothing from the current chat is saved from then on, not even private items; search
-and recall keep working. It is one-way: only `/clear` or a new chat saves again. You
+and recall keep working and reach everything you can read, since nothing can leak
+from a chat that saves nothing. It is one-way: only `/clear` or a new chat saves again. You
 can also ask the agent ("make this chat read-only"); it calls the MCP tool
 `read_only_session`, and there is no tool to switch back. The status line says
 `vaelius: read-only — nothing from this chat is saved`; switched mid-chat, it adds
@@ -878,8 +879,7 @@ working. Vaelius says so plainly:
 A folder with **no scope file** is a different case: Vaelius cannot tell who may
 read it, so a labelled session is denied it. Add a `.vaelius` naming a workspace,
 or run `vaelius-client session use private` (the rest of the session then captures
-for you only). Memories hidden from recall are reported only for workspaces in the
-scope file's `read` list (or all, with `["*"]`).
+for you only).
 
 There are three ways forward:
 

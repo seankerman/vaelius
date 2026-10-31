@@ -56,23 +56,13 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
             self.assertEqual(found['capture'], 'off', text)
             self.assertIn('error', found)
 
-    def test_read_list_and_ignored_visibility(self):
-        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\n')
-        self.assertIsNone(discover(self.repo)['read'], 'no read key: the client defaults to the current workspace')
-        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nread = ["ws-a", "ws-b", "ws-a"]\n')
-        self.assertEqual(discover(self.repo)['read'], ['ws-a', 'ws-b'])
-        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nread = ["ws-a", "*"]\n')
-        self.assertEqual(discover(self.repo)['read'], ['*'])
-        for text in ('read = "ws-a"', 'read = []', 'read = ["../x"]', 'read = [1]'):
-            self.write(self.repo / '.vaelius', 'workspace = "example-repo"\n' + text + '\n')
-            found = discover(self.repo)
-            self.assertEqual(found['capture'], 'off', text)
-            self.assertIn('error', found)
-        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nvisibility = "org"\n')
+    def test_visibility_and_read_keys_are_ignored_with_a_warning(self):
+        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nvisibility = "org"\nread = ["*", 1]\n')
         found = discover(self.repo)
         self.assertEqual(found['capture'], 'on', 'ignored, not invalid')
-        self.assertIn(scope_file.WARN_VISIBILITY_IGNORED, found['warnings'])
+        self.assertEqual(found['warnings'], [scope_file.WARN_VISIBILITY_IGNORED, scope_file.WARN_READ_IGNORED])
         self.assertNotIn('visibility', found)
+        self.assertNotIn('read', found)
 
     def test_legacy_name_needs_explicit_configuration_and_maps_only_known_fields(self):
         self.write(self.repo / '.mindshare', 'mode: read-only\ntags: [alpha, beta]\nteam: example-team\nsearch:\n  tags:\n    scope: [x]\n')

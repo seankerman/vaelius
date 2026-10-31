@@ -24,7 +24,7 @@ def descriptor(narrowed=(), private=False, *, now=None, role='writer', epoch=7):
     contains = [{'id': 'team-a', 'name': 'team-a'}, {'id': 'org-c', 'name': 'org-c'}]
     if 'narrow-b' in narrowed:
         contains.append({'id': 'narrow-b', 'name': 'narrow-b'})
-    return {'workspace': {'id': 'team-a', 'name': 'team-a'}, 'epoch': epoch, 'role': role,
+    return {'workspace': {'id': 'team-a', 'name': 'team-a'}, 'epoch': epoch, 'role': role, 'visibility': 'org',
             'item_default': 'shared', 'contributions_default': 'shared',
             'session': {'workspace': 'team-a', 'narrowed': list(narrowed), 'private': private},
             'contains_session_audience': contains,
@@ -143,7 +143,7 @@ class SessionLabelTest(LabelFixture):
         self.assertEqual(entry['descriptor']['session']['workspace'], 'team-a')
         self.assertEqual(self.service.calls[0], ('/enterprise/v3/workspaces/descriptor',
                                                  {'workspace': 'team-a', 'narrowed': [], 'private': False,
-                                                  'sharing': 'organization', 'read': ['team-a']}))
+                                                  'sharing': 'organization'}))
         cached = json.loads((self.home / 'workspaces/team-a.json').read_text())
         self.assertEqual(cached['workspace']['id'], 'team-a', 'cached in the client profile')
         self.assertFalse((self.src / 'a/.vaelius').read_text().count('contains'), 'never in the scope file')
@@ -175,8 +175,7 @@ class SessionLabelTest(LabelFixture):
         self.assertGreater(self.label()['descriptor']['refresh_after'], time.time())
         searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search']
         self.assertEqual(searched[-1]['session_label'], {'workspace': 'team-a', 'narrowed': [], 'private': False,
-                                                         'sharing': 'organization', 'read': ['team-a']},
-                         'recall carries the label, with the default read list (the current workspace)')
+                                                         'sharing': 'organization'}, 'recall carries the label')
         self.service.epoch = 9
         before = len(self.service.calls)
         self.hook('UserPromptSubmit', prompt='what changed?')
@@ -292,11 +291,6 @@ class HookDecisionTest(LabelFixture):
 
 class RecallNoteTest(LabelFixture):
     def test_hidden_memories_are_announced_once_per_session_to_the_person_only(self):
-        # Only workspaces in the folder's `read` list are reported (default: the current one).
-        self.start(session='s0')
-        self.assertNotIn('hidden', self.hook('UserPromptSubmit', session='s0', prompt='x').get('systemMessage', ''),
-                         'narrow-b is outside the default read list')
-        (self.src / 'a/.vaelius').write_text('workspace = "team-a"\nread = ["*"]\n')
         self.start()
         first = self.hook('UserPromptSubmit', prompt='first')
         line = ("vaelius: 12 memories from narrow-b hidden (not visible to carol, dave, contractors (group) and 1 "
@@ -426,10 +420,20 @@ class HeaderTest(LabelFixture):
                 mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
             labelled = mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))
             quiet = mcp_headers.headers(self.home, project_dir=str(self.src / 'quiet'))
-        self.assertEqual(json.loads(labelled['X-Vaelius-Session-Label']), {'workspace': 'team-a', 'read': ['team-a']})
+        self.assertEqual(json.loads(labelled['X-Vaelius-Session-Label']), {'workspace': 'team-a'})
         self.assertNotIn('X-Vaelius-Read-Only', labelled)
         self.assertNotIn('X-Vaelius-Session-Label', quiet, 'read-only: no label rule')
         self.assertEqual(quiet['X-Vaelius-Read-Only'], '1', 'a read-only folder: the service refuses writes')
+
+
+class OrgVisibilityNoticeTest(LabelFixture):
+    def test_org_workspace_is_announced_once_per_folder_to_the_person(self):
+        first = self.start()
+        line = ("vaelius: workspace team-a is visible to everyone in the org (an admin can restrict it: "
+                "'vaelius-client workspace set-visibility team-a private')")
+        self.assertIn(line, first.get('systemMessage', ''))
+        self.assertNotIn('visible to everyone', json.dumps(first.get('hookSpecificOutput', {})), 'person only')
+        self.assertNotIn('visible to everyone', self.start(session='s2').get('systemMessage', ''), 'once')
 
 
 class UnscopedReadTest(LabelFixture):
@@ -518,6 +522,14 @@ class ReadOnlyChatTest(LabelFixture):
         captured = len(Outbox.events)
         self.hook('UserPromptSubmit', prompt='after')
         self.assertEqual(len(Outbox.events), captured)
+
+    def test_read_only_chat_recall_uses_the_full_readable_set(self):
+        self.start()
+        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
+            session_label.read_only(self.home, self.config, cwd=str(self.src / 'a'))
+        self.hook('UserPromptSubmit', prompt='anything')
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search']
+        self.assertIs(searched[-1]['session_label']['read_only'], True, 'the service treats it as private')
 
     def test_a_read_only_folder_registers_its_chat(self):
         self.start(session='q1', cwd=self.src / 'quiet')

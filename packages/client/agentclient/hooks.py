@@ -116,9 +116,8 @@ def resolve_scope(config, event):
 
 
 def _exceptions(request):
-    """A scope file's origin exceptions (`capture.allowed_paths`, `capture.allowed_mcp_servers`) and
-    its default recall scope (`read`)."""
-    return {key:request[key] for key in ('allowed_paths','allowed_mcp_servers','read') if request.get(key)}
+    """A scope file's origin exceptions (`capture.allowed_paths`, `capture.allowed_mcp_servers`)."""
+    return {key:request[key] for key in ('allowed_paths','allowed_mcp_servers') if request.get(key)}
 
 
 def binding(config, event):
@@ -381,6 +380,10 @@ def _session_label(home, config, scope, event, notices):
         line=labels.take_announcement(session)
         if kind=='SessionStart':line=line or session_label.status_line(entry)
         if line:notices.append(line)
+    if kind=='SessionStart':
+        # Once per folder and workspace, for the person only: this workspace is org-visible.
+        line=session_label.org_visible_line(home,entry)
+        if line:notices.append(line)
     if kind=='UserPromptSubmit' and not entry.get('hidden_noted'):
         # Once per session, for the person only: what recall leaves out and how to include it.
         hidden=session_label.hidden_line(entry)
@@ -568,7 +571,7 @@ def _scope_warnings(home, scope):
     if not scope or not scope.get('warnings') or not scope.get('root'):
         return None
     from agentclient.scope_file import (record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED,
-                                        WARN_VISIBILITY_IGNORED)
+                                        WARN_VISIBILITY_IGNORED, WARN_READ_IGNORED)
     file_path=scope.get('scope_file') or scope['root']
     lines=[]
     for warning in scope['warnings']:
@@ -581,6 +584,9 @@ def _scope_warnings(home, scope):
         elif warning == WARN_VISIBILITY_IGNORED:
             lines.append('vaelius: `visibility` in '+file_path+' is ignored -- visibility is set on the server '
                          '(`vaelius-client workspace set-visibility`).')
+        elif warning == WARN_READ_IGNORED:
+            lines.append('vaelius: `read` in '+file_path+' is ignored -- recall covers what this session may '
+                         'read, the current workspace first.')
         elif warning == WARN_ORIGINALS_IGNORED:
             lines.append('vaelius: `originals` in '+file_path+' is ignored and is no longer sent to the '
                          "service; sharing an original is now an explicit `vaelius-client share --originals` grant.")

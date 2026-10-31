@@ -32,9 +32,9 @@ def _add_workspace_commands(sub):
     inner.add_parser('list', help='workspaces you can see')
     create = inner.add_parser('create', help='create a workspace you administer')
     create.add_argument('name')
-    create.add_argument('--visibility', choices=('private', 'org'), required=True,
-                        help='private: only you (admin) and whoever admins add; org: also everyone in the '
-                             'organization as readers (if the tenant allows it)')
+    create.add_argument('--private', action='store_true',
+                        help='only you (admin) and whoever an admin adds; the default is org: everyone '
+                             'signed in to your organization can read it (when the tenant allows it)')
     create.add_argument('--item-default', choices=('shared', 'private'), default='shared',
                         help='whether new items are workspace-audience (shared) or owner-only (private)')
     visibility = inner.add_parser('set-visibility', help='admins: make a workspace private or org-readable')
@@ -484,7 +484,8 @@ def _workspace_payload(args):
     command = args.workspace_command
     if command == 'list': return '/enterprise/v3/workspaces', {}
     if command == 'create':
-        body = {'name': args.name, 'visibility': args.visibility}
+        body = {'name': args.name}
+        if args.private: body['visibility'] = 'private'
         if args.item_default: body['item_default'] = args.item_default
         return '/enterprise/v3/workspaces/create', body
     if command == 'set-visibility':
@@ -530,7 +531,11 @@ def _workspace_payload(args):
 def _workspace_command(config, args):
     from agentclient.transport import enterprise_client
     path, body = _workspace_payload(args)
-    return enterprise_client(config, timeout=15).request(path, body)
+    result = enterprise_client(config, timeout=15).request(path, body)
+    if args.workspace_command in ('create', 'set-visibility') and isinstance(result, dict) and result.get('notice'):
+        name = args.name if args.workspace_command == 'create' else args.workspace
+        sys.stderr.write('vaelius: ' + name + ' ' + result['notice'] + '\n')
+    return result
 
 
 def _group_payload(args):

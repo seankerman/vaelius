@@ -80,8 +80,6 @@ def session_label(scope, selected):
         return None
     label={'workspace':selected}
     if scope.get('sharing') in ('private','team'):label['sharing']=scope['sharing']
-    # Default recall scope (`.vaelius` `read`), else the current workspace only.
-    label['read']=list(scope.get('read') or [selected])
     return label
 
 

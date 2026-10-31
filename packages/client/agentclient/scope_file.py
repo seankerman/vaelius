@@ -4,14 +4,13 @@ A scope file (default name `.vaelius`, TOML) at a repository root declares::
 
     workspace = "example-repo"   # service workspace name
     capture = "on"               # on | read-only | off
-    read = ["example-repo", "handbook"]   # optional: default recall scope, or ["*"]
 
-The keys are `workspace`, `capture` and `read`. `read` is a convenience, not
-security: the service intersects it with what the session may read, so it never
-widens anything; without it recall covers the current workspace only. A
-`visibility` key is ignored with a one-time warning: who can read a workspace is
-set on the server (`vaelius-client workspace create --visibility`, `workspace
-set-visibility`), never in a checked-in file.
+The keys are `workspace` and `capture`. A `visibility` key is ignored with a
+one-time warning: who can read a workspace is set on the server (`vaelius-client
+workspace create [--private]`, `workspace set-visibility`), never in a checked-in
+file. A `read` key (an earlier draft's recall list) is ignored with a one-time
+warning too: recall covers what the session label allows, the current workspace
+first.
 
 The current access model builds on **workspaces** rather than flat projects
 (see `docs/ACCESS_MODEL.md`). The new `workspace` key is the explicit opt-in to
@@ -94,7 +93,8 @@ WARN_SHARING_IGNORED = 'scope_file_sharing_ignored_under_workspace'
 WARN_ORIGINALS_IGNORED = 'scope_file_originals_ignored'
 # `visibility` is set on the server only (`vaelius-client workspace set-visibility`).
 WARN_VISIBILITY_IGNORED = 'scope_file_visibility_ignored'
-MAX_READ = 64
+# `read` (a recall list) is not a scope-file key; recall follows the session label.
+WARN_READ_IGNORED = 'scope_file_read_ignored'
 # One-time warning for a scope file skipped because of where it is.
 WARN_IGNORED_LOCATION = 'scope_file_ignored_location'
 
@@ -241,14 +241,8 @@ def parse(path):
     if 'visibility' in values:
         # Who can read a workspace is decided on the server, never by a checked-in file.
         warnings.append(WARN_VISIBILITY_IGNORED)
-    read = values.get('read')
-    if read is not None:
-        # Default recall scope: a convenience the service intersects with what the
-        # session may read, so it can never widen anything. ["*"] is everything allowed.
-        if (not isinstance(read, list) or not 1 <= len(read) <= MAX_READ
-                or any(not isinstance(n, str) or not (n == '*' or WORKSPACE.fullmatch(n)) for n in read)):
-            raise ScopeFileError('scope_file_invalid_read')
-        read = ['*'] if '*' in read else list(dict.fromkeys(read))
+    if 'read' in values:
+        warnings.append(WARN_READ_IGNORED)
     if workspace_key:
         # In a workspace file the sharing ladder is replaced by the workspace
         # access list. Only `sharing = "private"` is honored (sent as omission;
@@ -262,8 +256,7 @@ def parse(path):
         sharing = 'private' if sharing == 'private' and 'sharing' in values else 'organization'
     return {'project': identifier, 'workspace': identifier, 'workspace_key': workspace_key,
             'capture': capture, 'sharing': sharing, 'originals': originals, 'path': str(path),
-            'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp, 'warnings': warnings,
-            'read': read}
+            'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp, 'warnings': warnings}
 
 
 def _walk(start, names, stop=None, home=None, ignored=None):

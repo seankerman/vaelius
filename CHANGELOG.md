@@ -36,6 +36,10 @@ The release workflow publishes the section whose heading matches the tag.
   never read: deny rules plus the hook, Bash included. Re-run
   `install --claude-code` to add the rules. Reading `~/.claude/skills`, `agents`,
   `commands`, `hooks` and `output-styles` no longer makes a session private.
+- `pypdf` 6.21.4 (GHSA-42gh-23hr-vphw, GHSA-4vqv-7265-gm2w, GHSA-5849-834g-hvw5,
+  GHSA-62m5-6wh8-28x7, GHSA-cggf-277g-3q54, GHSA-mfr5-77xh-9j7h,
+  GHSA-x3rh-gjgm-fmqc) and, for development only, `graphql-core` 3.3.1
+  (GHSA-mpqx-q82w-9x46).
 - Runtime base image updated to Python 3.12.16 (`python:3.12.16-slim-trixie`,
   CVE-2026-115557), and `joserfc` to 1.7.6 (GHSA-9pg5-8c7x-5hfx).
 - Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is

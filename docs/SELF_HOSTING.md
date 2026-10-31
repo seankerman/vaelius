@@ -183,9 +183,9 @@ writer in the mapped workspace are skipped and counted (`unmapped_author`,
 apply scoped folders or origin labels; every imported item is therefore private to
 its author, whatever the workspace default or the author's own setting. Each author
 gets one connection per workspace (`backfill-...`, enrolled `private`), and no event
-carries a sharing request. The command has no sharing options. Owners share
-afterwards, per session, with `vaelius-client share --session ...` or the
-`share_memories` tool.
+carries a sharing request. The command has no sharing options, and there is no
+per-item sharing afterwards: imported conversations stay the author's personal
+memory.
 
 **Dry run, idempotent, resumable, rate limited.** Without `--apply` it prints counts
 per principal and workspace and the skip counts, never content. With `--apply` each
@@ -211,12 +211,11 @@ commands.
 This release replaces the per-item sharing ladder with **workspace access
 lists**. Every id stays the same, and no stored content is lost, but the
 service applies very different rules after the migration runs. Plan a short
-window for owners and admins to re-share.
+window for admins to set up access lists again.
 
-- **Every existing item becomes private to its owner** at the migration. Owners
-  re-share them from the client (`vaelius-client sharing --set shared` or
-  `vaelius-client share`), or an admin adds a workspace access-list entry that
-  reaches the readers again. By construction nothing is readable by anyone who
+- **Every existing item becomes private to its owner** at the migration and stays
+  so (per-item sharing was removed by migration 055); new captures by writers
+  inherit the workspace audience. By construction nothing is readable by anyone who
   could not read it immediately before, so no reader-set guard runs: the
   migration is irreversibly narrower.
 - **Project members become writers.** Each project's explicit members and the

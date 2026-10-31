@@ -73,15 +73,15 @@ Two tiers, both rechecked at delivery:
 
 1. **Redacted passages** — search results, cited evidence spans and conversation
    context. Need `read`. Raw-representation passages are visible to their source
-   owner, and to others when the source is **in their workspace audience**, or
-   through an explicit owner share
-   ([below](#shared-conversation-passages-and-originals)). Other principals see
+   owner, and to others when the source is **in their workspace audience**
+   ([below](#shared-conversation-passages-and-originals)); there is no per-item
+   sharing. Other principals see
    derived knowledge and its citations through the normal search policy.
 2. **Retained originals** — the complete canonical source (`/enterprise/v2/sources/`,
    `/enterprise/v1/sources/`) and original document bytes (`source-documents/download`).
    Need the credential action `source_read` **and** source ownership, or an
-   explicit, active, owner-issued originals share. There is no originals level
-   any more; sharing passages never shares originals. Document metadata
+   active operator-issued originals grant. There is no originals level; a
+   workspace audience never reaches originals. Document metadata
    (`describe`, `list`) stays at tier 1.
 
 `source_read` is no longer part of default enrollment (`/enterprise/v3/auth/complete`
@@ -103,9 +103,9 @@ A grant names one source, one capture session or one connection, and either a
 `principal` or a `group` (`project` grantees are refused with
 `project_grantee_retired_use_group`; migration 048 rewrites existing project
 grants into grants to that project's `<project>-members` local group). These
-operator-style commands grant originals only. Owners grant passages, and
-optionally originals, themselves with `vaelius-client share` or the MCP
-`share_memories` tool and the `share` action; no grant reaches a derived
+operator-style commands grant originals only, and since migration 055 they are the
+only grants: there is no per-item sharing of passages by owners, a CHECK constraint
+keeps every active grant an operator originals grant, no grant reaches a derived
 document, and no grant widens an `origin_private` source
 ([owner controls](PRIVACY_MODEL.md#owner-controls)).
 
@@ -144,7 +144,7 @@ The complete model, including who controls each setting, is in the
 [the access model](ACCESS_MODEL.md). In short: every captured source belongs to
 one **workspace** and is either **private** (its owner only) or shared with the
 workspace audience (every principal the access list reaches as a reader).
-Originals are a separate tier, read with ownership or an **originals share**.
+Originals are a separate tier, read with ownership or an operator **originals grant**.
 
 By default, a repository is captured when a checked-in scope file names the
 workspace ([client side](CLIENT.md#repository-scope-files)):
@@ -162,10 +162,10 @@ in that workspace. Its keys are `workspace` and `capture`. Who can read a
 workspace (its **visibility**) is chosen on the server when the workspace is
 created (org by default, `--private` to restrict) and changed there by its admins;
 a `visibility` (or `read`) key in the file is ignored with a one-time warning. A workspace needs no repository: any folder whose scope file names it
-captures into it for a writer. Legacy keys (`project`, `sharing`, `originals`) are read as
+captures into it for a writer, and into personal memory for anyone else. Legacy keys (`project`, `sharing`, `originals`) are read as
 an upper bound and are mapped as described in
 [the client guide](CLIENT.md#repository-scope-files) and
-[the access model](ACCESS_MODEL.md#5-the-scope-file).
+[the access model](ACCESS_MODEL.md#rules).
 
 Every capture also carries a normalized Git **remote** (`host/path`, lower
 case, no scheme/user/port, no trailing `.git` or `/`). The server rejects a
@@ -174,14 +174,13 @@ capture whose remote is not linked to the named workspace with HTTP 409
 the admin fix. An admin's first capture from an unlinked remote links it
 automatically (role `admin`, credential `manage`, non-delegated) and the
 parts receipt carries a one-line `notice`. A capture with no remote (a scoped
-folder that is not a Git repository) is accepted on the person's writer role
-alone.
+folder that is not a Git repository) is accepted.
 
 | Step | Rule |
 | --- | --- |
 | Request | The client sends `workspace`, the normalized `remote` and an optional `sharing`. `sharing` is omitted (owner-private) or `organization` (meaning "inherit the workspace audience"); legacy `team` is still accepted. `originals` is no longer sent. |
-| Ingest | The service resolves the workspace by name then id, checks that the credential ∩ the person's role in that workspace holds `ingest` (so the writer role or higher), and checks that `remote` is linked (section above). It stores the item with `private = 1` when (a) `sharing` is omitted, (b) `team` is requested against a workspace with an organization entry, (c) the capture connection is private, (d) the person's `contributions_default` is `private`, or (e) the workspace's `item_default` is `private`. Otherwise the item inherits the workspace audience. |
-| Query | A reader other than the owner reads a passage, its cited evidence and its conversation context only when the item is not private AND the reader is in the audience (`role(ws) ≥ reader`), OR they are the subject of an explicit share. The reader also needs to be in the audience of every **carried workspace** on the item (`origin_projects`), and (for items captured before migration 048 with origin ceiling `team`) a direct — non-organization — role in the workspace and in every carried workspace. |
+| Ingest | The service resolves the workspace by name then id (it must exist and be active), checks the credential holds `ingest`, and checks that `remote` is linked (section above). It stores the item with `private = 1` (the person's **personal memory**) when (a) the person is not a writer in that workspace (a reader or a non-member), (b) `sharing` is omitted, (c) `team` is requested against a workspace with an organization entry, (d) the capture connection is private, (e) the person's `contributions_default` is `private`, or (f) the workspace's `item_default` is `private`. Otherwise the item inherits the workspace audience. |
+| Query | A reader other than the owner reads a passage, its cited evidence and its conversation context only when the item is not private AND the reader is in the audience (`role(ws) ≥ reader`). There is no per-item sharing. The reader also needs to be in the audience of every **carried workspace** on the item (`origin_projects`), and (for items captured before migration 048 with origin ceiling `team`) a direct — non-organization — role in the workspace and in every carried workspace. |
 
 Consequences:
 
@@ -191,9 +190,9 @@ Consequences:
 - **Adding an entry** widens the audience of every item in the workspace, past
   and future, as on GitHub, Google Drive and Notion. Carried workspaces stop a
   later widening of one workspace from exposing content that came from another.
-- **Shares** stand in for the audience check for one reader at a time and
-  obey `owner_sharing`.
-- **Originals** need `source_read` and either ownership or an originals share.
+- **No per-item sharing.** Nothing names a single extra reader for an item
+  (migration 055).
+- **Originals** need `source_read` and either ownership or an operator originals grant.
 - Every existing protection still applies on top: tenant isolation, withdrawal
   and deletion, legal holds (a held deletion hides like a withdrawal), operator
   quarantine (held sources stay owner-only), delegation limits, connection
@@ -203,15 +202,15 @@ Who sees what for a passage Alice captured in workspace `maple` (access list:
 `principal:alice → admin`, `group:maple-team → writer`, `organization →
 reader`), with her own `contributions_default = shared`:
 
-| Reader | Alice marks private | Default (audience) | Alice shares to `principal:carol` |
-| --- | --- | --- | --- |
-| Alice | passage + original | passage + original | passage + original |
-| Bob, `maple-team` member | nothing | passage, evidence, context | nothing (not shared to) |
-| Carol, in the org but not in `maple-team` | nothing | passage, evidence, context (through the organization entry) | passage, evidence, context (through the share) |
-| A quarantined, deactivated or delegated reader | nothing | nothing | nothing |
+| Reader | Personal memory (Alice not a writer, or private setting) | Default (audience) |
+| --- | --- | --- |
+| Alice | passage + original | passage + original |
+| Bob, `maple-team` member | nothing | passage, evidence, context |
+| Carol, in the org but not in `maple-team` | nothing | passage, evidence, context (through the organization entry) |
+| A quarantined, deactivated or delegated reader | nothing | nothing |
 
-Originals in that table additionally require ownership, an originals share and
-`source_read`.
+Originals in that table additionally require ownership (or an operator originals
+grant) and `source_read`.
 
 Admins manage the access list, repository links and workspace settings from the
 client; operators and settings administrators can do the same as a break-glass
@@ -249,12 +248,12 @@ The scoped-folder allowlist rules below (#40) are unchanged. What differs under
 the access model is who the labels reach: an item's audience is its workspace
 access list, and **carried workspaces** (what `origin_projects` holds) each
 need the reader to have at least `reader` in them too. An `origin_private`
-label still makes the item owner-only and no share can widen it.
+label still makes the item owner-only and nothing can widen it.
 
 ### Fixed session labels and the backstop
 
 Since PR B the primary control for Claude Code sessions is the **fixed session
-label** ([access model, section 7](ACCESS_MODEL.md#7-fixed-session-labels)): a
+label** ([access model, rules 4 to 7](ACCESS_MODEL.md#rules)): a
 session started in a workspace folder with capture on may read only folders whose
 workspace audience contains its own, and the PreToolUse guardrail hook denies the
 rest before the read happens. The labels below remain, demoted to a **backstop**
@@ -262,11 +261,12 @@ for what the hook cannot see or classify:
 
 | Read | Hook (before) | Origin label (after) |
 | --- | --- | --- |
-| The session's own workspace, or one it is narrowed to | Allow | None (narrowed workspaces are carried) |
+| The session's own workspace | Allow | None |
 | Another workspace whose audience contains the session's | Allow | Carries that workspace; never narrows the session |
 | A narrower, unreadable or unknown workspace, or an unreadable scope file | **Deny** (one plain line, never `ask`) | — (the tool does not run) |
 | Personal folders, credential files | Deny (guardrail profile, unchanged) | `private` |
 | Unscoped repositories and unknown paths (no scope file) | **Deny** (one line, never `ask`), unless the session is already private (migration 053) | — (the tool does not run); in a private session, `private` |
+| Claude Code auto memory (`~/.claude/projects/<project>/memory/`), which any earlier chat may have written | **Deny** (one line, never `ask`) unless the session is private (personal) | — (the tool does not run); in a private session, `private` |
 | Programs that open files without naming them, MCP servers other than Vaelius, non-public web addresses, unknown tools | Not visible to the hook | `private`, exactly as before |
 | Recalled memory | Filtered by the service to the session's superset list | Carries its workspaces; never narrows |
 
@@ -276,8 +276,8 @@ read both. Since migration 053 a read of a folder without a scope file is denied
 rather than making the rest of the session private:
 
 ```text
-vaelius: ~/src/sibling isn't in a Vaelius folder (no .vaelius). Add one, or run
-'vaelius-client session use private' to read it in a private session.
+vaelius: ~/src/sibling isn't in a Vaelius folder (no .vaelius), so this session does
+not read it. Add a .vaelius naming its workspace, or start a session there.
 ```
 
 Sessions without a label (read-only, off, outside every workspace, other hosts,
@@ -308,7 +308,8 @@ current`); `push-session` refuses a chat that ran read-only.
 | A path inside a [scoped folder](#scoped-folders) of the **same workspace**: the current root, another checkout or worktree, a sibling folder whose scope file names the same `workspace` (legacy `project`). Symlinks, `..` and relative paths are resolved against the event's working directory first | no restriction |
 | A path inside a scoped folder of a **different workspace** | tagged as a carried workspace: a non-owner reader must be at least `reader` in that other workspace too, so the item is readable only by people in **every** workspace the session carried |
 | A path inside a scoped folder whose scope file is off or invalid | `private` |
-| Claude Code's own state, `~/.claude/projects/<folder>/` (saved tool output, task output, auto-memory, transcripts) | follows the folder the name encodes: the current session's folder is unrestricted, a scoped folder follows that folder's project as above, anything else is `private` |
+| Claude Code's own state, `~/.claude/projects/<folder>/` (saved tool output, task output, transcripts) | follows the folder the name encodes: the current session's folder is unrestricted, a scoped folder follows that folder's project as above, anything else is `private` |
+| Claude Code auto memory, `~/.claude/projects/<folder>/memory/` (any earlier chat may have written it) | `private`; in a labelled shared session the guardrail hook denies the read first |
 | Claude Code user configuration already loaded into sessions: `~/.claude/CLAUDE.md`, `~/.claude/reference/`, `~/.claude/plans/`, `~/.claude/settings*.json`, `~/.claude/plugins/`, `~/.claude/skills/`, `~/.claude/agents/`, `~/.claude/commands/`, `~/.claude/hooks/`, `~/.claude/output-styles/` | no restriction |
 | Personal folders under home (`Documents`, `Desktop`, `Downloads`, `Pictures`, `Movies`, `Music`, iCloud and cloud-drive folders, `Library/Mail`, `Library/Messages`) outside every scoped folder | always `private`; no allowlist opens them |
 | Temporary folders (`$TMPDIR`, `/tmp`, `/private/var/folders`, including Claude Code's scratch and task folders), tool caches and package folders (`~/.cache`, `~/.npm`, `~/.cargo`, `site-packages`, `node_modules`, ...), read-only system locations (`/usr`, `/opt/homebrew`, `/etc`, `/Library/Developer`) | no restriction |
@@ -599,15 +600,16 @@ settings, skills, hooks, Codex `config.toml`, ...), which would otherwise carry 
 every later session; Bash writes there are covered only by the guardrail hook. Both
 profiles also apply the fixed session-label read
 rule to labelled sessions: folders of narrower, unreadable or unknown workspaces,
-and folders with no scope file at all, are denied. The exact coverage and gaps are in
+folders with no scope file at all, and Claude Code auto memory are denied unless
+the session is personal. The exact coverage and gaps are in
 [least privilege for agents](CLIENT.md#least-privilege-for-agents).
 
 ## Trust boundaries
 
-Raw agent originals require `source_read` and ownership or an owner-issued
-originals share. Raw source passages require ownership, or that the reader is
+Raw agent originals require `source_read` and ownership or an operator-issued
+originals grant. Raw source passages require ownership, or that the reader is
 in the item's audience (the workspace access list, minus `private` or
-`origin_private`) or named by an explicit owner share. A workspace name or a
+`origin_private`). A workspace name or a
 repository scope file does not itself grant access
 ([privacy model](PRIVACY_MODEL.md)). Reviewed derived knowledge and native
 document representations retain their source policy dependencies. Identity,

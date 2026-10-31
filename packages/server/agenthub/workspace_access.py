@@ -516,8 +516,8 @@ class WorkspaceAccessMixin:
                    for source, targets in sorted(by_source.items())]
         return {'newly_unreadable': sorted({name(t) for _, t in lost}),
                 'newly_unreadable_note': '; '.join(clauses) + ' (those workspaces no longer include everyone in '
-                                         'the sessions\' audience). Add the same people as readers there, or use '
-                                         "'vaelius-client session use <workspace>' per session."}
+                                         'the sessions\' audience). Add the same people as readers there, or make '
+                                         'it org-visible.'}
 
     def _containment_scope(self, db, ctx, focus):
         """The caller's readable workspaces (reported pairs never name others) and the
@@ -1529,11 +1529,12 @@ class WorkspaceAccessMixin:
     def session_descriptor(self, ctx, value):
         """The client's advisory audience descriptor for a session label (section 5).
 
-        `value` is {workspace, narrowed?, private?, sharing?}; a narrowed entry may be
-        a workspace name or id, or a normalized repository remote linked to one. The
-        reader needs `read` and a role >= reader in every named workspace; anything
-        else is refused (403), so `vaelius-client session use` and the MCP tool
-        `use_workspace` cannot name a workspace the person cannot read."""
+        `value` is {workspace, narrowed?, private?, sharing?}. Explicit narrowing
+        (`session use`, the MCP tool `use_workspace`) was removed; `narrowed` is
+        still accepted from older clients, whose sessions it only narrows. A narrowed
+        entry may be a workspace name or id, or a normalized repository remote linked
+        to one. The reader needs `read` and a role >= reader in every named
+        workspace; anything else is refused (403)."""
         from agenthub.enterprise import Denied
         self._need(ctx, 'read')
         value = dict(value) if isinstance(value, dict) else value

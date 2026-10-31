@@ -103,9 +103,10 @@ class LabelRecordTests(LabelFixture):
                 mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
             return json.loads(mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))['X-Vaelius-Session-Label'])
 
-    def use(self, target):
-        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
-            return session_label.use(self.home, self.config, target, cwd=str(self.src / 'a'))
+    def make_private(self, session='s1'):
+        """What the taint backstop records for a session that became private."""
+        entry = session_label.SessionLabels(self.home).update(session, private=True)
+        session_label.record_mcp_label(self.home, session, entry)
 
     def test_the_header_follows_the_session_last_active_in_the_folder(self):
         self.assertEqual(self.headers(), {'workspace': 'team-a'}, 'no record: the folder label')
@@ -113,10 +114,8 @@ class LabelRecordTests(LabelFixture):
         self.assertEqual(self.headers(), {'workspace': 'team-a'})
         path = session_label.mcp_label_path(self.home, self.src / 'a')
         self.assertEqual(oct(path.stat().st_mode & 0o777), '0o600')
-        self.use('narrow-b')
-        self.assertEqual(self.headers(), {'workspace': 'team-a', 'narrowed': ['narrow-b']})
-        self.use('private')
-        self.assertEqual(self.headers(), {'workspace': 'team-a', 'narrowed': ['narrow-b'], 'private': True})
+        self.make_private()
+        self.assertEqual(self.headers(), {'workspace': 'team-a', 'private': True})
         self.hook('SessionEnd', reason='prompt_input_exit')
         self.assertFalse(path.exists(), 'the session that wrote it ended')
         self.assertEqual(self.headers(), {'workspace': 'team-a'})
@@ -149,7 +148,7 @@ class LabelRecordTests(LabelFixture):
 
     def test_a_stale_or_missing_record_falls_back(self):
         self.start()
-        self.use('private')
+        self.make_private()
         path = session_label.mcp_label_path(self.home, self.src / 'a')
         value = json.loads(path.read_text())
         path.write_text(json.dumps(dict(value, updated=time.time() - 13 * 3600)))

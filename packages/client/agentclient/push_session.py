@@ -14,8 +14,8 @@ There is no bulk mode.
   started in a folder whose scope file (or explicit enrollment) has capture on, and
   the service must report the writer or admin role there. Anything else is refused.
 * **Always owner-private.** Every event is sent without a sharing request, which the
-  service stores as private to you, whatever the workspace default. Share it
-  afterwards with `vaelius-client share --session ...`.
+  service stores as private to you, whatever the workspace default (there is no
+  per-item sharing afterwards).
 * **The live privacy rules, replayed.** Events go through the same origin
   classifier (`agentclient.origin`), sticky session taint and redaction as live
   capture, in order: a read of a personal folder, an unknown path, auto memory, a

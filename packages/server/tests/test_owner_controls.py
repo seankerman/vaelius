@@ -1,12 +1,10 @@
-"""Owner self-service: find, delete, change sharing and grant one's own content.
+"""Owner self-service: find and delete one's own content; workspace moderation.
 
 Synthetic PostgreSQL cases, no model calls. Only the owner acts on their sources;
 deletion is the canonical purge and a legal hold wins; an item is private or
-shared with its workspace, and sharing needs the writer role and never passes
-the origin; shares name readers (principals or groups), are revocable and audited
-and stand in for the workspace audience only; derived documents need the
-audience of every source; moderation follows the workspace admin role and hides
-but never deletes. Three enforcement layers (Python oracle, indexed SQL
+shared with its workspace, and there is no per-item sharing (migration 055);
+derived documents need the audience of every source; moderation follows the
+workspace admin role and hides but never deletes. Three enforcement layers (Python oracle, indexed SQL
 predicate, row-level security) must agree.
 """
 import json
@@ -197,19 +195,11 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
 
     # Only the owner ---------------------------------------------------------------
 
-    def test_non_owners_cannot_delete_change_sharing_or_grant(self):
+    def test_non_owners_cannot_delete(self):
         source = self.ingest()
         self.drain()
-        for method, extra in (('forget', {}), ('change_sharing', {'sharing': 'shared'})):
-            preview = getattr(self.store, method)(self.bob, dict({'source_ids': [source]}, **extra))
-            self.assertEqual((preview['sources'], preview['confirm_token']), (0, None), method)
-        with self.assertRaises(Denied):
-            self.store.grant(self.bob, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                        'grantee': 'bob'})
-        with self.assertRaises(Denied):
-            self.store.revoke(self.store.authenticate(self.store.enroll('acme', 'bob', 'b-read', ['read'])),
-                              {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal', 'grantee': 'bob',
-                               'confirm': True})
+        preview = self.store.forget(self.bob, {'source_ids': [source]})
+        self.assertEqual((preview['sources'], preview['confirm_token']), (0, None))
         with self.assertRaises(Denied):
             self.store.forget(self.store.authenticate(self.store.enroll('acme', 'alice', 'a-read', ['read'])),
                               {'source_ids': [source]})
@@ -217,36 +207,12 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT active,private FROM enterprise_sources WHERE id=?',
                                               (source,)).fetchone(), {'active': 1, 'private': 1})
 
-    # Change sharing -------------------------------------------------------------------
-
-    def test_making_private_hides_on_the_next_search_and_every_change_is_audited(self):
-        source = self.ingest(sharing='organization')
-        self.drain()
-        self.assertEqual(self.found(self.dave), {source}, 'the organization entry reaches dave')
-        self.assertEqual(self.found(self.bob), {source})
-        _, applied = self.apply('change_sharing', self.alice, {'source_ids': [source], 'sharing': 'private'})
-        self.assertEqual(applied['changed'], 1)
-        self.assertEqual(self.found(self.dave), set())
-        self.assertEqual(self.found(self.bob), set())
-        self.assertEqual(self.found(self.alice), {source})
-        self.apply('change_sharing', self.alice, {'source_ids': [source], 'sharing': 'shared'})
-        self.assertEqual(self.found(self.bob), {source})
-        with self.store.open() as state:
-            changes = [dict(r) for r in state.db.execute('''SELECT actor,tier,from_level,to_level,requested
-                FROM enterprise_sharing_changes WHERE source_id=? ORDER BY id''', (source,))]
-        self.assertEqual(changes, [
-            {'actor': 'alice', 'tier': 'passages', 'from_level': 'shared', 'to_level': 'private', 'requested': 'private'},
-            {'actor': 'alice', 'tier': 'passages', 'from_level': 'private', 'to_level': 'shared', 'requested': 'shared'}])
-        self.assertEqual([a['disposition'] for a in self.audit('source_sharing')], ['shared>private', 'private>shared'])
-        self.assertLayers(self.bob, {source})
-        self.assertLayers(self.dave, {source})
+    # Items follow their workspace -----------------------------------------------------
 
     def test_shared_items_follow_the_current_access_list(self):
-        source = self.ingest(sharing='private')
+        source = self.ingest(sharing='organization')
         self.drain()
-        self.assertEqual(self.found(self.bob), set())
-        preview, applied = self.apply('change_sharing', self.alice, {'source_ids': [source], 'sharing': 'shared'})
-        self.assertEqual((preview['raises'], applied['shared_after']), (1, 1))
+        self.assertEqual(self.found(self.bob), {source})
         self.assertLayers(self.bob, {source})
         self.assertLayers(self.dave, {source})
         # Removing the organization entry narrows every item of the workspace at once.
@@ -266,129 +232,28 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
         self.assertLayers(self.bob, set())
         self.assertLayers(self.alice, {source, later})
 
-    def test_raising_needs_share_and_the_operator_can_restrict_it_tenant_wide(self):
-        source = self.ingest(sharing='private')
-        lower_only = self.store.authenticate(self.store.enroll('acme', 'alice', 'a-withdraw', ['read', 'withdraw']))
-        refused = self.store.change_sharing(lower_only, {'source_ids': [source], 'sharing': 'shared'})
-        self.assertEqual((refused['status'], refused['reason'], refused['confirm_token']),
-                         ('refused', 'sharing_needs_the_share_action', None))
-        with self.store.open() as state, state.db:
-            state.db.execute("UPDATE enterprise_organizations SET owner_sharing='lower_only' WHERE id='acme'")
-        refused = self.store.change_sharing(self.alice, {'source_ids': [source], 'sharing': 'shared'})
-        self.assertEqual(refused['reason'], 'operator_restricts_owner_sharing_to_lowering')
-        refused = self.store.grant(self.alice, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                                'grantee': 'dave'})
-        self.assertEqual(refused['status'], 'refused')
-        shared = self.ingest(index=1, sharing='organization', session='s2')
-        _, applied = self.apply('change_sharing', lower_only, {'source_ids': [shared], 'sharing': 'private'})
-        self.assertEqual(applied['changed'], 1, 'making private stays available')
+    # No per-item sharing ---------------------------------------------------------------
 
-    def test_origin_ceiling_caps_a_raise_and_a_grant(self):
-        """A source whose origin is private stays private, even for its owner's change."""
-        source = self.ingest(sharing='private', origin={'ceiling': 'private', 'kinds': ['outside_repo'],
-                                                        'reason': 'personal_content', 'projects': [],
-                                                        'inherited': False})
-        plain = self.ingest(index=1, sharing='private', session='s2')
-        self.drain()
-        preview, applied = self.apply('change_sharing', self.alice, {'source_ids': [source, plain],
-                                                                     'sharing': 'shared'})
-        self.assertEqual((preview['private_after'], preview['shared_after']), (1, 1))
-        self.assertIn('origin', preview['capped'])
-        with self.store.open() as state:
-            stored = {r['id']: r['private'] for r in state.db.execute(
-                'SELECT id,private FROM enterprise_sources WHERE id=ANY(?::text[])', ([source, plain],))}
-        self.assertEqual(stored, {source: 1, plain: 0})
-        item = next(i for i in self.store.mine(self.alice, {})['items'] if i['source_id'] == source)
-        self.assertIn('origin', item['sharing']['reasons'])
-        # No grant carries it past its origin, and there is no override.
-        grant = self.apply('grant', self.alice, {'scope': 'source', 'ids': [source, plain],
-                                                 'grantee_kind': 'principal', 'grantee': 'dave'})[0]
-        self.assertEqual(grant['kept_by_origin'], 1)
-        self.assertEqual(self.found(self.dave), {plain})
-        self.assertLayers(self.dave, {plain})
-        self.assertLayers(self.bob, {plain})
-
-    # Grants -----------------------------------------------------------------------------
-
-    def test_grants_name_readers_are_revocable_and_audited(self):
-        from agenthub.source_evidence import document_evidence
-        source = self.ingest(sharing='private')
-        self.drain()
-        self.assertEqual(self.found(self.bob), set())
-        preview, granted = self.apply('grant', self.alice, {'scope': 'source', 'ids': [source],
-                                                            'grantee_kind': 'principal', 'grantee': 'dave'})
-        self.assertEqual((preview['sources_covered'], granted['granted']), (1, 1))
-        # The source is private: the share alone admits dave.
-        self.assertEqual(self.found(self.dave), {source})
-        self.assertEqual(self.found(self.dave, project='birch'), {source}, 'a share reaches across workspaces')
-        self.assertEqual(self.found(self.bob), set())
-        self.assertLayers(self.dave, {source})
-        self.assertLayers(self.bob, set())
-        card = next(iter(self.documents()))
-        with self.store.open() as state:
-            revision = state.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?',
-                                        (card,)).fetchone()[0]
-        self.assertTrue(document_evidence(self.store, self.dave, card, revision=revision)['sources'])
-        with self.assertRaises(Denied):
-            self.store.general_source(self.dave, source)
-        listing = self.store.grants(self.alice)
-        self.assertEqual([(g['grantee'], g['tiers']) for g in listing['issued']], [('dave', ['passages'])])
-        self.assertEqual([g['from'] for g in self.store.grants(self.dave)['received']], ['alice'])
-        with self.assertRaises(ValueError):
-            self.store.revoke(self.alice, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                           'grantee': 'dave'})
-        revoked = self.store.revoke(self.alice, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                                 'grantee': 'dave', 'confirm': True})
-        self.assertEqual(revoked['revoked'], 1)
-        self.assertEqual(self.found(self.dave), set())
-        self.assertLayers(self.dave, set())
-        self.assertEqual([a['disposition'] for a in self.audit('owner_grant')], ['granted', 'revoked'])
-        self.assertFalse(self.store.grants(self.alice)['issued'])
-        self.assertEqual(self.store.grants(self.alice, {'include_revoked': True})['issued'][0]['revoked_by'], 'alice')
-
-    def test_session_and_group_shares_cover_later_captures_and_members_only(self):
-        first = self.ingest(sharing='private', session='shared-session')
-        self.drain()
-        with self.assertRaisesRegex(ValueError, 'project_grantee_retired'):
-            self.store.grant(self.alice, {'scope': 'session', 'ids': ['shared-session'], 'project': 'maple',
-                                          'grantee_kind': 'project', 'grantee': 'birch'})
-        self.apply('grant', self.alice, {'scope': 'session', 'ids': ['shared-session'], 'project': 'maple',
-                                         'grantee_kind': 'group', 'grantee': 'birch-members', 'originals': True})
-        later = self.ingest(index=1, sharing='private', session='shared-session')
-        elsewhere = self.ingest(index=2, sharing='private', session='other-session')
-        self.drain()
-        # carol is in birch-members; bob is not; originals also need source_read.
-        self.assertEqual(self.found(self.carol), {first, later})
-        self.assertEqual(self.found(self.bob), set())
-        self.assertLayers(self.carol, {first, later})
-        self.assertLayers(self.bob, set())
-        self.assertEqual(self.store.general_source(self.carol, later)['source_id'], later)
-        with self.assertRaises(Denied):
-            self.store.general_source(self.carol, elsewhere)
-        reader = self.store.authenticate(self.store.enroll('acme', 'carol', 'c-read', ['read']))
-        with self.assertRaises(Denied):
-            self.store.general_source(reader, later)
-        # Leaving the group ends access.
-        self.store.set_membership('acme', 'birch', 'carol', False)
-        self.assertLayers(self.carol, set())
-
-    def test_operator_restriction_switches_off_owner_grants_but_not_policy_grants(self):
+    def test_per_item_sharing_is_gone_and_only_the_operator_originals_grant_remains(self):
         from agenthub import raw_access
         source = self.ingest(sharing='private')
-        other = self.ingest(index=1, sharing='private', session='s2')
         self.drain()
-        self.apply('grant', self.alice, {'scope': 'source', 'ids': [source], 'grantee_kind': 'principal',
-                                         'grantee': 'dave'})
+        for name in ('grant', 'revoke', 'grants', 'change_sharing'):
+            self.assertFalse(hasattr(self.store, name), name)
+        self.assertNotIn('grants', self.store.mine(self.alice, {})['items'][0])
+        # The operator-style command still grants the originals tier only: no passage, no search.
         operator = self.store.authenticate(self.store.enroll('acme', 'alice', 'a-policy', ['read', 'policy']))
-        self.apply('grant', operator, {'scope': 'source', 'ids': [other], 'grantee_kind': 'principal',
-                                       'grantee': 'dave'})
-        self.assertLayers(self.dave, {source, other})
-        with self.store.open() as state, state.db:
-            state.db.execute("UPDATE enterprise_organizations SET owner_sharing='lower_only' WHERE id='acme'")
-        self.assertLayers(self.dave, {other})
-        # The operator-style command keeps its originals-only semantics.
         raw_access.grant(self.store, operator, 'source', source, 'principal', 'carol')
         self.assertLayers(self.carol, set())
+        self.assertEqual(self.found(self.carol), set())
+        # The database refuses an active passage share or an owner-issued one (migration 055).
+        for passages, issued in ((1, 'policy'), (0, 'share')):
+            with self.assertRaises(Exception, msg=(passages, issued)):
+                with self.store.open() as state, state.db:
+                    state.db.execute('''INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,
+                        granted_by,created,passages,originals,issued_with) VALUES('acme','source',?,'principal','dave',
+                        'alice',0,?,1,?)''', (source, passages, issued))
+        self.assertLayers(self.dave, set())
 
     # Derived documents -------------------------------------------------------------------
 
@@ -410,15 +275,11 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
         self.assertLayers(self.dave, {shared}, 'derived')
         self.store.operator_workspace('remove-entry', 'maple', subject_kind='organization')
         self.assertLayers(self.dave, set(), 'derived', 'the access list applies at query time')
-        self.apply('change_sharing', self.alice, {'source_ids': [shared], 'sharing': 'private'})
+        self.store.set_membership('acme', 'maple', 'bob', False)
         self.assertLayers(self.bob, set(), 'derived')
         self.assertLayers(self.alice, {private, shared}, 'derived')
-        # A share of the passage never reaches a document derived from it.
-        self.apply('grant', self.alice, {'scope': 'source', 'ids': [private], 'grantee_kind': 'principal',
-                                         'grantee': 'dave'})
-        self.assertLayers(self.dave, set(), 'derived')
 
-    def test_parity_across_privacy_shares_and_derived_documents(self):
+    def test_parity_across_privacy_and_derived_documents(self):
         sources = [self.ingest(sharing='private', tag='p0'), self.ingest(index=1, sharing='team', tag='p1'),
                    self.ingest('a-birch', 'birch', index=2, sharing='organization', tag='p2'),
                    self.ingest('b-maple', ctx=self.bob, sharing='organization', tag='p3'),
@@ -426,10 +287,6 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
         self.drain()
         for source, owner in zip(sources, (self.alice,) * 3 + (self.bob, self.alice)):
             self.note(source, owner)
-        self.apply('grant', self.alice, {'scope': 'source', 'ids': [sources[0]], 'grantee_kind': 'principal',
-                                         'grantee': 'dave'})
-        self.apply('grant', self.alice, {'scope': 'session', 'ids': ['s9'], 'project': 'maple',
-                                         'grantee_kind': 'group', 'grantee': 'birch-members'})
         self.store.create_principal('acme', 'helper')
         self.store.set_delegation('acme', 'helper', 'carol', ['read'], ['maple'], True)
         helper = self.store.authenticate(self.store.enroll('acme', 'helper', 'helper-p', ['read'], acting_for='carol'))
@@ -445,15 +302,14 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
                     sizes[(ctx['principal'], representation)] = len(oracle)
             return sizes
         baseline = compare('baseline')
-        # A legacy `team` request in a workspace with an organization entry stays private (p1).
-        self.assertEqual((baseline[('dave', 'raw')], baseline[('carol', 'raw')]), (2, 3))
+        # A legacy `team` request in a workspace with an organization entry stays private (p1);
+        # private items (p0, p4) reach nobody else.
+        self.assertEqual((baseline[('dave', 'raw')], baseline[('carol', 'raw')]), (1, 2))
         self.store.quarantine_principal('dave', reason='synthetic review')
-        with self.store.open() as state, state.db:
-            state.db.execute("UPDATE enterprise_organizations SET owner_sharing='lower_only' WHERE id='acme'")
         self.store.operator_workspace('remove-entry', 'maple', subject_kind='organization')
         lowered = compare('lowered')
         self.assertEqual(lowered[('dave', 'raw')], 0)
-        self.assertLess(lowered[('carol', 'raw')], baseline[('carol', 'raw')])
+        self.assertEqual(lowered[('carol', 'raw')], baseline[('carol', 'raw')], 'carol is a writer in both')
 
     # Moderation ---------------------------------------------------------------------------
 
@@ -510,25 +366,28 @@ class OwnerToolTests(unittest.TestCase):
             return (responses or {}).get(path, {'dry_run': True, 'confirm_token': None})
         return MemoryTools('maple', SimpleNamespace(request=request)), calls
 
-    def test_destructive_and_sharing_tools_require_confirm(self):
+    def test_destructive_tools_require_confirm_and_sharing_tools_are_gone(self):
         from agenthub.mcp_tools import OWNER_TOOLS, enterprise_tools
         catalogue = {t['name']: t for t in enterprise_tools()}
-        for name in ('forget_memories', 'change_memory_sharing', 'share_memories', 'unshare_memories'):
-            self.assertIn('confirm', catalogue[name]['inputSchema']['required'], name)
+        self.assertIn('confirm', catalogue['forget_memories']['inputSchema']['required'])
         self.assertTrue(catalogue['forget_memories']['annotations']['destructiveHint'])
+        self.assertEqual(set(OWNER_TOOLS), {'list_my_memories', 'forget_memories'})
         self.assertTrue(set(OWNER_TOOLS) <= set(catalogue))
+        for name in ('change_memory_sharing', 'share_memories', 'unshare_memories', 'list_memory_shares',
+                     'use_workspace'):
+            self.assertNotIn(name, catalogue)
         tools, calls = self.tools()
         for args in ({'session': 'current'}, {'session': 'current', 'confirm': True},
                      {'session': 'current', 'confirm': 'not-a-token'}):
             with self.assertRaises(ValueError):
                 tools.call('forget_memories', args)
         with self.assertRaises(ValueError):
-            tools.call('unshare_memories', {'session': 'current', 'with_group': 'birch', 'confirm': False})
+            tools.call('share_memories', {'session': 'current', 'with_group': 'birch', 'confirm': False})
         self.assertEqual(calls, [])
         tools.call('forget_memories', {'session': 'current', 'confirm': False})
         self.assertEqual(calls[-1], ('/enterprise/v3/my-data/forget',
                                      {'session': 'current', 'project': 'maple', 'confirm': False}))
-        tools.call('share_memories', {'session': 'current', 'with_group': 'maple', 'confirm': 'a' * 32})
+        tools.call('forget_memories', {'session': 'current', 'confirm': 'a' * 32})
         self.assertEqual(calls[-1][1]['confirm'], 'a' * 32)
 
     def test_owner_tools_are_self_tools_and_never_captured(self):

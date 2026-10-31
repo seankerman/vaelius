@@ -1,4 +1,4 @@
-"""Owner self-service: find, delete, re-share and grant one's own content.
+"""Owner self-service: find and delete one's own content, and workspace moderation.
 
 Every operation acts only on sources the caller owns (`enterprise_sources.owner`,
 the represented person for delegated capture) in the caller's tenant, and needs
@@ -12,25 +12,16 @@ no operator:
   (`EnterpriseStore._expire_source_tx`): the same stores, the same deletion
   journal. A legal hold still wins: the source is hidden, preserved, and
   reported as held;
-* **change sharing** (`change_sharing`): make the caller's sources `private`
-  (owner only) or `shared` (the workspace audience). Making private needs
-  `withdraw` or `share` and applies on the next request, whatever the caller's
-  current role (ownership survives role changes). Clearing private is a widening:
-  it needs `share`, the `writer` role in the source's workspace, a credential
-  that is not delegated and an operator setting that allows owner sharing, and
-  it never applies to an origin-private source. Every change is recorded in
-  `enterprise_sharing_changes` and the audit log;
-* **grants** (`grant`, `revoke`, `grants`): explicit shares naming a principal or
-  a group that may read the passages (and, optionally, the originals) of a
-  source, a capture session or a connection. Granting needs `share` and the
-  `writer` role in each covered workspace (or the operator `policy` action);
-  revoking needs `share`, `withdraw` or `policy`;
 * **moderation** (`moderate`): a workspace admin withdraws (hides) other people's
   sources in that workspace. It needs the `admin` role there and a credential
   holding `manage` (or the older `moderate` action). It never deletes, never
   reads originals, and is audited.
 
-Bulk and widening operations are two-step: without `confirm` they return a
+There is no per-item sharing (removed with migration 055): an item is read by its
+workspace's audience, or only by its owner when it is personal memory. Owners
+cannot widen single items or share them with chosen people.
+
+Bulk operations are two-step: without `confirm` they return a
 preview with a `confirm_token` bound to the exact selection; the same request
 with `confirm` set to that token applies it. A selection that changed in between
 is previewed again instead of applied. Responses carry identifiers, counts and
@@ -44,7 +35,7 @@ import json
 import re
 import time
 
-from agenthub.workspace_access import ADMIN, WRITER, origin_ceiling, origin_projects
+from agenthub.workspace_access import ADMIN, origin_ceiling, origin_projects
 
 MAX_SELECTION = 200
 MAX_LIST = 200
@@ -258,10 +249,7 @@ class OwnerControlsMixin:
             # Filtering by privacy is applied after the reasons are computed; each
             # call scans a bounded number of rows and returns a cursor.
             batch = db.execute(f'''SELECT s.*,m.session,m.kind,left(coalesce(m.body,''),160) AS preview,
-                    {PURGED.format('s')} AS purged,{DEFERRED.format('s')} AS deferred,
-                    (SELECT count(*) FROM raw_source_grants g WHERE g.tenant=s.tenant AND g.granted_by=s.owner
-                        AND g.revoked IS NULL AND ((g.scope_kind='source' AND g.scope_id=s.id)
-                        OR (g.scope_kind='session' AND g.scope_id=m.session))) AS grants
+                    {PURGED.format('s')} AS purged,{DEFERRED.format('s')} AS deferred
                 FROM enterprise_sources s LEFT JOIN memories m ON m.id=s.id
                 WHERE {where} ORDER BY s.created DESC,s.id DESC LIMIT ?''',
                 (*args, 2000 if level else limit + 1)).fetchall()
@@ -304,8 +292,7 @@ class OwnerControlsMixin:
                 'sharing': {'private': bool(int(row.get('private') or 0)),
                             'effective': 'workspace' if state == 'active' and not reasons else 'private',
                             'reasons': reasons, 'requested': row['sharing_requested'],
-                            'carried': list(origin_projects(row))},
-                'grants': int(row.get('grants') or 0)}
+                            'carried': list(origin_projects(row))}}
         if state == 'active':
             item['preview'] = (row.get('preview') or '')[:120]
         if state == 'hidden_by_moderator':
@@ -389,317 +376,6 @@ class OwnerControlsMixin:
                 pass
         return {'operation': 'forget', 'dry_run': False, 'more': more, **counts,
                 'note': 'Held sources are hidden and preserved under a legal hold.' if counts['held'] else None}
-
-    # Change sharing -------------------------------------------------------------------
-
-    def change_sharing(self, ctx, value):
-        """Make the caller's selected sources private, or shared with their workspace.
-
-        Making private applies on the next request. Clearing private needs `share`,
-        the writer role in each source's workspace, a credential that is not
-        delegated and owner sharing allowed by the operator; origin-private sources
-        stay private.
-        """
-        from agenthub.enterprise import Denied
-        if not {'withdraw', 'share'} & set(ctx['actions']):
-            raise Denied()
-        value = dict(value or {})
-        confirm = value.pop('confirm', None)
-        requested = _privacy(value.pop('sharing', None), 'sharing')
-        value.pop('originals', None)  # legacy: originals are shared only by explicit grant
-        if set(value) - set(SELECTORS) or (confirm is not None and confirm is not False
-                                            and not isinstance(confirm, str)):
-            raise ValueError('invalid_request')
-        with self.open() as opened:
-            db = opened.db
-            if hasattr(self, 'current_identity'):
-                self.current_identity(db, ctx)
-            rows, more, resolved = self._select(db, ctx, value, include_inactive=False)
-            tenant = db.execute('SELECT owner_sharing FROM enterprise_organizations WHERE id=?',
-                                (ctx['tenant'],)).fetchone()
-            roles = self._roles(db, ctx)
-            plan = [self._sharing_plan(row, requested, roles) for row in rows]
-        raising = [p for p in plan if p['raises']]
-        refusal = None
-        if raising:
-            if 'share' not in ctx['actions']:
-                refusal = 'sharing_needs_the_share_action'
-            elif ctx.get('acting_for'):
-                refusal = 'delegated_credentials_cannot_share'
-            elif not tenant or tenant['owner_sharing'] != 'allowed':
-                refusal = 'operator_restricts_owner_sharing_to_lowering'
-            elif any(p['needs_writer'] for p in raising):
-                refusal = 'sharing_needs_the_writer_role'
-        parameters = {'sharing': requested, **{k: value[k] for k in sorted(value)}}
-        token = confirm_token(ctx, 'sharing', parameters, rows)
-        summary = self._sharing_summary(plan)
-        preview = {'operation': 'change_sharing', 'dry_run': True, 'requested': requested,
-                   'sources': len(rows), 'more': more, **summary,
-                   'confirm_token': token if rows and not refusal else None,
-                   'note': 'Making sources private applies on the next request. Shared sources are readable by '
-                           'everyone in their workspace\'s audience (and only by people who can also read every '
-                           'workspace they carry). Origin-private sources stay private.'}
-        if resolved is not None:
-            preview['sessions_matched'] = len(resolved)
-        if refusal:
-            preview.update(status='refused', reason=refusal)
-            return preview
-        if not confirm or not rows:
-            return preview
-        if confirm != token:
-            return dict(preview, status='selection_changed')
-        changed = 0
-        with self.delivery_lock(), self.open() as opened, opened.db:
-            db = opened.db
-            now = time.time()
-            if raising and any(self._workspace_role(db, ctx, p['workspace'])[0] < WRITER for p in raising):
-                raise Denied()
-            for item in plan:
-                current = db.execute('''SELECT tenant,owner,active,source_version,private
-                    FROM enterprise_sources WHERE id=? FOR UPDATE''', (item['id'],)).fetchone()
-                if (not current or current['tenant'] != ctx['tenant'] or current['owner'] != ctx['actor']
-                        or not current['active'] or current['source_version'] != item['version']):
-                    continue
-                if current['private'] == item['private']:
-                    continue
-                db.execute('''UPDATE enterprise_sources SET private=?,policy_version=policy_version+1
-                    WHERE id=?''', (item['private'], item['id']))
-                # Passages of this source: the not-private prefilter.
-                db.execute('''UPDATE enterprise_documents SET raw_shared=? WHERE representation='raw'
-                    AND id IN (SELECT document_id FROM enterprise_dependencies WHERE source_id=?)''',
-                    (1 - item['private'], item['id']))
-                before = 'private' if current['private'] else 'shared'
-                after = 'private' if item['private'] else 'shared'
-                db.execute('''INSERT INTO enterprise_sharing_changes
-                    (tenant,actor,source_id,tier,from_level,to_level,requested,capped_by,request_id,created)
-                    VALUES(?,?,?,'passages',?,?,?,?,?,?)''', (ctx['tenant'], ctx['actor'], item['id'], before, after,
-                                                         requested, ','.join(item['capped_by']),
-                                                         ctx.get('request_id'), now))
-                self._audit(db, ctx, 'source_sharing', before + '>' + after, item['id'])
-                changed += 1
-        return {'operation': 'change_sharing', 'dry_run': False, 'requested': requested,
-                'changed': changed, 'more': more, **summary}
-
-    @staticmethod
-    def _sharing_plan(row, requested, roles):
-        """What a change would store for one source."""
-        capped_by = []
-        private = 1 if requested == 'private' else 0
-        if not private and origin_ceiling(row) == 'private':
-            private = 1
-            capped_by.append('origin')
-        return {'id': row['id'], 'version': row['source_version'], 'private': private,
-                'workspace': row['external_project'], 'capped_by': capped_by,
-                'needs_writer': roles.get(row['external_project'], (0, 0))[0] < WRITER,
-                'raises': private < row['private'], 'lowers': private > row['private']}
-
-    @staticmethod
-    def _sharing_summary(plan):
-        capped = sum(1 for p in plan if p['capped_by'])
-        summary = {'raises': sum(1 for p in plan if p['raises']), 'lowers': sum(1 for p in plan if p['lowers']),
-                   'unchanged': sum(1 for p in plan if not p['raises'] and not p['lowers']),
-                   'private_after': sum(1 for p in plan if p['private']),
-                   'shared_after': sum(1 for p in plan if not p['private'])}
-        if capped:
-            summary['capped'] = (str(capped) + ' source(s) came from origin-private content and stay private.')
-        return summary
-
-    # Grants ---------------------------------------------------------------------------
-
-    def _grant_target(self, db, ctx, value):
-        scope = value.get('scope')
-        ids = value.get('ids')
-        if scope not in ('source', 'session', 'connection') or not isinstance(ids, list) \
-                or not 1 <= len(ids) <= (MAX_SELECTION if scope == 'source' else 1) \
-                or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in ids):
-            raise ValueError('invalid_grant_scope')
-        grantee_kind, grantee = value.get('grantee_kind'), value.get('grantee')
-        if grantee_kind == 'project':
-            raise ValueError('project_grantee_retired_use_group')
-        if grantee_kind not in ('principal', 'group') or not isinstance(grantee, str) \
-                or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', grantee):
-            raise ValueError('invalid_grantee')
-        if grantee_kind == 'group':
-            group = self._resolve_group(db, ctx['tenant'], grantee)
-            grantee = group['id'] if group else grantee
-        ids = sorted(set(ids))
-        if scope == 'session':
-            # 'current', a session handle, or a host conversation ID (one per connection).
-            ids = [c for c in self._session_candidates(db, ctx, ids[0], value.get('project'))
-                   if db.execute('''SELECT 1 FROM memories m JOIN enterprise_sources s ON s.id=m.id
-                       WHERE m.session=? AND s.tenant=? AND s.owner=? LIMIT 1''',
-                       (c, ctx['tenant'], ctx['actor'])).fetchone()]
-            if not ids:
-                raise ValueError('unknown_session')
-        return scope, ids, grantee_kind, grantee
-
-    def grant(self, ctx, value):
-        """Share the passages (and optionally originals) of the caller's source(s),
-        capture session or connection with a named principal or group. Preview first."""
-        from agenthub.enterprise import Denied
-        from agenthub.raw_access import _owned_scope, scope_sources, upsert_grant
-        if not {'share', 'policy'} & set(ctx['actions']):
-            raise Denied()
-        value = dict(value or {})
-        confirm = value.pop('confirm', None)
-        include_originals = value.pop('originals', False)
-        if type(include_originals) is not bool or set(value) - {'scope', 'ids', 'grantee_kind', 'grantee', 'project'} \
-                or (confirm is not None and confirm is not False and not isinstance(confirm, str)):
-            raise ValueError('invalid_request')
-        issued_with = 'share' if 'share' in ctx['actions'] else 'policy'
-        with self.open() as opened:
-            db = opened.db
-            if hasattr(self, 'current_identity'):
-                self.current_identity(db, ctx)
-            scope, ids, grantee_kind, grantee = self._grant_target(db, ctx, value)
-            refusal = None
-            if issued_with == 'share':
-                tenant = db.execute('SELECT owner_sharing FROM enterprise_organizations WHERE id=?',
-                                    (ctx['tenant'],)).fetchone()
-                if ctx.get('acting_for'):
-                    refusal = 'delegated_credentials_cannot_grant'
-                elif not tenant or tenant['owner_sharing'] != 'allowed':
-                    refusal = 'operator_restricts_owner_sharing_to_lowering'
-            if not all(_owned_scope(db, ctx, scope, ident) for ident in ids):
-                raise Denied()
-            if grantee_kind == 'principal':
-                known = db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1',
-                                   (ctx['tenant'], grantee)).fetchone()
-                if grantee == ctx['actor']:
-                    raise ValueError('cannot_grant_to_yourself')
-            else:
-                known = db.execute('SELECT 1 FROM groups WHERE tenant=? AND id=? AND active=1',
-                                   (ctx['tenant'], grantee)).fetchone()
-            if not known:
-                raise ValueError('unknown_grantee')
-            covered = []
-            for ident in ids:
-                covered += scope_sources(db, ctx['tenant'], ctx['actor'], scope, ident, limit=5000)
-            if issued_with == 'share' and not refusal:
-                # Sharing is a widening: the writer role in every covered workspace.
-                roles = self._roles(db, ctx)
-                workspaces = {row[0] for row in db.execute(
-                    'SELECT DISTINCT external_project FROM enterprise_sources WHERE id=ANY(?::text[])',
-                    (covered,))} if covered else {value.get('project')} - {None}
-                if scope == 'connection':
-                    workspaces |= {row[0] for row in db.execute('SELECT project FROM backend_connections WHERE id=ANY(?::text[])',
-                                                                (ids,))}
-                if any(roles.get(name, (0, 0))[0] < WRITER for name in workspaces):
-                    refusal = 'sharing_needs_the_writer_role'
-            origins = self._grant_origins(db, ctx, covered, grantee_kind, grantee)
-            rows = [{'id': i, 'source_version': 0} for i in ids]
-        parameters = {'scope': scope, 'grantee_kind': grantee_kind, 'grantee': grantee, 'originals': include_originals}
-        token = confirm_token(ctx, 'grant', parameters, rows)
-        preview = {'operation': 'grant', 'dry_run': True, 'scope': scope, 'scopes': len(ids),
-                   'grantee_kind': grantee_kind, 'grantee': grantee,
-                   'tiers': ['passages'] + (['originals'] if include_originals else []),
-                   'sources_covered': len(covered), **origins,
-                   'confirm_token': None if refusal else token,
-                   'note': ('A share lets the named reader read these passages' +
-                            (' and originals' if include_originals else '') + ' even when they are private or '
-                            'the reader is outside the workspace. It never carries a source beyond its origin: '
-                            'origin-private sources stay with you, and a reader must also be able to read every '
-                            'workspace a source carries. Originals also need the reader\'s source_read action. '
-                            'Session and connection shares cover later captures too. Revoke at any time.')}
-        if refusal:
-            return dict(preview, status='refused', reason=refusal)
-        if confirm != token:
-            return preview if not confirm else dict(preview, status='selection_changed')
-        with self.delivery_lock(), self.open() as opened, opened.db:
-            db = opened.db
-            for ident in ids:
-                if not _owned_scope(db, ctx, scope, ident):
-                    raise Denied()
-                upsert_grant(self, db, ctx, scope, ident, grantee_kind, grantee, passages=True,
-                             originals=include_originals, issued_with=issued_with)
-                refresh_grant_flags(db, scope=(ctx['tenant'], ctx['actor'], scope, ident))
-                self._audit(db, ctx, 'owner_grant', 'granted', json.dumps(
-                    [scope, ident, grantee_kind, grantee, 'passages+originals' if include_originals else 'passages']))
-        return dict(preview, dry_run=False, confirm_token=None, granted=len(ids))
-
-    def _grant_origins(self, db, ctx, covered, grantee_kind, grantee):
-        """How many covered sources the origin keeps from this grantee (reported, enforced at query time)."""
-        private = limited = 0
-        for ident in covered[:5000]:
-            source = db.execute('SELECT * FROM enterprise_sources WHERE id=?', (ident,)).fetchone()
-            if not source:
-                continue
-            source = dict(source)
-            if origin_ceiling(source) == 'private':
-                private += 1
-            elif origin_projects(source) or origin_ceiling(source) == 'team':
-                if grantee_kind == 'group':
-                    limited += 1
-                elif not self._origin_admits(db, {'tenant': ctx['tenant'], 'actor': grantee,
-                                                  'delegated_projects': None}, source, via_share=True):
-                    private += 1
-        result = {'kept_by_origin': private}
-        if limited:
-            result['limited_by_origin'] = limited
-        if private or limited:
-            result['origin'] = ('Some covered sources came from content restricted by its origin (for example '
-                                'recalled from a private memory or from another workspace). The share does not '
-                                'reach them' + (' for readers who cannot read every workspace they carry'
-                                                if limited else '') + '.')
-        return result
-
-    def revoke(self, ctx, value):
-        """Revoke grants the caller issued. Needs `confirm: true`."""
-        from agenthub.enterprise import Denied
-        if not {'share', 'withdraw', 'policy'} & set(ctx['actions']):
-            raise Denied()
-        value = dict(value or {})
-        if value.pop('confirm', None) is not True:
-            raise ValueError('confirm_required')
-        if set(value) - {'scope', 'ids', 'grantee_kind', 'grantee', 'project'}:
-            raise ValueError('invalid_request')
-        revoked = 0
-        with self.delivery_lock(), self.open() as opened, opened.db:
-            db = opened.db
-            if hasattr(self, 'current_identity'):
-                self.current_identity(db, ctx)
-            scope, ids, grantee_kind, grantee = self._grant_target(db, ctx, value)
-            for ident in ids:
-                changed = db.execute('''UPDATE raw_source_grants SET revoked=?,revoked_by=? WHERE tenant=?
-                    AND scope_kind=? AND scope_id=? AND grantee_kind=? AND grantee=? AND granted_by=?
-                    AND revoked IS NULL''', (time.time(), ctx['actor'], ctx['tenant'], scope, ident,
-                                             grantee_kind, grantee, ctx['actor'])).rowcount
-                if changed:
-                    refresh_grant_flags(db, scope=(ctx['tenant'], ctx['actor'], scope, ident))
-                revoked += changed
-                self._audit(db, ctx, 'owner_grant', 'revoked' if changed else 'absent',
-                            json.dumps([scope, ident, grantee_kind, grantee]))
-        return {'operation': 'revoke', 'revoked': revoked, 'scope': scope, 'grantee_kind': grantee_kind,
-                'grantee': grantee}
-
-    def grants(self, ctx, value=None):
-        """Grants the caller issued, and grants that name the caller or a project of theirs."""
-        self._need(ctx, 'read')
-        value = dict(value or {})
-        if set(value) - {'include_revoked'} or type(value.get('include_revoked', False)) is not bool:
-            raise ValueError('invalid_request')
-        revoked = '' if value.get('include_revoked') else ' AND revoked IS NULL'
-        with self.open() as opened:
-            db = opened.db
-            if hasattr(self, 'current_identity'):
-                self.current_identity(db, ctx)
-            issued = db.execute('''SELECT scope_kind,scope_id,grantee_kind,grantee,passages,originals,issued_with,
-                    created,revoked,revoked_by FROM raw_source_grants WHERE tenant=? AND granted_by=?''' + revoked +
-                ' ORDER BY created DESC LIMIT 500', (ctx['tenant'], ctx['actor'])).fetchall()
-            received = db.execute('''SELECT g.granted_by,g.scope_kind,g.grantee_kind,g.grantee,g.passages,g.originals,
-                    g.created FROM raw_source_grants g WHERE g.tenant=? AND g.revoked IS NULL
-                AND ((g.grantee_kind='principal' AND g.grantee=?) OR (g.grantee_kind='group' AND g.grantee IN
-                    (SELECT group_id FROM group_closure WHERE tenant=? AND principal=?)))
-                ORDER BY g.created DESC LIMIT 500''', (ctx['tenant'], ctx['actor'], ctx['tenant'], ctx['actor'])).fetchall()
-        def tiers(row):
-            return [name for name in ('passages', 'originals') if row[name]]
-        return {'issued': [{'scope': r['scope_kind'], 'id': r['scope_id'], 'grantee_kind': r['grantee_kind'],
-                            'grantee': r['grantee'], 'tiers': tiers(r), 'issued_with': r['issued_with'],
-                            'granted_at': _iso(r['created']), 'active': r['revoked'] is None,
-                            **({'revoked_at': _iso(r['revoked']), 'revoked_by': r['revoked_by']}
-                               if r['revoked'] is not None else {})} for r in issued],
-                'received': [{'from': r['granted_by'], 'scope': r['scope_kind'], 'via': r['grantee_kind'],
-                              'tiers': tiers(r), 'granted_at': _iso(r['created'])} for r in received]}
 
     # Moderation ----------------------------------------------------------------------
 

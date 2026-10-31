@@ -225,21 +225,14 @@ def validate_response(path,value):
         if (value.get('view') not in ('sources','sessions') or not isinstance(listed,list) or len(listed)>200
                 or type(value.get('more')) is not bool or not all(isinstance(item,dict) for item in listed)):
             raise ValueError('invalid_my_data_response')
-    elif route in {'my-data/forget','my-data/sharing','my-data/grant','moderation/withdraw'}:
+    elif route in {'my-data/forget','moderation/withdraw'}:
         # A preview carries dry_run=True and a confirm_token (null when nothing applies).
-        if (type(value.get('dry_run')) is not bool or value.get('operation') not in
-                ('forget','change_sharing','grant','moderate')
+        if (type(value.get('dry_run')) is not bool or value.get('operation') not in ('forget','moderate')
                 or (value['dry_run'] and 'confirm_token' not in value)):
             raise ValueError('invalid_owner_operation_response')
         token=value.get('confirm_token')
         if token is not None and (not isinstance(token,str) or len(token)!=32):
             raise ValueError('invalid_owner_operation_response')
-    elif route=='my-data/revoke':
-        if value.get('operation')!='revoke' or type(value.get('revoked')) is not int:
-            raise ValueError('invalid_revoke_response')
-    elif route=='my-data/grants':
-        if set(value)!={'issued','received'} or not all(isinstance(value[k],list) for k in value):
-            raise ValueError('invalid_grants_response')
     elif route=='feedback':
         if (set(value)!={'status','id','classification','independently_verified'} or value['status']!='recorded' or value['classification']!='agent_self_report' or value['independently_verified'] is not False):raise ValueError('invalid_feedback_response')
     elif route=='preferences':

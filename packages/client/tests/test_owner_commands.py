@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
 TOKEN = 'a' * 32
@@ -70,29 +71,17 @@ class OwnerCommandTests(unittest.TestCase):
             calls, _ = self.run_cli('forget', '--session', 'current')
         self.assertEqual(calls[0][1]['project'], 'demo')
 
-    def test_sharing_with_a_selection_changes_sources_not_the_personal_setting(self):
-        # The access model takes `shared|private`; legacy `team`/`organization`
-        # are kept as aliases that map to `shared`.
-        calls, _ = self.run_cli('sharing', '--set', 'shared', '--source', 's-1', '--yes')
-        self.assertEqual([path for path, _ in calls], ['/enterprise/v3/my-data/sharing'] * 2)
-        self.assertEqual(calls[0][1], {'source_ids': ['s-1'], 'sharing': 'shared', 'confirm': False})
-        calls, _ = self.run_cli('sharing', '--set', 'organization', '--source', 's-1', '--yes')
-        self.assertEqual(calls[0][1], {'source_ids': ['s-1'], 'sharing': 'shared', 'confirm': False})
-
-    def test_share_unshare_and_mine(self):
-        # Grantee kinds are now `principal` or `group`; `--with-project` is gone.
-        calls, _ = self.run_cli('share', '--session', 'abc', '--with-group', 'maple-team', '--originals')
-        self.assertEqual(calls, [('/enterprise/v3/my-data/grant', {'scope': 'session', 'ids': ['abc'],
-            'grantee_kind': 'group', 'grantee': 'maple-team', 'originals': True, 'confirm': False})])
-        calls, output = self.run_cli('unshare', '--source', 's-1', '--with-principal', 'bob')
-        self.assertEqual(calls, [('/enterprise/v3/my-data/revoke', {'scope': 'source', 'ids': ['s-1'],
-            'grantee_kind': 'principal', 'grantee': 'bob', 'confirm': True})])
-        calls, _ = self.run_cli('share', '--list')
-        self.assertEqual(calls, [('/enterprise/v3/my-data/grants', {})])
+    def test_per_item_sharing_and_session_use_are_gone(self):
+        # There is no per-item sharing (migration 055) and no explicit narrowing.
+        for argv in (('share', '--session', 'abc', '--with-group', 'maple-team'),
+                     ('unshare', '--source', 's-1', '--with-principal', 'bob'), ('share', '--list'),
+                     ('sharing', '--set', 'shared', '--source', 's-1', '--yes'),
+                     ('session', 'use', 'birch'), ('use', 'private')):
+            with self.assertRaises(SystemExit, msg=argv):
+                with mock.patch('sys.stderr'):
+                    self.run_cli(*argv)
         calls, _ = self.run_cli('mine', '--sessions', '--sharing', 'shared')
         self.assertEqual(calls[0][1], {'limit': 50, 'view': 'sessions', 'state': 'active', 'sharing': 'shared'})
-        with self.assertRaises(SystemExit):
-            self.run_cli('share', '--session', 'abc')
 
     def test_owner_responses_are_validated_at_the_transport_boundary(self):
         from agentclient.cloud_contract import validate_response
@@ -106,10 +95,6 @@ class OwnerCommandTests(unittest.TestCase):
         self.assertEqual(validate_response('/enterprise/v3/my-data', listing), listing)
         with self.assertRaises(ValueError):
             validate_response('/enterprise/v3/my-data', dict(listing, items='none'))
-        with self.assertRaises(ValueError):
-            validate_response('/enterprise/v3/my-data/grants', {'issued': []})
-        with self.assertRaises(ValueError):
-            validate_response('/enterprise/v3/my-data/revoke', {'operation': 'revoke', 'revoked': 'all'})
 
 
 if __name__ == '__main__':

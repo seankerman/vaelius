@@ -21,7 +21,7 @@ def _contributions_default(level):
 
 
 def _selection_sharing(level):
-    """Translate a CLI sharing level to the owner-selection wire value."""
+    """Translate a CLI sharing level to the `mine --sharing` filter value."""
     return 'private' if level == 'private' else 'shared'
 
 
@@ -64,7 +64,7 @@ def _add_workspace_commands(sub):
 
 def _add_remember_commands(sub):
     """`vaelius-client remember add|list|remove` and `import-memory` (agentclient.remembered)."""
-    remember = sub.add_parser('remember', help='keep something in Vaelius memory, private to you until you share it')
+    remember = sub.add_parser('remember', help='keep something in your personal Vaelius memory, private to you')
     inner = remember.add_subparsers(dest='remember_command', required=True)
     add = inner.add_parser('add', help='remember text (an argument, or stdin with -); up to 8 KB')
     add.add_argument('text', help='the text, or - to read it from stdin')
@@ -195,13 +195,10 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     scope=sub.add_parser('scope-status',help='show the workspace, capture mode and sharing request for a folder')
     scope.add_argument('--cwd',default=os.getcwd())
     sharing=sub.add_parser('sharing',help='show or change your own sharing setting (contributions_default: shared or '
-        'private), or with a selection, the stored level of those sources of yours')
+        'private); there is no per-item sharing')
     sharing.add_argument('--set',dest='level',choices=SHARING_LEVELS,
         help='shared: items you capture inherit the workspace audience; private: owner only. '
              '(team/organization are legacy aliases of shared)')
-    sharing.add_argument('--originals',choices=SHARING_LEVELS,
-        help='with a selection: level for the unredacted originals (never above --set); legacy, originals '
-             'are now shared only via `share --originals`')
     sharing.add_argument('--apply-to-existing',action='store_true',
         help='with --set private: also mark every existing item of yours private (preview, then confirm)')
     mine=sub.add_parser('mine',help='list what Vaelius holds that you created, with each source\'s current sharing and why')
@@ -210,23 +207,16 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     mine.add_argument('--all',action='store_true',help='include withdrawn and deleted sources')
     mine.add_argument('--limit',type=int,default=50);mine.add_argument('--cursor')
     forget=sub.add_parser('forget',help='delete your own content: a session, sources, a project or a date range (preview first)')
-    share=sub.add_parser('share',help='share a session or sources of yours with one person or one group')
-    share.add_argument('--originals',action='store_true',help='also the unredacted originals (reader needs source_read)')
-    share.add_argument('--list',action='store_true',help='list the shares you made and the ones made with you')
-    unshare=sub.add_parser('unshare',help='revoke a share you made')
-    for command in (mine,forget,sharing,share,unshare):
+    for command in (mine,forget):
         command.add_argument('--project',help='project (default for --session current: this folder\'s project)')
         command.add_argument('--session',help='"current" (the latest session in the project), a session handle '
             'from `mine --sessions`, or a host conversation ID')
         command.add_argument('--source',dest='sources',action='append',help='a source ID (repeatable)')
-        if command in (mine,forget,sharing):
-            command.add_argument('--since',help='captured on or after (UTC date or ISO time)')
-            command.add_argument('--until',help='captured before (UTC date or ISO time)')
-        if command in (share,unshare):
-            command.add_argument('--with-principal');command.add_argument('--with-group')
-        if command in (forget,sharing,share):
-            command.add_argument('--confirm',metavar='TOKEN',help='apply the preview with this confirm_token')
-            command.add_argument('--yes',action='store_true',help='preview and apply in one step')
+        command.add_argument('--since',help='captured on or after (UTC date or ISO time)')
+        command.add_argument('--until',help='captured before (UTC date or ISO time)')
+    for command in (forget,sharing):
+        command.add_argument('--confirm',metavar='TOKEN',help='apply the preview with this confirm_token')
+        command.add_argument('--yes',action='store_true',help='preview and apply in one step')
     notice=sub.add_parser('notice',help='show what is captured for a workspace, who can read it, and how to stop')
     notice.add_argument('--project',required=True);notice.add_argument('--acknowledge',action='store_true')
     _add_remember_commands(sub)
@@ -317,8 +307,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
                 'scope_enrollments':enrollments(home),
                 'note':'`workspace` chooses the access-model workspace; the service decides who reads items. '
                        'Legacy `sharing`/`originals` are requests, capped by the access list and your own setting.'}
-        elif args.command in {'mine','forget','share','unshare'} or (args.command=='sharing' and (
-                args.sources or args.session or args.project or args.since or args.until)):
+        elif args.command in {'mine','forget'}:
             result=_owner_command(config,args)
         elif args.command=='sharing':
             result=_sharing_command(config,home,args)
@@ -337,7 +326,7 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             result=_workspace_command(config,args)
         elif args.command=='group':
             result=_group_command(config,args)
-        elif args.command in ('session','use'):
+        elif args.command=='session':
             result=_session_command(home,config,args)
         elif args.command=='install' and (args.claude_code or args.guardrails or args.guardrails_only):
             from agentclient.claude_code import install
@@ -414,14 +403,9 @@ def _sharing_command(config, home, args):
 
 
 def _add_session_commands(sub):
-    """`vaelius-client session use|status` (and the `use` shorthand): fixed session labels."""
-    session = sub.add_parser('session', help='show or narrow the fixed label of a running agent session')
+    """`vaelius-client session status|read-only`: a running agent session's fixed label."""
+    session = sub.add_parser('session', help='show the fixed label of a running agent session, or make it read-only')
     inner = session.add_subparsers(dest='session_command', required=True)
-    for parser in (inner.add_parser('use', help='narrow the session to also use a workspace (or make it private); '
-                                                 'capture is then limited to people who can read both'),
-                   sub.add_parser('use', help='shorthand for `session use`')):
-        parser.add_argument('target', help='a workspace name, a folder of one, a linked remote, or "private"')
-        parser.add_argument('--session', help='host session ID (default: the session active in this folder)')
     status = inner.add_parser('status', help='the label of the session active in this folder')
     status.add_argument('--session', help='host session ID (default: the session active in this folder)')
     readonly = inner.add_parser('read-only', help='save nothing more from this chat (one-way until /clear or a '
@@ -433,19 +417,16 @@ def _session_command(home, config, args):
     from urllib.error import HTTPError
     from agentclient import session_label
     from agentclient.scope_file import scope_names
-    command = 'use' if args.command == 'use' else args.session_command
+    command = args.session_command
     try:
-        if command == 'use':
-            return session_label.use(home, config, args.target, session=args.session)
         if command == 'read-only':
             return session_label.read_only(home, config, session=args.session)
         _, entry = session_label.resolve_session(home, os.getcwd(), args.session, scope_names(config))
     except session_label.UseRefused as refused:
-        raise SystemExit(json.dumps({'error': 'session_use_refused', 'reason': str(refused)})) from None
+        raise SystemExit(json.dumps({'error': 'session_refused', 'reason': str(refused)})) from None
     except HTTPError as error:
         if error.code not in (400, 403, 404):raise
-        raise SystemExit(json.dumps({'error': 'session_use_refused', 'reason': 'the service refused: you cannot '
-                                     'read that workspace, or it does not exist'})) from None
+        raise SystemExit(json.dumps({'error': 'session_refused', 'reason': 'the service refused the request'})) from None
     descriptor = entry.get('descriptor') or {}
     return {'session': entry.get('short'), 'label': session_label.display(entry),
             'narrowed': entry.get('narrowed', []), 'private': bool(entry.get('private')),
@@ -556,7 +537,7 @@ def _selection(config,args):
 
 
 def _owner_command(config,args):
-    """Owner self-service: mine, forget, sharing (with a selection), share and unshare."""
+    """Owner self-service: mine and forget. There is no per-item sharing."""
     from agentclient.transport import enterprise_client
     client=enterprise_client(config,timeout=30)
     if args.command=='mine':
@@ -565,30 +546,10 @@ def _owner_command(config,args):
         if args.sharing:request['sharing']=_selection_sharing(args.sharing)
         if args.cursor:request['cursor']=args.cursor
         return client.request('/enterprise/v3/my-data',request)
-    if args.command=='share' and args.list:
-        return client.request('/enterprise/v3/my-data/grants',{})
-    if args.command in {'share','unshare'}:
-        if bool(args.session)==bool(args.sources) or bool(args.with_principal)==bool(args.with_group):
-            raise SystemExit(json.dumps({'error':'one of --session/--source and one of --with-principal/--with-group'}))
-        request={'scope':'session' if args.session else 'source',
-                 'ids':[args.session] if args.session else args.sources,
-                 'grantee_kind':'principal' if args.with_principal else 'group',
-                 'grantee':args.with_principal or args.with_group}
-        if args.project or args.session=='current':
-            request['project']=_selection(config,args).get('project')
-        if args.command=='unshare':
-            return client.request('/enterprise/v3/my-data/revoke',dict(request,confirm=True))
-        path='/enterprise/v3/my-data/grant';request['originals']=args.originals
-    else:
-        request=_selection(config,args)
-        if not request:raise SystemExit(json.dumps({'error':'selection_required','reason':'name --session, --source, '
-            '--project, --since or --until'}))
-        if args.command=='forget':path='/enterprise/v3/my-data/forget'
-        else:
-            if not args.level:raise SystemExit(json.dumps({'error':'--set LEVEL required with a selection'}))
-            path='/enterprise/v3/my-data/sharing'
-            request['sharing']=_selection_sharing(args.level)
-            if args.originals:request['originals']=_selection_sharing(args.originals)
+    request=_selection(config,args)
+    if not request:raise SystemExit(json.dumps({'error':'selection_required','reason':'name --session, --source, '
+        '--project, --since or --until'}))
+    path='/enterprise/v3/my-data/forget'
     if args.confirm:return client.request(path,dict(request,confirm=args.confirm))
     preview=client.request(path,dict(request,confirm=False))
     if not args.yes or not preview.get('confirm_token'):

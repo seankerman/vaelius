@@ -7,24 +7,22 @@ read-only, off or outside every workspace get no label and the read rule does no
 apply to them.
 
 The label is fixed. A `cd` does not change it; compaction keeps it; `/clear` or a
-new conversation starts a new one. The person can narrow it explicitly with
-`vaelius-client session use <workspace|path|remote|private>` or by asking the agent
-to call the Vaelius MCP tool `use_workspace`: the audience becomes the intersection,
-later captures carry the narrowed workspaces, and the status line says so.
+new conversation starts a new one. There is no explicit narrowing any more (`session
+use` and the MCP tool `use_workspace` were removed); a `narrowed` list recorded by an
+older client is still honored, since it only narrows.
 
 The PreToolUse guardrail hook (`agentclient.claude_guardrails.check`) enforces the
 read rule from local state only, never a network call:
 
-* the session's own workspace and the ones it is narrowed to: allow;
+* the session's own workspace: allow;
 * a scoped folder of a workspace listed in the descriptor's
   `contains_session_audience` (in a private session: `readable`): allow, and the
   PostToolUse origin label carries that workspace;
 * a scoped folder of any other workspace (narrower, unreadable, unknown, or a scope
   file that does not parse): deny with one plain line, never `ask`;
 * an existing path outside every scoped folder (a repository or folder without a
-  scope file, the rest of the home folder, other volumes): deny with one line naming
-  the two ways forward (add a scope file, or `vaelius-client session use private`),
-  unless the session is already private;
+  scope file, the rest of the home folder, other volumes): deny with one line (add a
+  scope file), unless the session is already private;
 * everything else falls through to the guardrail profile (credentials and personal
   folders), and tooling, caches, system paths, temp and Claude Code configuration stay
   readable. The #32 taint is the backstop only for reads the hook cannot see.
@@ -37,7 +35,7 @@ at SessionStart, after `refresh_after` (15 minutes) at the next prompt, and when
 search reports a newer epoch. It is cached in the client profile, never in the
 checked-in scope file: `workspaces/<id>.json` (the workspace's own descriptor) and,
 per session, in `session-labels.json` (0600). After `expires_at` (24 hours) without
-a refresh the hook allows only the session's own and narrowed workspaces.
+a refresh the hook allows only the session's own workspace.
 """
 import fcntl
 import hashlib
@@ -65,7 +63,7 @@ READ_ONLY_STATE = 'read-only-sessions.json'
 READ_ONLY_DAYS = 400
 MCP_CONNECTIONS = 'mcp-connections'
 MCP_CONNECTION_KEEP = 7
-ACTIVE_SECONDS = 12 * 3600  # `use` without --session picks a session active this recently
+ACTIVE_SECONDS = 12 * 3600  # `session status` without --session picks a session active this recently
 
 
 class UseRefused(ValueError):
@@ -338,11 +336,10 @@ def decide(entry, info, path, *, private=False, now=None, home=None):
     if summary and who(summary):
         name = summary.get('name') or workspace
         return ('vaelius: denied — ' + where + ': ' + name + " isn't visible to " + who(summary) + " (in this "
-                "session's audience, " + label + "). The person can run 'vaelius-client session use " + name +
-                "' for this session, or ask " + name + "'s admin to add them.")
+                "session's audience, " + label + "). Start a session in " + name + ", or ask " + name +
+                "'s admin to add them.")
     return ('vaelius: denied — ' + where + ' (workspace "' + workspace + '") is visible to fewer people than this '
-            'session (' + label + '). Start a session there, or ask the person to run `vaelius-client session use '
-            + workspace + '`; capture is then limited to people in both.')
+            'session (' + label + '). Start a session there to work on it.')
 
 
 def unscoped_reason(path, home=None):
@@ -352,8 +349,8 @@ def unscoped_reason(path, home=None):
         shown = '~/' + str(Path(path).relative_to(home)) if Path(path) != Path(home) else '~'
     except ValueError:
         shown = str(path)
-    return ('vaelius: ' + shown + " isn't in a Vaelius folder (no .vaelius). Add one, or run "
-            "'vaelius-client session use private' to read it in a private session.")
+    return ('vaelius: ' + shown + " isn't in a Vaelius folder (no .vaelius), so this session does not read it. "
+            "Add a .vaelius naming its workspace, or start a session there.")
 
 
 # Why a narrower workspace is narrower ------------------------------------------------
@@ -420,8 +417,7 @@ def hidden_line(entry):
         line += '; also ' + _join([str(item['hidden_items']) + ' from ' + str(item.get('name') or item.get('id'))
                                    for item in others[:2]] + ([str(len(others) - 2) + ' more workspaces']
                                                               if len(others) > 2 else []))
-    target = name if not others else '<workspace>'
-    return line + "; 'vaelius-client session use " + target + "' to include them"
+    return line + '; sessions started there recall them'
 
 
 class _Recorder:
@@ -510,7 +506,7 @@ def hook_reason(home, event, *, now=None):
     return None
 
 
-# Explicit narrowing ----------------------------------------------------------------
+# Finding a running session ------------------------------------------------------------
 
 def resolve_session(home, cwd, session=None, names=('.vaelius',)):
     """(session key or id, entry): an explicit ID, the host's session variable, else the
@@ -525,74 +521,9 @@ def resolve_session(home, cwd, session=None, names=('.vaelius',)):
                 raise UseRefused('no labelled Vaelius session with that ID: ' + candidate[:8] + '...')
     found = labels.find(cwd, names)
     if not found:
-        raise UseRefused('no labelled Vaelius session started in this folder. `use` needs a session that started '
-                         'in a workspace folder with capture on; it is refused in an unscoped session.')
+        raise UseRefused('no labelled Vaelius session started in this folder (a session that started in a '
+                         'workspace folder with capture on)')
     return found
-
-
-def _target(config, target, cwd):
-    """A workspace name or id, a remote, or the workspace of an existing scoped folder."""
-    if target == 'private':
-        return target
-    candidate = os.path.expanduser(target)
-    if not os.path.isabs(candidate):
-        candidate = os.path.join(cwd, candidate)
-    if os.path.exists(candidate) and (os.sep in target or target.startswith(('.', '~')) or not NAME.fullmatch(target)):
-        from agentclient.origin import Context
-        info = Context(None, cwd, config).scope_of(candidate)
-        if info.get('category') not in ('scoped', 'project') or info.get('error') or not info.get('project'):
-            raise UseRefused('that folder belongs to no workspace (no valid scope file)')
-        return info['project']
-    return target
-
-
-def use(home, config, target, *, cwd=None, session=None):
-    """Narrow a labelled session: the server checks the person can read the target."""
-    from agentclient.transport import enterprise_client
-    from agentclient.scope_file import scope_names
-    cwd = cwd or os.getcwd()
-    key, entry = resolve_session(home, cwd, session, scope_names(config))
-    resolved = _target(config, target, cwd)
-    label = request_label(entry)
-    if resolved == 'private':
-        label['private'] = True
-    else:
-        label['narrowed'] = list(dict.fromkeys([*label['narrowed'], resolved]))
-    descriptor = enterprise_client(config, timeout=10).request('/enterprise/v3/workspaces/descriptor', label)
-    return apply_use(home, key, entry, descriptor, private=resolved == 'private', keyed=True)
-
-
-def apply_use(home, session, entry, descriptor, *, private=False, keyed=False):
-    """Record a server-checked narrowing for the session; capture follows it."""
-    from agentclient import origin
-    labels = SessionLabels(home)
-    narrowed = list((descriptor.get('session') or {}).get('narrowed') or [])
-    values = {'narrowed': narrowed, 'descriptor': descriptor}
-    if private:
-        values['private'] = True
-    updated = dict(entry, **values)
-    values['announce'] = status_line(updated)
-    def change(state):
-        key = session if keyed else _key(session)
-        current = state.get(key)
-        if not isinstance(current, dict):
-            return None
-        current.update(values, updated=time.time())
-        return dict(current)
-    result = labels._locked(change)
-    if result is None:
-        raise UseRefused('the session ended')
-    try:
-        # The MCP connection picks the narrower label up when it next connects.
-        record_mcp_label(home, None, result, key=session if keyed else _key(session))
-    except OSError:
-        pass
-    # Capture follows the narrowing: later events carry the narrowed workspaces, or are private.
-    label = (origin.Label('private', ('project',), 'explicit_private', 'use private') if private else
-             origin.Label(origin.OPEN, ('other_project',), 'other_project', ', '.join(narrowed), narrowed))
-    origin.SessionOrigins(home).apply(session, label, project=entry['workspace'], key=session if keyed else None)
-    return {'session': result.get('short'), 'label': display(result), 'narrowed': narrowed,
-            'private': bool(result.get('private')), 'status': values['announce']}
 
 
 def read_only_result(response):
@@ -617,37 +548,6 @@ def read_only_result(response):
                 walk(item, depth + 1)
     walk(response)
     return found[0]
-
-
-def use_result(response):
-    """The `vaelius_session_use` record in an MCP use_workspace result, or None."""
-    def walk(value, depth=0):
-        if depth > 6:
-            return None
-        if isinstance(value, str):
-            text = value.strip()
-            if text[:1] in '[{':
-                try:
-                    return walk(json.loads(text), depth + 1)
-                except ValueError:
-                    return None
-            return None
-        if isinstance(value, list):
-            for item in value[:20]:
-                found = walk(item, depth + 1)
-                if found:
-                    return found
-            return None
-        if isinstance(value, dict):
-            record = value.get('vaelius_session_use')
-            if isinstance(record, dict):
-                return record
-            for item in list(value.values())[:20]:
-                found = walk(item, depth + 1)
-                if found:
-                    return found
-        return None
-    return walk(response)
 
 
 # The MCP connection's label ----------------------------------------------------------

@@ -333,12 +333,12 @@ def _label_allowed(home, session):
 
 
 def _session_label(home, config, scope, event, notices):
-    """Establish, refresh or narrow this session's fixed label; returns the entry or None.
+    """Establish or refresh this session's fixed label; returns the entry or None.
 
     SessionStart labels a session that starts in a workspace folder with capture on
     (never a read-only, off or unscoped one) and fetches its descriptor; a prompt
-    refreshes a descriptor past `refresh_after`; an MCP `use_workspace` result applies
-    the narrowing the service checked. Failures leave the hook's fail-safe rules."""
+    refreshes a descriptor past `refresh_after`; an MCP `read_only_session` result
+    makes the chat read-only. Failures leave the hook's fail-safe rules."""
     from agentclient import session_label
     kind=str(event.get('hook_event_name',''))
     session=str(event.get('session_id',''))
@@ -363,20 +363,10 @@ def _session_label(home, config, scope, event, notices):
                 # The person asked the agent to make this chat read-only: one-way.
                 session_label.apply_read_only(home,config,session,entry)
                 entry=labels.get(session) or entry
-            elif self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
-                record=session_label.use_result(event.get('tool_response'))
-                if record:
-                    label=session_label.request_label(entry)
-                    if record.get('private'):label['private']=True
-                    else:label['narrowed']=list(dict.fromkeys([*label['narrowed'],str(record.get('target'))]))
-                    from agentclient.transport import enterprise_client
-                    descriptor=enterprise_client(config,timeout=2).request('/enterprise/v3/workspaces/descriptor',label)
-                    session_label.apply_use(home,session,entry,descriptor,private=bool(record.get('private')))
-                    entry=labels.get(session) or entry
     except Exception:
         pass
     if kind in ('SessionStart','UserPromptSubmit'):
-        # A narrowing or role change is announced once; a session start always shows the label.
+        # A role change is announced once; a session start always shows the label.
         line=labels.take_announcement(session)
         if kind=='SessionStart':line=line or session_label.status_line(entry)
         if line:notices.append(line)
@@ -589,7 +579,7 @@ def _scope_warnings(home, scope):
                          'read, the current workspace first.')
         elif warning == WARN_ORIGINALS_IGNORED:
             lines.append('vaelius: `originals` in '+file_path+' is ignored and is no longer sent to the '
-                         "service; sharing an original is now an explicit `vaelius-client share --originals` grant.")
+                         'service; originals stay with their owner.')
         else:
             lines.append('vaelius: '+file_path+' carries a scope-file warning ('+warning+').')
     return '\n'.join(lines) if lines else None

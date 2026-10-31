@@ -11,9 +11,8 @@ workspace becomes.
 * **Always owner-private.** The service cannot see the author's computer, so it
   cannot evaluate scoped folders or origin labels. Every item is therefore stored
   private to its author: each event is sent without a sharing request, through a
-  per-author connection enrolled `private`. There are no sharing options. Owners
-  share afterwards, per session, with the ordinary owner tools
-  (`vaelius-client share --session ...`).
+  per-author connection enrolled `private`. There are no sharing options, and no
+  per-item sharing afterwards (migration 055): it stays the author's own memory.
 * **Mapped or skipped.** An author or workspace missing from the mapping file, an
   unknown or inactive principal, an unknown workspace, or an author without the
   writer role there is skipped and counted, never guessed.

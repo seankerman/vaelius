@@ -205,16 +205,15 @@ class HookDecisionTest(LabelFixture):
         self.assertIsNone(self.read(self.src / 'c/notes.md'), 'an organization workspace contains the session')
         reason = self.read(self.src / 'b/notes.md')
         self.assertEqual(reason, "vaelius: denied — ~/src/b: narrow-b isn't visible to carol, dave, contractors "
-                                 "(group) and 1 more (in this session's audience, team-a). The person can run "
-                                 "'vaelius-client session use narrow-b' for this session, or ask narrow-b's admin "
-                                 "to add them.")
+                                 "(group) and 1 more (in this session's audience, team-a). Start a session in "
+                                 "narrow-b, or ask narrow-b's admin to add them.")
         self.assertNotIn('\n', reason)
         self.assertIn('cannot read or which does not exist', self.read(self.src / 'ghost/notes.md'))
         self.assertIn('scope file Vaelius cannot read', self.read(self.src / 'bad/notes.md'))
         self.assertIn('personal folder', self.read(self.home_dir / 'Documents/plan.md'), 'unchanged')
         self.assertEqual(self.read(self.home_dir / 'dotfile'),
-                         "vaelius: ~/dotfile isn't in a Vaelius folder (no .vaelius). Add one, or run "
-                         "'vaelius-client session use private' to read it in a private session.",
+                         "vaelius: ~/dotfile isn't in a Vaelius folder (no .vaelius), so this session does not "
+                         "read it. Add a .vaelius naming its workspace, or start a session there.",
                          'unscoped: denied with one line, never ask')
         self.assertIn("~/src/plain/readme.md isn't in a Vaelius folder", self.read(self.src / 'plain/readme.md'),
                       'unscoped repository: denied')
@@ -294,7 +293,7 @@ class RecallNoteTest(LabelFixture):
         self.start()
         first = self.hook('UserPromptSubmit', prompt='first')
         line = ("vaelius: 12 memories from narrow-b hidden (not visible to carol, dave, contractors (group) and 1 "
-                "more); 'vaelius-client session use narrow-b' to include them")
+                "more); sessions started there recall them")
         self.assertIn(line, first.get('systemMessage', ''))
         self.assertNotIn('narrow-b', json.dumps(first.get('hookSpecificOutput', {})), 'never model-facing')
         second = self.hook('UserPromptSubmit', prompt='second')
@@ -311,70 +310,27 @@ class RecallNoteTest(LabelFixture):
                                              'missing_readers': {'count': 2, 'names': [], 'more': 2}}]
         self.assertEqual(session_label.hidden_line(entry),
                          "vaelius: 5 memories from d hidden (not visible to 2 people); also 1 from c; "
-                         "'vaelius-client session use <workspace>' to include them")
+                         "sessions started there recall them")
 
 
-class NarrowingTest(LabelFixture):
-    def setUp(self):
-        super().setUp()
+class NarrowingRemovedTest(LabelFixture):
+    """Explicit narrowing (`session use`, the MCP tool `use_workspace`) was removed."""
+
+    def test_there_is_no_use_and_a_use_workspace_result_changes_nothing(self):
         self.start()
-
-    def use(self, target, cwd=None, **extra):
-        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
-            return session_label.use(self.home, self.config, target, cwd=str(cwd or self.src / 'a'), **extra)
-
-    def test_use_narrows_persists_shows_and_resets_on_clear(self):
-        self.assertTrue(self.read(self.src / 'b/notes.md'))
-        result = self.use('narrow-b')
-        self.assertEqual(result['status'], 'vaelius: session uses team-a ∩ narrow-b — capture limited to people in both')
-        self.assertEqual(self.service.calls[-1][1]['narrowed'], ['narrow-b'], 'the service checks the target')
-        self.assertIsNone(self.read(self.src / 'b/notes.md'), 'B is now readable')
-        start = self.hook('UserPromptSubmit', prompt='go on')
-        self.assertIn('vaelius: session uses team-a ∩ narrow-b', start.get('systemMessage', ''), 'status line')
-        self.assertEqual(Outbox.events[-1]['origin_label']['projects'], ['narrow-b'], 'capture follows it')
-        self.hook('PostCompact', trigger='auto')
-        resumed = self.hook('SessionStart', source='compact')
-        self.assertEqual(self.label()['narrowed'], ['narrow-b'], 'compaction keeps it')
-        self.assertIn('team-a ∩ narrow-b', resumed.get('systemMessage', ''))
-        refreshed = [v for p, v in self.service.calls if p.endswith('descriptor')][-1]
-        self.assertEqual(refreshed['narrowed'], ['narrow-b'], 'the refresh asks for the narrowed label')
-        self.hook('SessionEnd', reason='clear')
-        self.assertIsNone(self.label())
-        self.start('s2')
-        self.assertEqual(self.label('s2')['narrowed'], [], 'a new session starts over')
-        self.assertTrue(self.read(self.src / 'b/notes.md', session='s2'))
-
-    def test_use_by_folder_and_private(self):
-        self.assertEqual(self.use(str(self.src / 'b'))['narrowed'], ['narrow-b'])
-        result = self.use('private')
-        self.assertTrue(result['private'])
-        self.assertIsNone(self.read(self.src / 'b/notes.md'))
-        self.hook('Stop', last_assistant_message='done')
-        self.assertEqual(Outbox.events[-1]['origin_label']['ceiling'], 'private')
-
-    def test_use_is_refused_without_a_label_or_without_access(self):
-        self.start('plain', self.src / 'plain')
-        with self.assertRaises(session_label.UseRefused):
-            self.use('narrow-b', cwd=self.src / 'plain')
-        with self.assertRaises(session_label.UseRefused):
-            self.use('narrow-b', session='unknown-session')
-        self.service.refuse.add('ghost')
-        from urllib.error import HTTPError
-        with self.assertRaises(HTTPError):
-            self.use('ghost')
-        self.assertEqual(self.label()['narrowed'], [])
-
-    def test_mcp_use_workspace_result_is_applied_by_the_hook(self):
+        for name in ('use', 'apply_use', 'use_result'):
+            self.assertFalse(hasattr(session_label, name), name)
         response = [{'type': 'text', 'text': json.dumps({'vaelius_session_use': {
             'target': 'narrow-b', 'private': False, 'workspace': 'team-a'}, 'status': 'x'})}]
         self.hook('PostToolUse', tool_name='mcp__vaelius__use_workspace', tool_input={'workspace': 'narrow-b'},
                   tool_response=response)
-        self.assertEqual(self.label()['narrowed'], ['narrow-b'])
-        self.assertIsNone(self.read(self.src / 'b/notes.md'))
-        # Another server's result never narrows.
-        self.hook('PostToolUse', tool_name='mcp__other__use_workspace', tool_input={'workspace': 'ghost'},
-                  tool_response=[{'type': 'text', 'text': json.dumps({'vaelius_session_use': {'target': 'ghost'}})}])
-        self.assertEqual(self.label()['narrowed'], ['narrow-b'])
+        self.assertEqual(self.label()['narrowed'], [])
+        self.assertTrue(self.read(self.src / 'b/notes.md'), 'a narrower workspace stays denied')
+
+    def test_a_narrowing_recorded_by_an_older_client_still_applies(self):
+        self.start()
+        session_label.SessionLabels(self.home).update('s1', narrowed=['narrow-b'])
+        self.assertIsNone(self.read(self.src / 'b/notes.md'), 'it only ever narrowed the capture')
 
 
 class BackstopTest(LabelFixture):
@@ -445,7 +401,8 @@ class UnscopedReadTest(LabelFixture):
         reason = self.read(dotfile)
         self.assertEqual(reason, session_label.unscoped_reason(dotfile, str(self.home_dir)))
         self.assertNotIn('\n', reason)
-        self.assertIn("vaelius-client session use private", reason)
+        self.assertIn('Add a .vaelius naming its workspace', reason)
+        self.assertNotIn('session use', reason)
         self.assertTrue(self.check('Bash', {'command': 'cat ' + str(dotfile)}), 'Bash paths too')
         # Allowed categories keep no restriction.
         self.assertIsNone(self.read(self.src / 'a/notes.md'), 'own workspace')
@@ -458,7 +415,7 @@ class UnscopedReadTest(LabelFixture):
         self.assertIsNone(self.read(cache), 'tooling and caches')
         self.assertIsNone(self.read(self.home_dir / 'not-yet-created.md'), 'a missing path holds nothing')
         self.assertIn('personal folder', self.read(self.home_dir / 'Documents/plan.md'), 'still denied')
-        # The taint backstop (a read the hook could not see) or `use private` reopens it.
+        # The taint backstop (a read the hook could not see) makes the session private, which reopens it.
         session_label.SessionLabels(self.home).update('s1', private=True)
         self.assertIsNone(self.read(dotfile), 'a private session may read it')
         session_label.SessionLabels(self.home).update('s1', private=False, read_only=True)

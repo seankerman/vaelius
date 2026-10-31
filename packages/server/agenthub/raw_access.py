@@ -13,11 +13,11 @@ Two tiers, both rechecked at delivery:
   never shares originals.
 
 Grants (table raw_source_grants) cover one source, one capture session or one
-connection, and carry the tiers they grant: redacted passages and/or originals.
-Owners manage them with the `share` action (agenthub.owner_controls); the
-operator-style commands below keep needing `policy`. Owner-issued grants stop
-applying while the operator restricts owner sharing (owner_sharing='lower_only'),
-and no grant carries a source beyond its carried workspaces and origin.
+connection. Since migration 055 they grant the originals tier only, and only
+through the operator-style commands below (which need `policy`): there is no
+per-item sharing of passages, and the owner `share` tools are gone. A CHECK
+constraint keeps every active grant originals-only and `policy`-issued, and no
+grant carries a source beyond its carried workspaces and origin.
 
 Grants never bypass tenant, lifecycle, delegation or connection-reader checks.
 ``source_read`` is not part of default enrollment or default OAuth scope

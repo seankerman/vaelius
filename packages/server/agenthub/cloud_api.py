@@ -88,14 +88,10 @@ ROUTE_ACTIONS={
     # policy action (see route_rule).
     ('POST','/enterprise/v3/sharing'):ANY_CREDENTIAL,
     # Owner self-service over the caller's own sources (agenthub.owner_controls).
-    # Each business method also checks ownership; raising sharing additionally
-    # needs `share`, and granting is refused for delegated credentials.
+    # Each business method also checks ownership. There is no per-item sharing
+    # (migration 055): the my-data sharing, grant, revoke and grants routes are gone.
     ('POST','/enterprise/v3/my-data'):READ,
     ('POST','/enterprise/v3/my-data/forget'):(('withdraw',),),
-    ('POST','/enterprise/v3/my-data/sharing'):(('withdraw',),('share',)),
-    ('POST','/enterprise/v3/my-data/grants'):READ,
-    ('POST','/enterprise/v3/my-data/grant'):(('share',),('policy',)),
-    ('POST','/enterprise/v3/my-data/revoke'):(('share',),('withdraw',),('policy',)),
     # Workspace admins hide (withdraw) others' content in their workspace; the
     # business method checks the admin role. Older credentials holding `moderate`
     # keep working; `manage` is the admin role's credential action.
@@ -178,8 +174,6 @@ SELF_SERVICE={
 }
 # Owner self-service and moderation routes and the business method each calls.
 OWNER_ROUTES={'/enterprise/v3/my-data':'mine','/enterprise/v3/my-data/forget':'forget',
-    '/enterprise/v3/my-data/sharing':'change_sharing','/enterprise/v3/my-data/grants':'grants',
-    '/enterprise/v3/my-data/grant':'grant','/enterprise/v3/my-data/revoke':'revoke',
     '/enterprise/v3/moderation/withdraw':'moderate'}
 # Workspace, group and tenant-policy routes and the business method each calls.
 WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/workspaces/show':'show_workspace',

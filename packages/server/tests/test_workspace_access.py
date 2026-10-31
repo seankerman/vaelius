@@ -128,17 +128,13 @@ class ParityItems(WorkspaceFixture):
             'o_shared': source(self.ingest('oak', tag='o-shared')),
             'o_maple': source(self.ingest('oak', origin_label=label('organization', projects=['maple']),
                                           tag='o-maple', index=1)),
-            'm_share_erin': source(self.ingest(tag='m-share-erin', sharing='private', index=2)),
-            'm_share_group': source(self.ingest(tag='m-share-group', sharing='private')),
-            'm_birch_share': source(self.ingest(origin_label=label('organization', projects=['birch']),
-                                                tag='m-birch-share', sharing='private', index=1)),
+            # Owner-private items. There is no per-item sharing (migration 055), so nobody
+            # but the owner reads them through any layer.
+            'm_private_2': source(self.ingest(tag='m-private-2', sharing='private', index=2)),
+            'm_private_3': source(self.ingest(tag='m-private-3', sharing='private')),
+            'm_birch_private': source(self.ingest(origin_label=label('organization', projects=['birch']),
+                                                  tag='m-birch-private', sharing='private', index=1)),
         }
-        for item, kind, grantee in (('m_share_erin', 'principal', 'erin'), ('m_share_group', 'group', 'platform'),
-                                    ('m_birch_share', 'principal', 'carol')):
-            preview = self.store.grant(self.alice, {'scope': 'source', 'ids': [self.items[item]],
-                                                    'grantee_kind': kind, 'grantee': grantee})
-            self.store.grant(self.alice, {'scope': 'source', 'ids': [self.items[item]], 'grantee_kind': kind,
-                                          'grantee': grantee, 'confirm': preview['confirm_token']})
         self.store.quarantine_principal('quinn', reason='synthetic review')
         self.drain()
 
@@ -154,17 +150,17 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
     def tearDown(self):
         self.postgres_teardown()
 
-    def test_every_layer_agrees_on_roles_groups_private_shares_carried_origin_and_quarantine(self):
+    def test_every_layer_agrees_on_roles_groups_private_carried_origin_and_quarantine(self):
         everything = set(self.items.values())
         self.assertLayers(self.alice, everything, 'owner reads everything of theirs')
         self.assertLayers(self.bob, self.expect('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
                           'writer in maple, reader in birch, organization reader of oak')
-        group_reader = self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group')
-        self.assertLayers(self.carol, group_reader, 'direct member of a group entry; group share')
+        group_reader = self.expect('m_shared', 'm_team', 'o_shared', 'o_maple')
+        self.assertLayers(self.carol, group_reader, 'direct member of a group entry')
         self.assertLayers(self.dave, group_reader, 'nested group member')
-        self.assertLayers(self.erin, self.expect('o_shared', 'm_share_erin'), 'organization entry and a share only')
+        self.assertLayers(self.erin, self.expect('o_shared'), 'org visibility only')
         self.assertLayers(self.quinn, self.expect('m_shared', 'm_team'),
-                          'quarantined: direct entries stay, organization and share paths go')
+                          'quarantined: direct entries stay, the organization path goes')
 
     def test_delegated_credential_has_no_organization_role_and_stays_in_its_workspaces(self):
         self.store.set_delegation('acme', 'frank', 'bob', ['read', 'source_read'], ['maple'], True)
@@ -179,11 +175,11 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
 
     def test_widest_entry_suspends_wider_entries_at_query_time_and_raising_restores(self):
         self.store.tenant_policy(None, {'widest_entry': 'people_and_groups'})
-        self.assertLayers(self.erin, self.expect('m_share_erin'), 'organization entry suspended')
+        self.assertLayers(self.erin, set(), 'organization entry suspended')
         self.assertLayers(self.bob, self.expect('m_shared', 'm_birch', 'm_team'), 'organization entry suspended')
         self.store.tenant_policy(None, {'widest_entry': 'none'})
         self.assertLayers(self.bob, set(), 'only principal admin entries count')
-        self.assertLayers(self.carol, self.expect('m_share_group'), 'groups are suspended but shares are not')
+        self.assertLayers(self.carol, set(), 'groups are suspended')
         self.assertLayers(self.alice, set(self.items.values()))
         with self.store.open() as state:
             entries = state.db.execute("SELECT count(*) FROM workspace_entries WHERE tenant='acme'").fetchone()[0]
@@ -196,26 +192,23 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
         self.assertLayers(self.dave, self.expect('o_shared'), 'removed from the nested group (o_maple carries maple)')
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'group', 'subject': 'platform',
                                           'role': 'reader'})
-        self.assertLayers(self.carol, self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group',
-                                                  'm_birch', 'm_birch_share'),
+        self.assertLayers(self.carol, self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_birch'),
                           'adding an entry widens past items; the carried workspace now admits carol')
         self.store.workspace_settings(self.alice, {'workspace': 'birch', 'active': False})
         self.assertLayers(self.bob, self.expect('m_shared', 'm_team', 'o_shared', 'o_maple'),
                           'archiving a carried workspace removes its readers')
         self.assertLayers(self.alice, set(self.items.values()), 'owners keep everything')
-        self.store.change_sharing(self.alice, {'source_ids': [self.items['o_shared']], 'sharing': 'private',
-            'confirm': self.store.change_sharing(self.alice, {'source_ids': [self.items['o_shared']],
-                                                              'sharing': 'private'})['confirm_token']})
-        self.assertLayers(self.erin, self.expect('m_share_erin'), 'made private')
+        self.store.set_visibility(self.alice, {'workspace': 'oak', 'visibility': 'private'})
+        self.assertLayers(self.erin, set(), 'oak made private: the org no longer reads it')
 
-    def test_derived_documents_need_the_audience_of_every_source_and_never_follow_shares(self):
-        for number, name in enumerate(('m_shared', 'm_private', 'm_share_erin', 'o_maple')):
+    def test_derived_documents_need_the_audience_of_every_source(self):
+        for number, name in enumerate(('m_shared', 'm_private', 'm_private_2', 'o_maple')):
             self.store.accept_reviewed_note(self.alice, self.items[name], 'Synthetic derived note ' + str(number),
                                             'Synthetic derived dataset ' + str(number) + ' lives at /synthetic/d'
                                             + str(number) + '.csv.')
-        self.assertLayers(self.alice, self.expect('m_shared', 'm_private', 'm_share_erin', 'o_maple'), raw=False)
+        self.assertLayers(self.alice, self.expect('m_shared', 'm_private', 'm_private_2', 'o_maple'), raw=False)
         self.assertLayers(self.bob, self.expect('m_shared', 'o_maple'), raw=False)
-        self.assertLayers(self.erin, set(), 'a passage share never reaches derived documents', raw=False)
+        self.assertLayers(self.erin, set(), 'o_maple carries maple, which erin cannot read', raw=False)
 
     def test_origin_is_fixed_and_an_unknown_carried_workspace_admits_only_the_owner(self):
         unknown = self.ingest(origin_label=label('organization', projects=['nowhere']), tag='unknown')['source_id']
@@ -379,27 +372,16 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
             self.store.moderate(self.bob, {'project': 'maple', 'source_ids': [theirs], 'reason': 'synthetic'})
         preview = self.store.moderate(self.alice, {'project': 'maple', 'source_ids': [mine], 'reason': 'synthetic'})
         self.assertEqual(preview['sources'], 1)
-        # Demoted to nothing, bob still finds, makes private and deletes his own items, but cannot share.
+        # Removed from the workspace, bob still finds and deletes his own items, but cannot capture.
         self.store.set_membership('acme', 'maple', 'bob', False)
         found = self.store.mine(self.bob, {'project': 'maple'})
         self.assertEqual([item['source_id'] for item in found['items']], [mine])
-        made = self.store.change_sharing(self.bob, {'source_ids': [mine], 'sharing': 'private'})
-        self.assertIsNotNone(made['confirm_token'])
-        self.store.change_sharing(self.bob, {'source_ids': [mine], 'sharing': 'private',
-                                             'confirm': made['confirm_token']})
-        refused = self.store.change_sharing(self.bob, {'source_ids': [mine], 'sharing': 'shared'})
-        self.assertEqual(refused.get('reason'), 'sharing_needs_the_writer_role')
-        refused = self.store.grant(self.bob, {'scope': 'source', 'ids': [mine], 'grantee_kind': 'principal',
-                                              'grantee': 'erin'})
-        self.assertEqual(refused.get('reason'), 'sharing_needs_the_writer_role')
         with self.assertRaises(Denied):
             self.ingest(ctx=self.bob, connection='b-maple', tag='bob-after')
         gone = self.store.forget(self.bob, {'source_ids': [mine]})
         self.store.forget(self.bob, {'source_ids': [mine], 'confirm': gone['confirm_token']})
-        # A legacy project grantee is refused; grants name principals or groups.
-        with self.assertRaisesRegex(ValueError, 'project_grantee_retired'):
-            self.store.grant(self.alice, {'scope': 'source', 'ids': [theirs], 'grantee_kind': 'project',
-                                          'grantee': 'maple'})
+        # There is no per-item sharing any more: the owner routes are gone.
+        self.assertFalse(any(hasattr(self.store, name) for name in ('grant', 'revoke', 'grants', 'change_sharing')))
 
     def test_repository_links(self):
         for url in ('https://example.com/Example-Org/Maple.git', 'ssh://git@example.com:22/example-org/maple',
@@ -607,8 +589,8 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
             (self.alice, 'maple', {}, ('m_shared', 'm_team'), 'birch and oak are narrower than maple'),
             (self.alice, 'maple', {'narrowed': ['birch']}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
              'maple ∩ birch'),
-            (self.carol, 'maple', {}, ('m_shared', 'm_team'), 'a group share to platform does not contain maple'),
-            (self.erin, 'oak', {}, ('o_shared',), 'a share to erin alone does not contain the organization'),
+            (self.carol, 'maple', {}, ('m_shared', 'm_team'), 'platform does not contain maple\'s audience'),
+            (self.erin, 'oak', {}, ('o_shared',), 'an org-visible workspace alone'),
             (self.bob, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'), 'reader of birch'),
             (self.alice, 'maple', {'private': True}, tuple(self.items), 'a private session reads everything'),
         )
@@ -616,21 +598,9 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
             with self.subTest(message):
                 self.assertLayers(self.label(ctx, workspace, **extra), self.expect(*expected), message)
 
-    def test_a_share_whose_group_contains_the_session_audience_is_recalled(self):
-        self.store.create_workspace(self.carol, {'name': 'pf', 'visibility': 'private'})
-        self.store.set_entry(self.carol, {'workspace': 'pf', 'subject_kind': 'group', 'subject': 'platform',
-                                          'role': 'writer'})
-        found = self.label(self.carol, 'pf')['session_label']
-        self.assertEqual((found['private'], found['groups']), (False, ['platform']))
-        self.assertLayers(self.label(self.carol, 'pf'),
-                          self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group'),
-                          'the platform share contains {carol, dave}')
-        self.assertLayers(self.label(self.dave, 'pf'),
-                          self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group'))
-
     def test_widening_a_workspace_later_does_not_expose_carried_content(self):
         # An item captured in a maple session that read birch carries birch.
-        self.assertLayers(self.erin, self.expect('o_shared', 'm_share_erin'))
+        self.assertLayers(self.erin, self.expect('o_shared'))
         self.store.set_entry(self.alice, {'workspace': 'maple', 'subject_kind': 'organization', 'role': 'reader'})
         visible = self.layers(self.erin)[0]
         self.assertIn(self.items['m_shared'], visible, 'maple is now organization-wide')

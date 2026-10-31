@@ -144,13 +144,11 @@ class ServerBackfillTests(PostgresFixture, unittest.TestCase):
         self.assertEqual((waits, len(calls), len(self.sources())), ([7], 6, 5))
         self.assertNotIn('stopped', report)
 
-    def test_the_owner_shares_a_backfilled_session_afterwards(self):
+    def test_backfilled_items_stay_the_authors_own(self):
         self.run_backfill(apply=True)
         source = next(s for s in self.sources() if s['owner'] == 'alice')
-        value = {'scope': 'session', 'ids': ['chat-1'], 'project': 'maple', 'grantee_kind': 'principal', 'grantee': 'bob'}
-        preview = self.store.grant(self.alice, dict(value, confirm=False))
-        self.store.grant(self.alice, dict(value, confirm=preview['confirm_token']))
-        self.assertTrue(self.visible(self.bob, source))
+        self.assertTrue(self.visible(self.alice, source))
+        self.assertFalse(self.visible(self.bob, source), 'no per-item sharing: it stays owner-private')
 
     def test_refresh_keeps_owner_access_and_lets_former_writers_expire(self):
         self.run_backfill(apply=True)

@@ -60,6 +60,14 @@ a counting admin (`without_admin` — managed by tenant settings administrators 
 one is added). `project_grant` lines are gone; their equivalent is now
 `workspace_entry`, `group_membership` or `synced_group_membership`.
 
+Roles in the report are `reader` (recalls the workspace, never writes to it),
+`writer` (chats in its folders are captured into it) and `admin` (also manages
+access and settings); everyone in the tenant reads an org-visible workspace through
+the organization entry. There are no per-item share lines: per-item sharing was
+removed (migration 055), and a person's personal memory is readable by them alone,
+so it grants nobody anything. The remaining operator originals grants are counted by
+`agenthub.raw_access report` (`active_raw_grants`).
+
 Last use is derived from records Vaelius already keeps: credential issuance, refresh
 rotation and delivery receipts. Vaelius-issued access tokens live at most 24 hours,
 so continued use always leaves one of these records. Tokens issued by an external

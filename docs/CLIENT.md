@@ -197,11 +197,10 @@ vaelius-client remember remove <id>
   `--workspace` (you need the writer role there). `--personal` delivers it in every
   workspace, not only that one.
 - **Always load.** `--always-load` items are delivered with your preferences at
-  session start and with recall, in sessions whose audience admits them. For a
-  private item that is your private sessions (`vaelius-client session use private`,
-  a private workspace or a private sharing setting). To have one load in a shared
-  session, share it: `vaelius-client sharing --set shared --source <source id>`
-  (the source id is in `remember list`).
+  session start and with recall, in sessions whose audience admits them. A
+  remembered item is personal memory, so that is your personal sessions (where you
+  are not a writer, a private workspace of your own, or a private sharing
+  setting); it is never shared.
 - **In Claude Code.** Ask the agent to remember something: it calls the MCP tool
   `remember`, shows you a preview and applies it only with the preview's token after
   you agree. `list_remembered` and `forget_remembered` list and remove. These are
@@ -212,9 +211,9 @@ vaelius-client remember remove <id>
 ### Claude Code auto memory
 
 Claude Code's auto memory (`~/.claude/projects/<project>/memory/`, whose `MEMORY.md`
-loads at session start) is outside the Vaelius access model: a narrowed or private
-session can write notes there that a later shared session in the same repository
-then loads, unlabelled, and captures for its audience. So:
+loads at session start) is outside the Vaelius access model: a personal session can
+write notes there that a later shared session in the same repository then loads,
+unlabelled, and captures for its audience. So:
 
 - `install --claude-code` writes `autoMemoryEnabled: false` into each enrolled or
   scoped project's `.claude/settings.local.json` (personal, not committed). The
@@ -229,8 +228,11 @@ then loads, unlabelled, and captures for its audience. So:
   that repository (`"auto_memory_notice": false` in the profile's `config.json`
   silences it). A worktree has its own `.claude/settings.local.json`, so a new agent
   worktree starts with auto memory on unless the managed setting covers it.
-- Reading an auto-memory folder makes the rest of the session private for capture.
-  Other Claude Code state for a project (tool results, task output, session files)
+- In a shared session the guardrail hook **denies** reading an auto-memory folder,
+  with one line (`... is Claude Code's auto memory, which any earlier chat may have
+  written, so this shared session does not read it. Keep what matters with
+  'vaelius-client import-memory'.`); a personal session may read it. Other Claude
+  Code state for a project (tool results, task output, session files)
   follows the folder it belongs to, as before. An `autoMemoryDirectory` setting
   that moves the folder elsewhere is not recognised by this rule.
 
@@ -520,7 +522,7 @@ Legacy keys are still read so existing repositories keep working:
 | --- | --- |
 | `project` | Treated as the workspace with that id. If `workspace` is also present and names a different id, the file is invalid and fails closed (capture and recall off) exactly like any other invalid file. |
 | `sharing` | A request and therefore an upper bound. In a file **without** `workspace` keep today's meaning on the wire (`private` -> omitted, `team` -> `team`, `organization` -> `organization`). In a file **with** `workspace`, only `sharing = "private"` is honored (sent as omission); any other value is ignored with a one-time warning. When not private the client sends `sharing = "organization"`, which the service reads as "inherit the workspace audience". |
-| `originals` | Ignored with a one-time warning and never sent on the wire. Sharing originals is now an explicit `vaelius-client share --originals` grant to a specific principal or group. |
+| `originals` | Ignored with a one-time warning and never sent on the wire. Originals stay with their owner (an operator can grant them; there is no owner sharing). |
 | `mode` | Legacy names map as before: `default` -> `on`, `read-only` -> `read-only`, `disabled` -> `off`. |
 
 | `capture` | Capture | Automatic recall |
@@ -580,7 +582,7 @@ no scheme/user/port, no trailing `.git` or `/`) alongside `workspace`. The
 client reads it from the scope root's Git remotes: the one named `origin`, else
 the only remote, else none (a scoped folder that is not a Git repository, or a
 repository with several remotes and no `origin`, has none, which is still
-accepted on the person's writer role alone). The server rejects a capture
+accepted). The server rejects a capture
 whose remote is not linked to the named workspace with HTTP 409
 `repo_not_linked`; the client keeps that event queued and the status line
 names the admin fix, for example:
@@ -629,8 +631,10 @@ line or by asking your agent (the MCP tools in brackets).
 | --- | --- | --- |
 | `mine` (`list_my_memories`) | Lists your sources, or with `--sessions` your capture sessions, with each source's current sharing level and which setting holds it there | `read` |
 | `forget` (`forget_memories`) | Deletes a session, chosen sources, everything of yours in a project, or a date range | `withdraw` |
-| `sharing --set LEVEL` with a selection (`change_memory_sharing`) | Changes the stored level of those sources | `withdraw` to lower, `share` to raise |
-| `share` / `unshare` (`share_memories`, `unshare_memories`) | Shares a session or sources with one person or one project's members, and revokes it; `share --list` (`list_memory_shares`) lists shares you made and received | `share` |
+
+There is no per-item sharing: an item is read by its workspace's audience, or only
+by you when it is your personal memory. (`share`, `unshare`, `sharing` with a
+selection and their MCP tools were removed in migration 055.)
 
 Select content with `--session current` (the session captured most recently in this
 folder's project: "what we just did"), `--session HANDLE` (from `mine --sessions`)
@@ -643,16 +647,10 @@ vaelius-client --home /absolute/private/client-profile mine --sharing shared
 vaelius-client --home /absolute/private/client-profile forget --session current
 vaelius-client --home /absolute/private/client-profile forget --session current --confirm TOKEN
 vaelius-client --home /absolute/private/client-profile forget --project maple --until 2026-01-01 --yes
-vaelius-client --home /absolute/private/client-profile sharing --set private --session current --yes
-vaelius-client --home /absolute/private/client-profile share --session current --with-group maple-team
-vaelius-client --home /absolute/private/client-profile share --source SOURCE --with-principal alice --originals --yes
-vaelius-client --home /absolute/private/client-profile unshare --source SOURCE --with-principal alice
 ```
 
-Grantees are now a principal (`--with-principal NAME`) or a group
-(`--with-group NAME`); `--with-project` has been dropped by the access model.
-The selection form of `--sharing` and `--set` takes `shared|private` (and the
-old `team`/`organization` names stay as aliases of `shared`).
+`mine --sharing` takes `shared|private` (the old `team`/`organization` names stay
+as aliases of `shared`).
 
 ### Workspaces and groups
 
@@ -691,8 +689,12 @@ read it (there is no internet-public tier). `--private` makes it only you, as
 admin, plus whoever an admin adds; no reason is needed. When the tenant's
 `widest_entry` does not allow organization entries, the default becomes private and
 the command says so. The first session in a folder whose workspace is org-visible
-shows you that once. Admins are the
-creator plus whoever an admin adds with `--role admin`. `set-visibility` (admins
+shows you that once. Roles are `reader` (recalls the workspace's memory, never
+writes to it), `writer` (a reader whose chats in the workspace's folders are
+captured into it) and `admin` (a writer who also manages access and settings). In
+an org workspace everyone is implicitly a reader, so the team is listed as writers
+("org reads, team writes"). Admins are the creator plus whoever an admin adds with
+`--role admin`. `set-visibility` (admins
 only) adds or removes the organization reader entry; private to org reports how
 many existing items become visible to the org (`items_now_visible_to_org`), org to
 private needs no confirmation; like `set-entry` and
@@ -758,43 +760,42 @@ Sessions that start read-only, off or outside every workspace have no label.
   read, and folders with a scope file that does not parse, with one line. For a
   narrower workspace the line names who is missing, for example
   `vaelius: denied — ~/src/birch: birch isn't visible to carol (in this session's
-  audience, maple). The person can run 'vaelius-client session use birch' for this
-  session, or ask birch's admin to add them.` It never asks.
+  audience, maple). Start a session in birch, or ask birch's admin to add them.`
+  It never asks.
 - **Folders without a scope file are denied.** An existing path outside every scoped
   folder (a sibling checkout, a dotfile, another volume) gets `vaelius: ~/src/x
-  isn't in a Vaelius folder (no .vaelius). Add one, or run 'vaelius-client session
-  use private' to read it in a private session.` A private session may read it.
+  isn't in a Vaelius folder (no .vaelius), so this session does not read it. Add a
+  .vaelius naming its workspace, or start a session there.` A personal session may
+  read it. Claude Code auto memory is denied the same way (see above).
   Tooling, caches, system paths, temporary folders and Claude Code configuration
   stay readable; personal folders and credential files stay denied. See "Why can't
   this session read X?" below.
-- **Narrowing is explicit.** `vaelius-client session use birch` (or a folder of it,
-  a linked remote, or `private`) narrows the session active in this folder; with
-  several sessions, pass `--session <id>`. In Claude Code you can also ask the agent
-  to call the MCP tool `use_workspace`. The service checks that you can read the
-  target. The session then reads and recalls as `maple ∩ birch`, every later capture
-  carries `birch`, and the status line says
-  `vaelius: session uses maple ∩ birch — capture limited to people in both`.
-  Narrowing lasts until `/clear`. `vaelius-client session status` shows the label.
+- **One workspace per session.** There is no way to switch or narrow a session to
+  another workspace (`session use` and the MCP tool `use_workspace` were removed).
+  `vaelius-client session status` shows the label.
+- **Readers and non-members capture into personal memory.** If you are not a writer
+  in the workspace a folder names, you can still work there: the service stores what
+  the chat captures as your personal memory only, and the status line says
+  `vaelius: you are a reader in maple — this chat is saved to your personal memory
+  only`. Such a session is personal: it recalls what you can read.
 - **The descriptor.** At session start the client fetches which workspaces the
   session may read (`POST /enterprise/v3/workspaces/descriptor`) and keeps it in the
   profile (`workspaces/<id>.json` and `session-labels.json`, 0600), never in the
   scope file. It is refreshed after 15 minutes at the next prompt, and at once when
   a search reports a newer epoch. After 24 hours without a refresh only the
-  session's own workspaces are readable. If you become a reader, capture turns off
-  with a status line. The hook itself never calls the service (measured p50 about
+  session's own workspace is readable. If you stop being a writer, later captures go
+  to your personal memory, with a status line. The hook itself never calls the service (measured p50 about
   65 ms per call, most of it Python start-up).
 - **The MCP connection.** Claude Code runs the MCP header helper once per connection
   (at session start and on reconnect) and gives it no session ID. The hooks therefore
   record the label of the session last active in each scoped folder
   (`mcp-labels/<hash>.json` in the profile, 0600; removed when that session ends),
-  and the helper sends it, so a private or narrowed session's `search_memory` reaches
-  what it may read. The record can only narrow the folder's own label (same
-  workspace and sharing request, more narrowed workspaces, or private), never widen
-  it; a record older than 12 hours, for another workspace or unreadable is ignored.
-  A narrowing reaches the connection when it next connects (`/mcp`, then reconnect).
-  With two sessions in one folder the last one to start or prompt wins: the other
-  may recall as the narrower label, and the taint of what it recalls then limits its
-  own capture accordingly.
+  and the helper sends it, so a private session's `search_memory` reaches what it
+  may read. The record can only narrow the folder's own label (same workspace and
+  sharing request, or private), never widen it; a record older than 12 hours, for
+  another workspace or unreadable is ignored. With two sessions in one folder the
+  last one to start or prompt wins: the other may recall as the narrower label, and
+  the taint of what it recalls then limits its own capture accordingly.
 
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
@@ -818,7 +819,7 @@ current`.
 The service enforces it, not just the hooks: the client tells it the chat's session
 id and this folder's recent MCP connections, and the MCP connection says read-only
 when it next connects. Every write (captures, remember, feedback, corrections,
-withdrawals, shares, receipts) is then refused with `read_only_session` and one
+withdrawals, receipts) is then refused with `read_only_session` and one
 clear line. Folders with `capture = "read-only"` get the same refusal. A chat that
 ran read-only cannot be pushed later with `push-session`. If another chat is open
 in the same folder, its MCP connection may be refused writes too until it
@@ -833,15 +834,14 @@ the session captures. Adding Carol to repo2 did not break anything; it is the ru
 working. Vaelius says so plainly:
 
 - the denied read names who is missing: `vaelius: denied — ~/src/repo1: repo1 isn't
-  visible to carol (in this session's audience, repo2). The person can run
-  'vaelius-client session use repo1' for this session, or ask repo1's admin to add
-  them.` At most three people or groups are named, then "and N more". Names come only
+  visible to carol (in this session's audience, repo2). Start a session in repo1, or
+  ask repo1's admin to add them.` At most three people or groups are named, then "and N more". Names come only
   from repo2's own access list (what `vaelius-client workspace show repo2` already
   shows you); nothing about repo1's members is revealed. People who reach repo2 only
   through an organization entry are counted, not named;
 - the first prompt of the session shows, to you only, what recall leaves out:
-  `vaelius: 12 memories from repo1 hidden (not visible to carol); 'vaelius-client
-  session use repo1' to include them`. The count is repo1's shared memories, not
+  `vaelius: 12 memories from repo1 hidden (not visible to carol); sessions started
+  there recall them`. The count is repo1's shared memories, not
   the matches of one prompt;
 - an admin who adds a reader to a workspace, or removes someone from another one,
   gets `newly_unreadable` (the workspaces some sessions can no longer read) and a
@@ -850,19 +850,13 @@ working. Vaelius says so plainly:
   SCIM groups only log it on the server.
 
 A folder with **no scope file** is a different case: Vaelius cannot tell who may
-read it, so a labelled session is denied it. Add a `.vaelius` naming a workspace,
-or run `vaelius-client session use private` (the rest of the session then captures
-for you only).
+read it, so a labelled session is denied it. Add a `.vaelius` naming a workspace.
 
-There are three ways forward:
+There are two ways forward:
 
-1. **Add the people as readers** of repo1 (repo1's admin). Every repo2 session can
-   then read and recall it, and nothing else changes.
-2. **`vaelius-client session use repo1`** for one session (or ask the agent to call
-   `use_workspace`; it may offer, but never calls it unasked). The session becomes
-   `repo2 ∩ repo1`: it reads and recalls both, and what it captures is visible only
-   to people in both. It lasts until `/clear`.
-3. **Keep them separate.** Work on repo1 in a session started there. Nothing is
+1. **Add the people as readers** of repo1 (repo1's admin), or make repo1 org-visible.
+   Every repo2 session can then read and recall it, and nothing else changes.
+2. **Keep them separate.** Work on repo1 in a session started there. Nothing is
    shared across the boundary, which may be exactly what repo1's admin wants.
 
 ### Content from outside the repository
@@ -938,7 +932,7 @@ there is no bulk mode.
   in a folder whose scope file (or enrollment) has capture on; with `--apply` the
   service must report the writer or admin role there. Anything else is refused.
 - **Always private to you**, whatever the workspace default: no sharing request is
-  sent. Share it afterwards with `vaelius-client share --session SESSION_ID ...`.
+  sent, and there is no per-item sharing afterwards: it stays your personal memory.
 - **The live rules, replayed.** Events are replayed in order through the same origin
   labels, session taint and redaction as live capture: a read of a personal folder,
   an unknown path, auto memory, another MCP server or another workspace restricts

@@ -47,10 +47,6 @@ actions answer `404`, the same as a missing resource.
 | `POST /enterprise/v3/preferences/withdraw` | `withdraw` |
 | `POST /enterprise/v3/my-data` (MCP `list_my_memories`): the caller's own sources and sessions | `read` |
 | `POST /enterprise/v3/my-data/forget` (MCP `forget_memories`) | `withdraw` (own sources only) |
-| `POST /enterprise/v3/my-data/sharing` (MCP `change_memory_sharing`) | `withdraw` or `share`; raising needs `share`, a non-delegated credential and a tenant that allows owner sharing |
-| `POST /enterprise/v3/my-data/grants` (MCP `list_memory_shares`) | `read` |
-| `POST /enterprise/v3/my-data/grant` (MCP `share_memories`) | `share` or `policy` (own sources only; not delegated with `share`) |
-| `POST /enterprise/v3/my-data/revoke` (MCP `unshare_memories`) | `share`, `withdraw` or `policy` (own grants only) |
 | `POST /enterprise/v3/moderation/withdraw` | `manage` and the workspace `admin` role (credentials issued before migration 048 that hold `moderate` are still accepted) |
 | `POST /enterprise/v3/workspaces`, `/workspaces/show`, `/groups`, `/groups/show` | `read` |
 | `POST /enterprise/v3/workspaces/create`, `/groups/create` | `manage` |
@@ -118,7 +114,7 @@ privileged in [access reviews](ACCESS_REVIEW.md).
 
 `enterprise_delegations.projects` lists the **delegated workspaces** (the ids
 are unchanged by migration 048; see
-[access-model section 8](ACCESS_MODEL.md#8-roles-and-credential-actions)). A
+[access-model rule 10](ACCESS_MODEL.md#rules)). A
 delegated credential acts only in those workspaces, with its stored actions ∩
 the role the **represented person** holds in each workspace, and never through
 the organization entry. The `manage` and `share` actions are never carried,

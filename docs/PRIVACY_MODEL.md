@@ -15,23 +15,25 @@ exists and how it fits together) that document describes the full specification.
   list**: entries of a subject (a person, a group or the whole organization) and
   a **role** (`reader` < `writer` < `admin`).
 - An item is either **private** (its owner only) or shared with the workspace
-  **audience** (everyone the access list reaches as a reader). Its owner may also
-  share it to a named principal or group. The per-item `private` / `team` /
-  `organization` ladder is gone.
+  **audience** (everyone the access list reaches as a reader), or only its owner
+  when it is personal memory. There is no per-item sharing (removed by migration
+  055) and the per-item `private` / `team` / `organization` ladder is gone.
 - Groups come in two sources: `scim` (identity-provider groups) and `local`
   (managed in Vaelius). GitHub team sync and the GitHub identity link were removed
   in migration 054; nothing about access comes from GitHub. Membership is
   **materialized** as a transitive principal set; no check walks the graph.
 - A **repository** links to one workspace by normalized remote. A capture whose
-  remote is linked elsewhere is refused; one with no remote is accepted on the
-  person's writer role alone.
+  remote is linked elsewhere is refused; one with no remote is accepted. Whether a
+  capture joins the workspace or the person's personal memory depends only on
+  their role (below).
 - One predicate, *reader ∈ item audience*, is implemented in Python, in the
   indexed SQL search filter and in row-level security, with parity tests.
 - A captured agent session has a **fixed label**: the audience of the workspace it
   starts in. It may read and recall only content whose audience contains that
   audience (no read up). The guardrail hook denies other workspaces' folders; the
-  service filters recall in the same three layers. The person can narrow a session
-  explicitly ("this workspace and B"); captures then carry B.
+  service filters recall in the same three layers. A reader's or non-member's
+  session in a workspace folder is personal: it captures into their personal
+  memory only.
 - Owned content is never deleted by a role change or by offboarding. Withdrawal,
   deletion, legal hold and subject erasure continue to apply.
 
@@ -77,9 +79,12 @@ See [enterprise identity and authorization](ENTERPRISE_AUTH.md).
 
 | Role | Can do, in that workspace |
 | --- | --- |
-| `reader` | Read items whose audience is the workspace; give feedback |
-| `writer` | Also capture and contribute (ingest, correct, curate), withdraw and share their **own** items |
-| `admin` | Also manage the access list, repository links and workspace settings, and moderate |
+| `reader` | Recall the workspace's memory; give feedback. Never writes to it: a reader's chats in its folders are captured into their personal memory |
+| `writer` | A reader whose chats in the workspace's folders are captured into it; corrects, curates and withdraws their **own** items |
+| `admin` | A writer who also manages the access list, repository links and workspace settings, and moderates |
+
+In an org workspace everyone in the tenant is implicitly a reader and the listed
+writers and admins are the team; a private workspace has only its listed entries.
 
 A credential's effective actions in a workspace are its credential actions **∩**
 the actions the role implies:
@@ -90,12 +95,9 @@ the actions the role implies:
 | `writer` | reader's, plus `ingest`, `correct`, `curate`, `withdraw`, `share` |
 | `admin` | writer's, plus `moderate`, `manage` |
 
-- **Ownership survives role changes.** An owner can always find, read, withdraw,
-  delete and make private their own items. Only widening (clearing `private`,
-  granting a share) needs the `writer` role, a non-delegated credential, the
-  `share` action and `owner_sharing = allowed`.
-- **Shares are not role-gated for the reader.** A grantee reads a shared item
-  with the credential action `read` alone.
+- **Ownership survives role changes.** An owner can always find, read, withdraw
+  and delete their own items. Nothing widens a single item: there is no per-item
+  sharing.
 - A delegated credential has a role only in its delegated workspaces and never
   through the organization entry.
 
@@ -107,7 +109,7 @@ Three tenant settings sit on `enterprise_organizations`:
 | --- | --- | --- | --- |
 | `workspace_creation` | `anyone`, `admins` | `anyone` | Who may create a new workspace. `admins` restricts it to principals with the tenant `settings_admin` flag |
 | `widest_entry` | `none`, `people_and_groups`, `organization` | `organization` | The widest entry an access list may use. `people_and_groups` suspends every organization entry; `none` keeps only `principal` entries with role `admin` (every workspace is private to its admins) |
-| `owner_sharing` | `allowed`, `lower_only` | `allowed` | `lower_only` keeps owners' lowering, deletion and revocation but refuses raising and granting |
+| `owner_sharing` | `allowed`, `lower_only` | `allowed` | Kept for compatibility; with no per-item sharing (migration 055) it no longer changes anything |
 
 Lowering `widest_entry` **does not delete** entries; it suspends every entry
 wider than the setting at query time, so lowering hides at once and raising
@@ -133,7 +135,7 @@ adding themselves as a reader is an ordinary, audited entry change.
 | --- | --- | --- |
 | Conversation passages | Exact spans of a captured source after deterministic credential redaction: search results, cited evidence, surrounding conversation context | `read` |
 | Curated and derived documents | Reviewed notes, optional model-curated knowledge, native document sections | `read` |
-| Retained originals | The complete canonical source and uploaded original documents, unaltered by passage indexing | `read` and `source_read` (and ownership or an originals share) |
+| Retained originals | The complete canonical source and uploaded original documents, unaltered by passage indexing | `read` and `source_read` (and ownership or an operator originals grant) |
 
 Redaction is pattern based and not universal; see
 [data and security boundaries](DATA_BOUNDARIES.md).
@@ -162,23 +164,21 @@ service never promotes it past the access list.
 
 ### Why an item is private
 
-- **Owner opt-out** (`enterprise_sources.private`): the author set it, now or at
-  capture. Clearing it is a widening and needs `share`, the `writer` role, a
-  non-delegated credential and `owner_sharing = allowed`.
+- **Personal memory** (`enterprise_sources.private`): the author is not a writer
+  in the workspace (reason `not_a_writer`), asked for it at capture, or it is a
+  remembered item. Nothing clears it.
 - **`origin_private`** (section "origin and carried workspaces"): the capture
-  touched content the workspace must not store. No share can widen it, by
-  design: it protects someone else's content.
+  touched content the workspace must not store. Nothing widens it, by design: it
+  protects someone else's content.
 - The `item_default` or `contributions_default` reasons above.
 
-### Explicit shares
+### No per-item sharing
 
-A share names one principal or one group, for a source, a capture session
-(including later captures in it) or a connection; passages, and optionally
-originals. Shares are governed by `owner_sharing` and apply to the redacted
-passage tier (and, with `originals = 1`, to originals). A share **never**
-reaches a derived document: derived documents need the inherited audience of
-every source they depend on, and shares did not cover derived documents before
-PR A either.
+Per-item shares to chosen people or groups were removed (migration 055). The
+migration revoked every passage share and every owner-issued share (rows kept for
+audit) and a CHECK constraint keeps every active `raw_source_grants` row an
+operator-issued originals grant, so the share term that remains in the predicate
+matches nothing in any layer.
 
 ### Carried workspaces
 
@@ -197,10 +197,10 @@ carried workspace. New captures never produce it.
 
 ### Originals
 
-Originals are a separate tier. A non-owner reads one only through an **originals
-share** that includes it, and in both cases with the credential action
-`source_read`. There is no originals level any more; sharing passages never
-shares originals.
+Originals are a separate tier. A non-owner reads one only through an
+operator-issued **originals grant** (`agenthub.raw_access`, `policy`), and in both
+cases with the credential action `source_read`. A workspace's audience never
+reaches originals.
 
 ### Derived and curated documents
 
@@ -215,8 +215,7 @@ A remembered item (`vaelius-client remember`, the MCP tool `remember`, an
 `import-memory` entry) is an owner-private source with the person's own words and
 one owner-reviewed note over it; `remembered_items` (migration 051) holds only its
 metadata (owner, workspace, `personal`, `always_load`, versions, withdrawal). Its
-audience is its source's: private until the owner shares it with the owner controls
-above. "Always load" items are delivered at session start and with recall only to
+audience is its source's: owner-private, always. "Always load" items are delivered at session start and with recall only to
 sessions whose audience admits them. Preferences extracted by the observer are
 owner-private in the same way. Both are carried as private by the client's session
 taint when delivered, so a preference restated in a shared session does not become
@@ -237,8 +236,7 @@ top, unchanged. Reviewed releases (operator `policy` action,
 - A workspace lists linked repositories by **normalized remote** (`host/path`,
   lower case, no scheme/user/port, no trailing `.git` or `/`). Paths may have
   more than two segments. See
-  [the repository-linking section](ACCESS_MODEL.md#4-repository-linking) for
-  the normalization table.
+  [the access model, rule 1](ACCESS_MODEL.md#rules).
 - **One repository links to one workspace per tenant** (`workspace_repos`
   primary key `(tenant, remote)`, so two tenants cannot block or probe each
   other's remotes).
@@ -252,7 +250,11 @@ top, unchanged. Reviewed releases (operator `policy` action,
   `notice`. Linking and unlinking otherwise need `manage` and the admin role
   (routes `/enterprise/v3/workspaces/repos/link` and `/unlink`).
 - A capture with no remote (a scoped folder that is not a Git repository) is
-  accepted on the person's writer role alone.
+  accepted.
+- **Who it belongs to.** A writer's or admin's capture joins the workspace. A
+  reader's, or a non-member's, capture in the same folder is stored as **their
+  personal memory only** (owner-private, `_ingest_privacy` reason `not_a_writer`),
+  decided on the current role at every capture; the client cannot change it.
 
 ## The predicate, in three layers
 
@@ -274,7 +276,7 @@ role(r, w) = max( workspace_access[w, r],
 ```
 
 A derived document needs `can_read` for every source it depends on; an original
-also needs `source_read` and ownership or an originals share.
+also needs `source_read` and ownership or an operator originals grant.
 
 It is implemented three times and a parity test keeps them in agreement:
 
@@ -288,9 +290,8 @@ It is implemented three times and a parity test keeps them in agreement:
    `search_document_allowed`, applied by the restricted search-reader role to
    every ranking query. A denied row never leaves the database.
 
-Shares (`raw_source_grants`, grantee `principal` or `group` resolved through
-`group_closure`) apply to passages and (with `originals = 1`) to originals; a
-share never reaches a derived document.
+Operator originals grants (`raw_source_grants`) reach only originals; no grant
+reaches a passage or a derived document (migration 055).
 
 ## Project-scoped retrieval
 
@@ -309,11 +310,13 @@ capped by `widest_entry`; `--private`: its admins and whoever they add) and chan
 never set by a scope file or derived from GitHub.
 
 A captured Claude Code session takes a fixed label when it starts: the workspace of
-its starting folder, narrowed explicitly by the person (`vaelius-client session use
-<workspace>` or the MCP tool `use_workspace`) and, when it becomes private (the
-person's `contributions_default`, the workspace's `item_default`, a private
-request, `use private`, or the backstop below), only the person. Sessions that are
-read-only, off or outside every workspace have no label and capture nothing.
+its starting folder. There is no explicit narrowing (`session use` and the MCP tool
+`use_workspace` were removed; a `narrowed` list recorded by an older client is still
+honored, since it only narrows). The session is **personal** (its audience is only
+the person) when the person is not a writer there, or the person's
+`contributions_default`, the workspace's `item_default` or a private request says
+so, or the backstop below fires. Sessions that are read-only, off or outside every
+workspace have no label and capture nothing.
 
 **Superset list.** For a label the service computes, on current materialized
 membership, the set `S` of workspaces the reader can read whose audience contains
@@ -381,7 +384,7 @@ Provenance is read after authorization and never widens delivery.
 
 Every person manages the content they created (`enterprise_sources.owner`:
 the author, or the represented person for delegated capture) themselves, from
-the client (`vaelius-client mine | forget | sharing | share | unshare`, see
+the client (`vaelius-client mine | forget | sharing`, see
 [the client guide](CLIENT.md)), the agent (MCP tools) or HTTP
 (`/enterprise/v3/my-data/*`, see
 [route actions](ENTERPRISE_AUTH.md#actions-and-route-authorization)). Nothing
@@ -391,20 +394,24 @@ here acts on anyone else's content.
 | --- | --- | --- |
 | Find | `read` | The caller's sources or sessions, filterable by workspace, session, capture time and privacy. Each source reports its workspace, whether it is private, and why |
 | Delete | `withdraw` | One or more sources, a session, a workspace or a date range, through the single purge and deletion journal ([data lifecycle](DATA_LIFECYCLE.md)). A legal hold wins: held sources are hidden and preserved, and reported as held |
-| Set privacy | `withdraw` or `share` | `/enterprise/v3/my-data/sharing` takes `shared` or `private` (legacy `team` / `organization` mean `shared`). Clearing private needs `share`, the writer role, a non-delegated credential, `owner_sharing = allowed` and an item that is not `origin_private` |
-| Grant | `share` (or operator `policy`), non-delegated, tenant allows owner sharing | Names a `principal` or a `group` for a source, session or connection; passages and optionally originals. `project` grantees are retired (`project_grantee_retired_use_group`) |
-| Revoke, list grants | `share`, `withdraw` or `policy`; listing needs `read` | Takes effect on the next request |
+| Personal setting | `ingest` or `policy` to change | `vaelius-client sharing --set private` makes the person's new captures private (and, with `--apply-to-existing`, their existing ones); it only ever narrows |
 
-Bulk, destructive and widening operations are two-step: the first call is a
+There is **no per-item sharing** (migration 055): the routes `my-data/sharing`,
+`my-data/grant`, `my-data/revoke` and `my-data/grants`, the MCP tools
+`change_memory_sharing`, `share_memories`, `unshare_memories` and
+`list_memory_shares`, and `vaelius-client share` / `unshare` are gone. The migration
+revoked every passage share and every owner-issued share; the only active grants
+left are operator-issued originals grants (`agenthub.raw_access`), which a CHECK
+constraint enforces.
+
+Bulk and destructive operations are two-step: the first call is a
 preview with a `confirm_token` bound to the exact selection, the second applies
 it. MCP tools require the `confirm` argument (`false` or the token), and they
 are served by the Vaelius MCP server, so client capture never records them.
 
-Every change is recorded: privacy and share changes in
-`enterprise_sharing_changes` and the audit log (`source_sharing`,
-`source_originals_sharing`); deletions as `owner_delete` audit rows and journal
-entries; grants in `raw_source_grants` (issuer, scope, grantee kind and id,
-tiers, created, revoked, revoked by) and `owner_grant` audit rows.
+Every change is recorded: privacy changes in `enterprise_sharing_changes` and
+the audit log (`source_sharing`); deletions as `owner_delete` audit rows and
+journal entries.
 
 ### Moderation follows the admin role
 
@@ -467,8 +474,8 @@ read. By construction it widens nothing, so there is no `migrate-access
 --dry-run` or per-policy reader-set guard.
 
 - **Every existing item becomes private to its owner**
-  (`enterprise_sources.private = 1`). Owners re-share them, or an admin adds an
-  entry that reaches the readers again. Every existing raw grant and share is
+  (`enterprise_sources.private = 1`), and stays so: there is no per-item sharing
+  since migration 055. Every existing raw grant and share is
   dropped at the same time; this is why the invariant holds.
 - **Members become writers.** Each project's explicit members and the SCIM
   groups mapped to it become a local group `<project>-members`, with each

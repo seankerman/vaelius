@@ -41,8 +41,10 @@ class GeneralSourcesMixin:
         readers=sorted(set(reader_ids or []))
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
-            # Enrolling a capture connection needs the writer role in the workspace.
-            if not self._project_member(db,ctx,project,2): raise Denied()
+            # Anyone may enroll a capture connection for an active workspace: a writer's
+            # captures go to the workspace, anyone else's to their personal memory
+            # (owner-private; WorkspaceAccessMixin._ingest_privacy decides per capture).
+            if not self._capture_workspace(db,ctx,project): raise Denied()
             for reader in readers:
                 if not db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1', (ctx['tenant'],reader)).fetchone():
                     raise ValueError('unknown_connection_reader')
@@ -63,7 +65,7 @@ class GeneralSourcesMixin:
         if (not row or row['tenant']!=ctx['tenant'] or not row['active'] or
                 (not allow_stale and row['permission_observed']+row['freshness_seconds']<time.time())): raise Denied()
         if ingest and (row['enrollment']!=ctx['enrollment'] or row['owner']!=ctx['actor'] or
-                       not self._project_member(db,ctx,row['project'],2)): raise Denied()
+                       not self._capture_workspace(db,ctx,row['project'])): raise Denied()
         return row
 
     def _general_source_allowed(self, db, ctx, source):

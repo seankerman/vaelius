@@ -354,10 +354,37 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'entry_wider_than_tenant_allows'):
             self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'organization', 'role': 'reader'})
 
-    def test_roles_bound_credential_actions_and_owners_keep_self_service(self):
-        # bob is a reader in birch: no capture connection, no share, no moderation there.
+    def private_flag(self, source):
+        with self.store.open() as state:
+            return state.db.execute('SELECT private FROM enterprise_sources WHERE id=?', (source,)).fetchone()[0]
+
+    def test_a_reader_or_non_member_captures_into_personal_memory_only(self):
+        # bob reads birch; erin is in no entry of maple. Both may work in those folders, and
+        # the service stores what they capture as their own personal memory (owner-only).
+        self.store.enroll_connection(self.bob, 'b-birch', 'b-birch', 'birch', ['agent'], visibility='organization')
+        self.store.enroll_connection(self.erin, 'e-maple', 'e-maple', 'maple', ['agent'], visibility='organization')
+        bobs = self.ingest('birch', ctx=self.bob, connection='b-birch', tag='bob-birch')['source_id']
+        erins = self.ingest(ctx=self.erin, connection='e-maple', tag='erin-maple', index=1)['source_id']
+        alices = self.ingest(tag='alice-maple', index=2)['source_id']
+        self.assertEqual((self.private_flag(bobs), self.private_flag(erins), self.private_flag(alices)), (1, 1, 0),
+                         'the client asked for the workspace; the service decided on the role')
+        self.drain()
+        for layer in self.layers(self.alice):  # oracle, indexed filter, row-level security
+            self.assertIn(alices, layer)
+            self.assertFalse({bobs, erins} & layer, 'an admin of both does not read their personal memory')
+        self.assertIn(bobs, self.layers(self.bob)[0])
+        self.assertIn(erins, self.layers(self.erin)[0])
+        self.assertEqual([i['source_id'] for i in self.store.mine(self.erin, {})['items']], [erins])
+        # A remote linked to another workspace is still refused, member or not.
+        self.store.link_repo(self.alice, {'workspace': 'birch', 'remote': 'example.com/example-org/birch'})
+        with self.assertRaises(RepoNotLinked):
+            self.ingest(ctx=self.erin, connection='e-maple', tag='wrong-remote', remote='example.com/example-org/birch')
+        # A workspace that does not exist, or is archived, takes no capture at all.
         with self.assertRaises(Denied):
-            self.store.enroll_connection(self.bob, 'b-birch', 'b-birch', 'birch', ['agent'], visibility='organization')
+            self.store.enroll_connection(self.erin, 'e-none', 'e-none', 'nowhere', ['agent'])
+
+    def test_roles_bound_credential_actions_and_owners_keep_self_service(self):
+        # bob is a reader in birch: no share or moderation there, and his captures stay his.
         with self.store.open() as state:
             self.assertEqual(self.store._effective_actions(state.db, self.bob, 'birch'),
                              {'read', 'feedback', 'source_read'})
@@ -376,8 +403,8 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         self.store.set_membership('acme', 'maple', 'bob', False)
         found = self.store.mine(self.bob, {'project': 'maple'})
         self.assertEqual([item['source_id'] for item in found['items']], [mine])
-        with self.assertRaises(Denied):
-            self.ingest(ctx=self.bob, connection='b-maple', tag='bob-after')
+        after = self.ingest(ctx=self.bob, connection='b-maple', tag='bob-after', index=2)['source_id']
+        self.assertEqual(self.private_flag(after), 1, 'no longer a writer: personal memory only')
         gone = self.store.forget(self.bob, {'source_ids': [mine]})
         self.store.forget(self.bob, {'source_ids': [mine], 'confirm': gone['confirm_token']})
         # There is no per-item sharing any more: the owner routes are gone.
@@ -556,7 +583,8 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
                          'birch is narrower; oak misses quinn, whom quarantine removes from the organization')
         self.assertEqual(self.superset(self.alice, 'birch'), (False, ['birch', 'maple', 'oak']))
         self.assertEqual(self.superset(self.alice, 'oak'), (False, ['oak']), 'an organization session')
-        self.assertEqual(self.superset(self.bob, 'birch'), (False, ['birch', 'maple', 'oak']))
+        self.assertEqual(self.superset(self.bob, 'birch'), (True, ['birch', 'maple', 'oak']),
+                         'bob only reads birch: his session there is personal (its capture is his alone)')
         self.assertEqual(self.superset(self.alice, 'maple', narrowed=['birch']), (False, ['birch', 'maple', 'oak']),
                          'narrowing intersects: maple ∩ birch = {alice, bob}')
         self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
@@ -589,7 +617,8 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
             (self.alice, 'maple', {}, ('m_shared', 'm_team'), 'birch and oak are narrower than maple'),
             (self.alice, 'maple', {'narrowed': ['birch']}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
              'maple ∩ birch'),
-            (self.carol, 'maple', {}, ('m_shared', 'm_team'), 'platform does not contain maple\'s audience'),
+            (self.carol, 'maple', {}, ('m_shared', 'm_team', 'o_shared', 'o_maple'),
+             'carol only reads maple: her session is personal and recalls what she can read'),
             (self.erin, 'oak', {}, ('o_shared',), 'an org-visible workspace alone'),
             (self.bob, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'), 'reader of birch'),
             (self.alice, 'maple', {'private': True}, tuple(self.items), 'a private session reads everything'),
@@ -622,8 +651,14 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         self.assertGreater(narrowed['epoch'], before, 'linking moves the epoch')
         with self.assertRaises(Denied):
             self.store.session_descriptor(self.erin, {'workspace': 'oak', 'narrowed': ['birch']})
+        # erin cannot read maple: a session in its folder is personal, and the descriptor
+        # tells her nothing about maple beyond its name.
+        personal = self.store.session_descriptor(self.erin, {'workspace': 'maple'})
+        self.assertEqual((personal['session']['private'], personal['role'], personal['repos'], personal['narrower']),
+                         (True, None, [], []))
+        self.assertEqual([w['id'] for w in personal['readable']], ['oak'])
         with self.assertRaises(Denied):
-            self.store.session_descriptor(self.erin, {'workspace': 'maple'})
+            self.store.session_descriptor(self.erin, {'workspace': 'nowhere'})
         with self.assertRaises(ValueError):
             self.store.session_descriptor(self.alice, {'workspace': 'maple', 'extra': 1})
 

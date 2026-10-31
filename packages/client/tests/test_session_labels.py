@@ -182,16 +182,19 @@ class SessionLabelTest(LabelFixture):
         self.assertEqual(self.label()['descriptor']['epoch'], 9, 'a newer epoch in a search answer refreshes it')
         self.assertIn('/enterprise/v3/workspaces/descriptor', [p for p, _ in self.service.calls[before:]])
 
-    def test_a_role_downgrade_turns_capture_off_with_a_status_line(self):
+    def test_a_role_downgrade_keeps_capturing_into_personal_memory_with_a_status_line(self):
         self.start()
         self.hook('UserPromptSubmit', prompt='captured')
         self.assertEqual(len(Outbox.events), 1)
         self.service.role = 'reader'
         self.service.epoch = 8
         self.hook('UserPromptSubmit', prompt='refresh me')
-        result = self.hook('UserPromptSubmit', prompt='not captured')
-        self.assertEqual(len(Outbox.events), 2, 'the prompt that saw the newer epoch was the last capture')
-        self.assertIn('vaelius: you are now a reader in team-a — capture is off', result.get('systemMessage', ''))
+        result = self.hook('UserPromptSubmit', prompt='personal')
+        # The service stores a reader's captures as personal memory; the client keeps sending them.
+        self.assertEqual(len(Outbox.events), 3)
+        self.assertIn('vaelius: you are now a reader in team-a — this chat is saved to your personal memory only',
+                      result.get('systemMessage', ''))
+        self.assertIn('personal memory only', session_label.status_line(self.label()))
 
 
 class HookDecisionTest(LabelFixture):
@@ -217,6 +220,18 @@ class HookDecisionTest(LabelFixture):
                          'unscoped: denied with one line, never ask')
         self.assertIn("~/src/plain/readme.md isn't in a Vaelius folder", self.read(self.src / 'plain/readme.md'),
                       'unscoped repository: denied')
+
+    def test_claude_code_auto_memory_is_denied_in_a_shared_session_and_read_in_a_personal_one(self):
+        memory = self.home_dir / '.claude/projects' / origin.slug(str(self.src / 'a')) / 'memory/MEMORY.md'
+        memory.parent.mkdir(parents=True)
+        memory.write_text('synthetic\n')
+        reason = self.read(memory)
+        self.assertEqual(reason, session_label.memory_reason(memory, str(self.home_dir)))
+        self.assertIn("Claude Code's auto memory", reason)
+        self.assertNotIn('\n', reason)
+        self.assertTrue(self.check('Bash', {'command': 'cat ' + str(memory)}), 'Bash paths too')
+        session_label.SessionLabels(self.home).update('s1', private=True)
+        self.assertIsNone(self.read(memory), 'a personal session may read it')
 
     def test_narrower_denial_names_who_is_missing_from_the_cached_descriptor(self):
         entry = self.label()

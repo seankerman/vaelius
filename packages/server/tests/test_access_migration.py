@@ -121,5 +121,57 @@ class AccessMigrationTests(unittest.TestCase):
         return {row[0]: row[1] for row in rows}
 
 
+    def test_054_removes_github_groups_so_a_former_github_group_grants_nothing(self):
+        migrate(self.admin_dsn, through=53)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            run("INSERT INTO enterprise_organizations(id) VALUES('acme')")
+            for name in ('alice', 'erin', 'sam'):
+                run("INSERT INTO enterprise_principals(tenant,id) VALUES('acme',%s)", (name,))
+            for name in ('oak', 'pine'):
+                run("INSERT INTO enterprise_projects(tenant,id,name) VALUES('acme',%s,%s)", (name, name))
+            run("""INSERT INTO groups(tenant,id,name,source,external_id,created)
+                VALUES('acme','gh-7','gh_org_team','github','7',0)""")
+            run("INSERT INTO groups(tenant,id,name,source,created) VALUES('acme','crew','crew','local',0)")
+            run("INSERT INTO groups(tenant,id,name,source,external_id,created) VALUES('acme','scim-a','scim-a','scim','a',0)")
+            edges = (('gh-7', 'principal', 'erin'), ('crew', 'group', 'gh-7'), ('crew', 'principal', 'alice'),
+                     ('scim-a', 'principal', 'sam'))
+            for group, kind, member in edges:
+                run("INSERT INTO group_edges(tenant,group_id,member_kind,member,created) VALUES('acme',%s,%s,%s,0)",
+                    (group, kind, member))
+            for workspace, kind, subject, role in (('oak', 'group', 'gh-7', 'writer'), ('pine', 'group', 'crew', 'reader'),
+                                                   ('oak', 'principal', 'alice', 'admin'),
+                                                   ('oak', 'group', 'scim-a', 'reader')):
+                run("""INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
+                    VALUES('acme',%s,%s,%s,%s,'alice',0)""", (workspace, kind, subject, role))
+            run("SELECT access_refresh_groups('acme',NULL)")
+            run("""INSERT INTO identity_links(tenant,provider,external_id,principal,login,linked,linked_by)
+                VALUES('acme','github','41','erin','erin-gh',0,'erin')""")
+            run("""INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,created)
+                VALUES('acme','source','s-1','group','gh-7','alice',0)""")
+            roles = lambda: {(r[0], r[1]) for r in run("""SELECT principal,workspace FROM workspace_access
+                WHERE tenant='acme'""").fetchall()}
+            self.assertIn(('erin', 'oak'), roles(), 'before: the github group grants oak')
+            self.assertIn(('erin', 'pine'), roles(), 'and pine through the local group nesting it')
+            epoch = run("SELECT epoch FROM enterprise_projects WHERE id='oak'").fetchone()[0]
+        migrate(self.admin_dsn)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            self.assertEqual({p for p, _ in roles()}, {'alice', 'sam'}, 'the former github group grants nothing')
+            self.assertEqual(roles(), {('alice', 'oak'), ('alice', 'pine'), ('sam', 'oak')},
+                             'local and scim groups and the admin entry are untouched')
+            self.assertEqual(run("SELECT count(*) FROM groups WHERE source='github' OR id='gh-7'").fetchone()[0], 0)
+            self.assertEqual(run("SELECT count(*) FROM group_closure WHERE principal='erin'").fetchone()[0], 0)
+            self.assertEqual(run("SELECT count(*) FROM workspace_entries WHERE subject='gh-7'").fetchone()[0], 0)
+            self.assertIsNotNone(run("SELECT revoked FROM raw_source_grants WHERE grantee='gh-7'").fetchone()[0],
+                                 'a share to it is revoked, kept for audit')
+            self.assertGreater(run("SELECT epoch FROM enterprise_projects WHERE id='oak'").fetchone()[0], epoch)
+            for table in ('identity_links', 'identity_link_flows', 'github_installations', 'github_teams',
+                          'github_team_members', 'github_webhook_deliveries'):
+                self.assertIsNone(run("SELECT to_regclass(current_schema()||'.'||%s)", (table,)).fetchone()[0], table)
+            with self.assertRaises(Exception, msg='the github source is gone'):
+                run("INSERT INTO groups(tenant,id,name,source,created) VALUES('acme','x','x','github',0)")
+
+
 if __name__ == '__main__':
     unittest.main()

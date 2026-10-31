@@ -260,6 +260,24 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Removed
 
+- **GitHub team sync and the GitHub identity link** (#44) are gone: Vaelius stays
+  separate from GitHub, and team repository permissions are not memory audiences.
+  Removed: `agenthub.github_sync`, the webhook route `POST
+  /enterprise/v3/github/webhook`, the identity-link routes, the operator commands
+  `vaelius github status|sync`, the client commands `vaelius-client github
+  link|status|unlink` and `--link-github`, the `github` section of `runtime.json`
+  (a profile that still has one now refuses to start, naming the key), the
+  `github` group source, and the access-review `identity_link` lines,
+  `github_groups` summary and `pending_identity_link` flag (`group_stale` stays for
+  SCIM groups). Migration 054 deletes every `github` group with its access-list
+  entries, nesting edges, closure rows and shares, re-materializes the groups and
+  workspaces that used one, and drops the GitHub tables. **Removing a group can
+  only remove access, never add it**, so the migration is safe to run; anyone who
+  reached a workspace only through a GitHub team loses that access until an admin
+  adds them directly, through a local group or through a SCIM group. SCIM and local
+  groups, the last-admin rule and repository linking by normalized remote (which
+  never called GitHub) are unchanged.
+
 - The client-side bulk Codex backfill (`python -m agentclient.enterprise_backfill`)
   and its server wrappers `agenthub.historical_backfill` and
   `agenthub.historical_campaign`. They imported every allowlisted rollout without

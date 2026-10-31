@@ -3,8 +3,9 @@
 **Status: PR A (migration 048: groups, workspaces, access lists, repository
 linking and the single read predicate), PR B (migration 049: fixed session
 labels, the read rule in the guardrail hook and the recall filter) and PR C
-(migration 050: GitHub App team sync and the device-flow identity link) are
-implemented. The repository-read check of section 4 is deferred (decision, PR C).
+(migration 050: GitHub App team sync and the device-flow identity link) were
+implemented; **PR C was removed again by migration 054** (owner decision: Vaelius
+stays separate from GitHub). The repository-read check of section 4 is dropped with it.
 Since migration 053: reads of folders without a scope file are denied in a labelled
 session, workspace visibility is chosen on the server at creation (default org), and
 chats can be made read-only (sections 2 and 7).** Three pull requests implement the
@@ -27,8 +28,7 @@ made here is marked **(decision)** and listed again in
   of a subject (a person, a group or the whole organization) and a role (`reader`,
   `writer`, `admin`). Fully private, chosen people, team, org-read/team-write and
   org read-write are all just access lists.
-- **Groups** are one object type with a `source`: `github` (teams synced from a
-  GitHub App installation), `scim` (identity-provider groups, today's directory
+- **Groups** are one object type with a `source`: `scim` (identity-provider groups, today's directory
   groups) or `local` (managed in Vaelius). Synced groups are read-only in Vaelius.
 - **Repositories link to one workspace** by normalized remote. Captures from a
   repository that is not linked to the named workspace are rejected.
@@ -175,7 +175,6 @@ and the before/after audience size.
 
 | Source | Members come from | Edited in Vaelius | Nesting |
 | --- | --- | --- | --- |
-| `github` | A team in a GitHub organization where the Vaelius GitHub App is installed | No | Child teams, as GitHub reports them |
 | `scim` | A group pushed by the identity provider (Okta, Entra ID). Today's directory groups | No | No (the providers do not push nested groups) |
 | `local` | The group's admins in Vaelius | Yes, by the group's admins | Yes: a local group may contain principals and other groups of any source |
 
@@ -190,55 +189,18 @@ holds the transitive principal members of every group and is rewritten in the sa
 transaction as any edge change or sync. Cycles between local groups are refused at
 edit time. Checks never walk the graph at query time.
 
-### GitHub teams (PR C)
+### GitHub teams (removed, migration 054)
 
-- **Identity link.** A person links their GitHub account once, at enrollment
-  (`--link-github`) or later, with `vaelius-client github link`. The **server** starts a GitHub
-  device-flow authorization for the App's client id (device flow enabled in the
-  App's settings), the client shows the user code
-  and verification address, the person approves in the browser, and the server polls
-  for the user token, calls `GET /user`, stores the numeric user id and current
-  login in `identity_links`, and discards the token. Completing the device flow
-  proves the person controls that login; typing a login never links one. One GitHub
-  account links to at most one principal per tenant. Unlinking is self-service or by
-  a tenant administrator, and audited.
-  **(decisions, PR C)** The client never sees the device code or the token: it
-  holds an opaque flow id, and the service polls GitHub (at most once per GitHub
-  interval, so `slow_down` is honored). Linking a second account replaces the first
-  (`relinked`). An attempt to link an account held by another principal is refused
-  (`409`) and audited (`refused_linked_elsewhere`). Delegated credentials cannot
-  link. The token is discarded, not revoked at GitHub, because revocation needs the
-  App's client secret, which the service deliberately does not hold; GitHub expires
-  it.
-- **Sync.** The App needs organization *Members: read* and repository
-  *Metadata: read* (automatic for every App; installation tokens are minted with
-  `members: read` only). It subscribes to `membership`, `team`, `organization` and
-  `installation` webhooks. A webhook is only a **hint**: on any delivery for a team
-  the server fetches that team's current member list
-  (`GET /orgs/{org}/teams/{team_slug}/members`, which includes child-team members)
-  and replaces the group's membership with it. State-based sync makes out-of-order
-  or duplicate deliveries harmless. Deliveries are verified with the webhook secret
-  (`X-Hub-Signature-256`) and de-duplicated by delivery id.
-  **(decisions, PR C)** The route is `POST /enterprise/v3/github/webhook`; a bad or
-  missing signature is `401`, a replayed delivery id `409` (ids kept 30 days; a
-  delivery that fails to apply is forgotten so GitHub's redelivery works). A
-  `membership` delivery re-reads that team; `team` and `installation` `created` /
-  `unsuspend` re-read the installation; `organization` `member_removed` removes the
-  user from every team snapshot from the delivery itself, since a removal can only
-  narrow; `installation` `deleted` / `suspend` marks the groups `failed`. Groups are
-  `gh-<team id>` with the name `gh_<org>_<slug>` (local groups may not use the
-  `gh-` or `gh_` prefixes), and a parent team's group contains its child teams'
-  groups. The snapshot (`github_team_members`) is keyed by numeric user id; group
-  edges are rebuilt from it joined to active links of active principals.
-- **Reconcile.** Every 6 hours by default (`github.reconcile_seconds` in
-  `runtime.json`), and on demand (`vaelius github sync --now`), the server lists
-  every team of every installation and replaces all memberships. Teams that
-  disappeared become inactive groups. **(decision, PR C)** It runs in a background
-  thread of each API process; replicas claim due installations through the
-  database, so only one reconciles each interval. `vaelius github status` reports
-  installations, last sync, stale groups and the unlinked-member count.
-- **Unlinked members.** A GitHub member without a linked principal is kept as a
-  pending member and grants nothing until they link.
+PR C synced GitHub teams into `github` groups through a GitHub App and linked
+people to GitHub accounts with the device flow. **Migration 054 removed both**
+(owner decision): team repository permissions are not the same thing as memory
+audiences, and the sync was accident-prone. The migration deletes every `github`
+group with its entries, nesting edges, closure rows and shares (removing a group
+only removes access), re-materializes the groups and workspaces that used one,
+drops the GitHub tables and restricts `groups.source` to `scim` and `local`. The
+`gh-`/`gh_` group-name prefixes stay reserved so nothing that named a removed group
+can attach to a new one. A `github` section in `runtime.json` now stops the service
+at startup (`github_sync_removed_delete_the_github_section`).
 
 ### SCIM groups
 
@@ -255,9 +217,7 @@ A synced group has `sync_state`: `current`, `stale` or `failed`.
 
 | Condition | State | Effect |
 | --- | --- | --- |
-| Last successful GitHub sync older than `max_staleness` (`github.max_staleness_seconds` in `runtime.json`, default 24 hours) | `stale` | The group contributes **no members** to `group_closure` |
-| Installation suspended or uninstalled, App credentials rejected, organization unreachable for longer than `max_staleness` | `failed` | Same |
-| SCIM group with an out-of-order event awaiting reconcile | `stale` | Same (today's behavior) |
+| SCIM group with an out-of-order event awaiting reconcile | `stale` | The group contributes **no members** to `group_closure` |
 | Next successful sync | `current` | Membership is rebuilt from the source |
 
 So a sync outage can only take access away, never leave a removed person in.
@@ -265,10 +225,6 @@ Because a synced group never counts as a workspace's last admin, admins keep acc
 and can see the state: the workspace and group views, the access report and the
 service status show `group_stale` with the last successful sync time. Every state
 change is audited (`group_sync`, with `applied`, `stale` or `failed`).
-**(decision, PR C)** Membership is materialized, so staleness is applied by a sweep
-rather than at query time: it needs only the database, runs every minute in each
-API process and on every sync and status call, and so works while GitHub is
-unreachable. Access can therefore outlive the window by at most about a minute.
 
 ## 4. Repository linking
 
@@ -302,14 +258,9 @@ read a workspace is derived from GitHub (owner decision).
   `manage`, the capture links it, audited as `repo_link` / `automatic`, and the
   capture receipt carries a `notice` the client shows on the status line. A
   non-admin's capture from an unlinked remote is still rejected.
-- **Deferred (decision, PR C):** for a remote in a GitHub organization where the App is installed, the
-  server would check that the capturing person's linked GitHub account can read the
-  repository (`GET /repos/{owner}/{repo}/collaborators/{username}/permission`,
-  cached for 15 minutes). A person without a linked account, or without read access,
-  is rejected with `403 repo_access_unverified`. PR C does not ship this check:
-  it would put a GitHub call (or a 15-minute cache of one) on the capture path, and
-  the owner scoped PR C to team sync and the identity link. The identity link it
-  needs is in place, and the App already holds *Metadata: read*.
+- **Dropped (migration 054):** PR C deferred a check that the capturing person's
+  linked GitHub account could read the repository. With the GitHub link removed it
+  is not planned: linking stays a comparison of normalized remotes inside Vaelius.
 
 ## 5. The scope file
 
@@ -715,7 +666,7 @@ it instead of only refusing:
   `newly_unreadable_note` when the change ends `audience(T) ⊇ audience(S)` for a
   pair of workspaces the caller can read, so sessions of S can no longer read T.
   Checked when the caller reads at most 200 workspaces (otherwise the note says it
-  was not checked). GitHub and SCIM group sync log the same finding on the server.
+  was not checked). SCIM group sync logs the same finding on the server.
 - **The agent.** The MCP tool `use_workspace` says the agent may offer it after
   such a denial and must never call it unless the person asks or agrees.
 
@@ -895,10 +846,10 @@ decision.
   their effective role and **how**: a direct entry, which group (with its source and
   sync state), or the organization entry. New line kinds: `workspace_entry` (subject,
   role, granted by, created), `group_membership` (local only; revocable here),
-  `synced_group_membership` (reported, revoked at the source), `identity_link`,
+  `synced_group_membership` (reported, revoked at the source),
   `repo_link`. `project_grant` lines become `workspace_access` lines.
 - **New flags:** `admin_role` (privileged), `org_wide_entry`, `group_stale`
-  (access derived from a group that is not `current`), `pending_identity_link`.
+  (access derived from a group that is not `current`).
 - **Revoking** a `workspace_entry` removes the entry; a local `group_membership`
   removes the edge; a `synced_group_membership` records the decision with outcome
   `change_at_source`, and the reviewer may also remove the group's entry from the
@@ -1049,31 +1000,11 @@ Acceptance tests:
 8. The hook makes no network call (a test with networking disabled).
 9. `capture = "read-only"` sessions are not label-restricted and capture nothing.
 
-### PR C: GitHub App team sync and device-flow identity link
+### PR C: GitHub App team sync and device-flow identity link (removed)
 
-**Implemented** (migration 050), except acceptance test 6, which is deferred
-(section 4). Tests use a fake GitHub API (`packages/server/tests/test_github_sync.py`).
-
-Server: GitHub App configuration (App id, private key file, webhook secret file, all
-re-read on change like the introspection secret); device-flow link; webhook receiver;
-6-hourly reconcile; `sync_state` and `max_staleness`; repository-read verification
-on capture (deferred). Client: `vaelius-client github link`.
-
-Acceptance tests:
-
-1. Device flow links the numeric GitHub user id; a second principal cannot link the
-   same account; a typed login never links.
-2. Signed webhooks trigger a state-based refetch; unsigned or replayed deliveries are
-   refused; out-of-order deliveries converge to the source state.
-3. A member removed at GitHub loses access after the webhook, or at the latest after
-   the next reconcile.
-4. With the GitHub fixture unreachable past `max_staleness`, the group contributes
-   nobody, the workspace's principal admins keep access, and the report flags
-   `group_stale`; a successful sync restores members.
-5. Uninstalling the App marks its groups `failed` with the same effect.
-6. A capture from a GitHub remote by a person whose linked account lacks read access
-   is rejected (`403 repo_access_unverified`).
-7. Child-team members reach a workspace that names the parent team.
+Shipped as migration 050 and removed by migration 054 (section 3). Its tests were
+removed with it; `test_access_migration` checks that a former `github` group grants
+nothing after the migration.
 
 ## 13. Prior art
 
@@ -1109,10 +1040,8 @@ Acceptance tests:
 2. **First capture from an unlinked repository.** Resolved: an admin's first capture
    from a repository linked nowhere links it automatically, audited, and the status
    line says so; a non-admin's capture is still rejected (section 4).
-3. **`max_staleness` default.** Resolved: 24 hours, configurable in `runtime.json`.
-   Webhooks handle prompt removals; the reconcile is the fallback. It ships with
-   PR C, which adds GitHub sync; PR A already stores `sync_state` and `last_synced`
-   on every group.
+3. **`max_staleness` default.** Resolved for PR C's GitHub sync, which migration 054
+   removed; SCIM groups go `stale` only while an out-of-order event awaits reconcile.
 
 ## Appendix: recorded decisions
 
@@ -1156,14 +1085,7 @@ Points the owner's brief left open, decided in this document:
 | Shares in a labelled recall (PR B) | Qualify when the grantee group's members contain the session audience; own private items only in a private session | 7 |
 | `scope = "all"` (PR B) | Folded into the label: labelled recall reaches the superset list; removed from the MCP tool | 7 |
 | Superset caching (PR B) | Computed per request, never cached | 9 |
-| Identity-link commands (PR C) | `vaelius-client github link`/`status`/`unlink`, and `--link-github` at enrollment; operator `vaelius github status` and `vaelius github sync [--now]` | 3 |
-| Device flow (PR C) | Run by the service; the client holds only an opaque flow id; the token is used for `GET /user` once and discarded | 3 |
-| Relink (PR C) | Linking another account replaces the link; an account held by another principal is refused and audited | 3 |
-| Webhook handling (PR C) | `401` bad signature, `409` replay (30-day ids); deliveries are hints, state is re-read; `member_removed` applies from the delivery | 3 |
-| Staleness (PR C) | `max_staleness_seconds` in `runtime.json` (default 24 h); applied by a database-only sweep every minute and on each sync | 3 |
-| Reconcile (PR C) | `reconcile_seconds` in `runtime.json` (default 6 h); background thread per API process, claimed through the database | 3 |
-| Group naming (PR C) | `gh-<team id>`, named `gh_<org>_<slug>`; the prefixes are reserved | 3 |
-| Repository-read check (PR C) | Deferred; not on the capture path yet | 4 |
+| GitHub team sync and identity link (PR C, migration 050) | Removed by migration 054: `github` groups, their entries and shares deleted, tables dropped, `gh-`/`gh_` names stay reserved; the repository-read check is dropped | 3, 4 |
 | Workspace visibility (migration 053, by the owner) | Chosen at creation, default org (everyone signed in to the tenant; capped by `widest_entry`), `--private` to restrict; changed only on the server by admins; never derived from GitHub; a scope-file `visibility` (or `read`) is ignored | 2 |
 | Recall of a read-only chat (by the owner) | Treated as a private session: the person's full readable set, since it writes nothing | 7 |
 | Read-only chats (migration 053) | One-way per chat; the service refuses every write for the header, a `read_only` label or a registered session id | 7 |

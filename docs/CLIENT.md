@@ -732,33 +732,6 @@ captured back into memory.
   session. Revoking takes effect on the next search. Every change and share is
   audited. See [the privacy model](PRIVACY_MODEL.md#owner-controls).
 
-### GitHub identity link
-
-When your organization syncs GitHub teams into Vaelius, a team's access counts for
-you only after you prove you own your GitHub account:
-
-```sh
-vaelius-client --home /absolute/private/client-profile github link
-# Open https://github.com/login/device and enter the code WXYZ-1234 to link your GitHub account.
-vaelius-client --home /absolute/private/client-profile github status
-vaelius-client --home /absolute/private/client-profile github unlink
-```
-
-`link` asks the service to start a GitHub device-flow authorization, prints the
-one-time code and address, and waits while you approve in the browser (up to 15
-minutes). The device code and the GitHub token stay with the service; it reads
-your numeric GitHub user id and login once, stores those, and discards the token.
-Typing a login never links one. A renamed GitHub login keeps its link, because the
-link is by user id. One GitHub account links to one person per organization;
-running `link` again with another account replaces the link. `unlink` removes it,
-and your GitHub team memberships stop counting at once. A settings administrator
-can unlink someone else with `github unlink --principal NAME`. Linking, relinking
-and unlinking are audited, and offboarding removes the link.
-
-To link while enrolling, add `--link-github` to the enrollment command; if the
-link step fails, the enrollment stands and the output says to run
-`vaelius-client github link` later.
-
 ### Which projects recall reaches
 
 A Claude Code session that starts in a workspace folder sends its **session label**
@@ -874,7 +847,7 @@ working. Vaelius says so plainly:
   gets `newly_unreadable` (the workspaces some sessions can no longer read) and a
   one-line note in the response of `vaelius-client workspace set-entry` /
   `remove-entry` and `vaelius-client group add-member` / `remove-member`. Synced
-  GitHub and SCIM groups only log it on the server.
+  SCIM groups only log it on the server.
 
 A folder with **no scope file** is a different case: Vaelius cannot tell who may
 read it, so a labelled session is denied it. Add a `.vaelius` naming a workspace,

@@ -26,7 +26,6 @@ tenant does not know. For each principal it shows:
 | `workspace_entries` | Access-list entries whose subject is this principal: workspace, role, granted by, created |
 | `group_memberships` | Local-group memberships (revocable here) |
 | `repo_links` | Repository remotes this principal linked to a workspace |
-| `identity_links` | The GitHub account the principal proved they own (`vaelius-client github link`): numeric user id, current login, when linked. Without one, GitHub team memberships give them nothing |
 | `document_grants` | Reviewed-release documents that name the principal as a reader |
 | `connection_reader_grants`, `owned_connections` | Connector reader lists that name the principal, and connectors they own |
 | `delegations` | Delegations the principal holds (`acts_for`), and delegates acting for them (`represented_by`) |
@@ -36,7 +35,7 @@ tenant does not know. For each principal it shows:
 `line_id` (the same entitlement keeps its ID across reports), a `kind`
 (`principal`, `settings_admin`, `credential`, `binding`, `workspace_access`,
 `workspace_entry`, `group_membership`, `synced_group_membership`, `repo_link`,
-`identity_link`, `document_grant`, `connection_reader`, `delegation`), a content-free target,
+`document_grant`, `connection_reader`, `delegation`), a content-free target,
 actions, last use and flags:
 
 | Flag | Meaning |
@@ -47,8 +46,7 @@ actions, last use and flags:
 | `raw_source_read` | Can read raw originals |
 | `admin_role` | A workspace role of `admin`, on an entry or a group membership |
 | `org_wide_entry` | An organization entry on a workspace; listed in the per-workspace summary |
-| `group_stale` | The access is derived from a group whose `sync_state` is not `current` |
-| `pending_identity_link` | On a GitHub group in the `workspaces` summary: some of the team's GitHub members have not linked an account, so they get nothing from it |
+| `group_stale` | The access is derived from a SCIM group whose `sync_state` is not `current` |
 | `suspended_by_tenant_policy` | The entry is wider than the tenant's `widest_entry` and so contributes no role at query time |
 | `delegated` | Credential acting for another principal |
 | `directory_deactivated` | Active in Vaelius although the latest SCIM state says inactive |
@@ -57,9 +55,7 @@ actions, last use and flags:
 | `unattributed_grant` | An active membership that is neither explicit nor directory-derived (legacy rows) |
 
 The report's `workspaces` summary lists every organization entry (`org_wide_entry`),
-the stale groups, every synced GitHub team (`github_groups`: its sync state, last
-successful sync, GitHub member count, how many are linked and how many are
-pending a link), the current `widest_entry` setting, and every workspace without
+the stale groups, the current `widest_entry` setting, and every workspace without
 a counting admin (`without_admin` — managed by tenant settings administrators until
 one is added). `project_grant` lines are gone; their equivalent is now
 `workspace_entry`, `group_membership` or `synced_group_membership`.
@@ -124,7 +120,7 @@ A revoke runs through the existing path for that kind of line:
 | `credential` | Revokes the enrollment's refresh families and access tokens | For tokens issued by an external authorization server, also end the session there or revoke the binding. Otherwise new tokens keep working |
 | `workspace_entry` | Removes the principal's direct entry on that workspace | — |
 | `group_membership` | Removes the principal from a local group | — |
-| `synced_group_membership` | Not changed automatically | `change_at_source`: remove the user from the source group (SCIM or GitHub). The reviewer may also remove the group's entry from the workspace |
+| `synced_group_membership` | Not changed automatically | `change_at_source`: remove the user from the source group (SCIM). The reviewer may also remove the group's entry from the workspace |
 | `workspace_access` | Does not revoke on its own; names the underlying entry or group membership | `revoke_entry_or_membership`: revoke the `workspace_entry` or `group_membership` lines that give this access |
 | `repo_link` | Not changed automatically | `requires_workspace_admin`: a workspace admin unlinks the repository (`vaelius-client workspace unlink`) |
 | `delegation` | Deactivates the delegation (the delegate's credentials stop authorizing) | — |
@@ -172,17 +168,6 @@ credentials. Every change is audited (`access_hygiene`,
 `access_credential_revocation`, `identity_binding`). Run it from a scheduler such as
 a daily cron job, systemd timer or Kubernetes CronJob.
 
-### GitHub-derived access
-
-GitHub team access shows up in three places. `workspace_access` lines name each
-group that gives the access with `source: github` and its `sync_state`.
-`synced_group_membership` lines list each team membership; revoking one records
-`change_at_source` (remove the person from the team in GitHub, or remove the
-team's entry from the workspace). `identity_link` lines list each linked account;
-revoking one deactivates the link (audited), so every GitHub team membership of
-that person stops counting immediately, and they can relink only by completing the
-device flow again.
-
 ## Offboarding
 
 ```sh
@@ -199,8 +184,6 @@ if a later step has to be retried. The command then:
 - removes the principal's direct workspace entries
 - removes the principal from local groups (SCIM memberships drop at the next
   directory event; deactivation already ends access through them)
-- deactivates their GitHub identity link (audited as `identity_link` /
-  `offboarding`), which removes them from every `github` group at once
 - removes the principal from reviewed-release reader lists
 - deactivates their identity bindings when control-plane credentials are available
 

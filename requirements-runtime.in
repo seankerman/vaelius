@@ -3,7 +3,7 @@
 # scripts/check_locks.py enforces that. Regenerate the hashed lock as described
 # in RELEASING.md.
 authlib==1.9.1
-boto3==1.43.113
+boto3==1.43.118
 joserfc==1.7.6
 jsonschema==4.26.0
 mcp==2.3.0

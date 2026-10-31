@@ -15,8 +15,8 @@ workspace becomes.
   share afterwards, per session, with the ordinary owner tools
   (`vaelius-client share --session ...`).
 * **Mapped or skipped.** An author or workspace missing from the mapping file, an
-  unknown or inactive principal, an unknown workspace, or an author without the
-  writer role there is skipped and counted, never guessed.
+  unknown or inactive principal, an unknown workspace, or an author who is not a
+  member there is skipped and counted, never guessed.
 * **Dry run by default.** Counts per principal and workspace, never content.
   `--apply` ingests through `ingest_general`, the same path as live capture, so
   server redaction, legal hold, retention and erasure apply as to any item.
@@ -158,7 +158,7 @@ def _context(store, principal, connection, run):
 def _resolve(store, mapping, records):
     """{(principal, workspace id): [(external id, record)]} plus skip counts."""
     skipped = {'invalid': 0, 'unmapped_author': 0, 'unmapped_workspace': 0, 'unknown_principal': 0,
-               'unknown_workspace': 0, 'not_writer': 0}
+               'unknown_workspace': 0, 'not_member': 0}
     groups, positions, known = {}, {}, {}
     with store.open() as state:
         db = state.db
@@ -184,7 +184,7 @@ def _resolve(store, mapping, records):
                     known[(principal, target)] = 'unknown_workspace'
                 elif not store._project_member(db, {'tenant': store.tenant_id, 'actor': principal,
                                                     'delegated_projects': None}, workspace['id'], 2):
-                    known[(principal, target)] = 'not_writer'
+                    known[(principal, target)] = 'not_member'
                 else:
                     known[(principal, target)] = workspace['id']
             resolved = known[(principal, target)]
@@ -217,7 +217,7 @@ def _ensure_connection(store, principal, workspace, run):
 
 
 def refresh_connections(store):
-    """Re-observe every backfill connection whose author is active and still a writer.
+    """Re-observe every backfill connection whose author is active and still a member.
 
     A connection whose permission was not observed within its freshness window hides
     its items, from their owner too. Run this at least every 30 days (it is also done

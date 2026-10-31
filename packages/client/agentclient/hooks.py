@@ -709,7 +709,7 @@ def handle(home, event, *, host='codex', via='settings'):
         if entry is not None:
             from agentclient import session_label
             if scope['capture']=='on' and not session_label.captures(entry):
-                # The service says the person is no longer a writer here (the status line says so).
+                # The service says the person is no longer a member here (the status line says so).
                 scope=dict(scope,capture='read-only')
             if entry.get('read_only'):
                 # A read-only chat: nothing from it is captured from now on (one-way).

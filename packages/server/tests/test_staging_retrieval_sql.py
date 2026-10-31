@@ -94,7 +94,7 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         # `team` request in such a workspace would stay private (agenthub.workspace_access).
         self.store.create_project('acme', 'oak')
         self.store.set_membership('acme', 'oak', 'alice', True)
-        self.store.operator_workspace('set-entry', 'oak', subject_kind='organization', role='reader')
+        self.store.operator_workspace('set-entry', 'oak', subject_kind='organization')
         _, organization = self.note('organization', visibility='organization', project='oak')
         _, missing = self.note('missing-links', visibility='team')
         with self.store.open() as state, state.db:

@@ -169,7 +169,7 @@ def main(argv=None):
         choices=['show','set-entry','remove-entry','settings','link','unlink','create'],
         help='workspace: what to do (create adds an operator-managed workspace with a members group)')
     parser.add_argument('--subject-kind',choices=['principal','group','organization'])
-    parser.add_argument('--subject');parser.add_argument('--role',choices=['reader','writer','admin'])
+    parser.add_argument('--subject');parser.add_argument('--role',choices=['member','admin'],help='workspace set-entry: member or admin (omit for the organization entry: org read)')
     parser.add_argument('--name');parser.add_argument('--item-default',choices=['shared','private'])
     parser.add_argument('--active',choices=['yes','no']);parser.add_argument('--remote')
     parser.add_argument('--workspace-creation',choices=['anyone','admins'],help='tenant-policy')
@@ -180,7 +180,7 @@ def main(argv=None):
     parser.add_argument('--map',help='backfill: the principal and workspace mapping file')
     parser.add_argument('--max-events',type=int,default=5000,help='backfill: events written per run')
     parser.add_argument('--refresh-connections',action='store_true',
-        help='backfill: re-observe the backfill connections of active writers (run at least every 30 days)')
+        help='backfill: re-observe the backfill connections of active members (run at least every 30 days)')
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')

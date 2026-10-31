@@ -10,9 +10,9 @@ There is no bulk mode.
   configuration folder (`CLAUDE_CONFIG_DIR`, default `~/.claude`) or Codex home
   (`CODEX_HOME`, default `~/.codex`). A subagent transcript is pushed only as part
   of its parent session.
-* **Only from a scoped folder where you are a writer.** The session must have
+* **Only from a scoped folder where you are a member.** The session must have
   started in a folder whose scope file (or explicit enrollment) has capture on, and
-  the service must report the writer or admin role there. Anything else is refused.
+  the service must report the member or admin role there. Anything else is refused.
 * **Always owner-private.** Every event is sent without a sharing request, which the
   service stores as private to you, whatever the workspace default. Share it
   afterwards with `vaelius-client share --session ...`.
@@ -408,8 +408,8 @@ def push(config, home, target, *, apply=False, claude=None, codex=None, max_seco
         if apply:
             raise PushRefused('workspace_role_unavailable') from None
         role = None
-    if role is not None and role not in ('writer', 'admin'):
-        raise PushRefused('writer_role_required')
+    if role is not None and role not in ('member', 'admin', 'writer'):
+        raise PushRefused('membership_required')
     result['role'] = role or 'unchecked'
     remote = None
     if scope.get('root'):

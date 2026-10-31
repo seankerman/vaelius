@@ -240,7 +240,7 @@ class Worker:
             connection['permission_observed']+connection['freshness_seconds']<time.time()):raise ValueError('observer_permission_expired')
         if not self.store._connection_executor_authorized(db,connection):raise ValueError('observer_enrollment_or_delegation_revoked')
         owner=db.execute('SELECT active FROM enterprise_principals WHERE tenant=? AND id=?',(connection['tenant'],connection['owner'])).fetchone()
-        # The owner must still hold the writer role in the connection's workspace.
+        # The owner must still hold membership in the connection's workspace.
         writer=self.store._project_member(db,{'tenant':connection['tenant'],'actor':connection['owner'],
             'delegated_projects':None},connection['project'],2)
         if not owner or not owner[0] or not writer:raise ValueError('observer_owner_revoked')

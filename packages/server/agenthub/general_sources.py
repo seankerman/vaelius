@@ -41,7 +41,7 @@ class GeneralSourcesMixin:
         readers=sorted(set(reader_ids or []))
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
-            # Enrolling a capture connection needs the writer role in the workspace.
+            # Enrolling a capture connection needs membership in the workspace.
             if not self._project_member(db,ctx,project,2): raise Denied()
             for reader in readers:
                 if not db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1', (ctx['tenant'],reader)).fetchone():

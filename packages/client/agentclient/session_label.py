@@ -216,18 +216,27 @@ def refresh(home, config, session, entry=None, *, timeout=2):
     return labels.update(session, **values)
 
 
+# Roles that capture. `member` since migration 055; `writer` from an older service.
+CAPTURING_ROLES = ('member', 'admin', 'writer')
+
+
 def role_line(entry, descriptor):
-    role = descriptor.get('role') or 'not a reader'
+    role = descriptor.get('role')
     name = (descriptor.get('workspace') or {}).get('name') or entry['workspace']
-    capture = 'capture is off' if role not in ('writer', 'admin') else 'capture is on'
-    return 'vaelius: you are now ' + ('a ' + role if role in ('reader', 'writer') else 'an ' + role) + \
-        ' in ' + name + ' — ' + capture
+    capture = 'capture is off' if role not in CAPTURING_ROLES else 'capture is on'
+    if role in ('member', 'writer'):
+        said = 'a member'
+    elif role == 'admin':
+        said = 'an admin'
+    else:
+        said = 'not a member'
+    return 'vaelius: you are now ' + said + ' in ' + name + ' — ' + capture
 
 
 def captures(entry):
     """False when the service says the person cannot capture in the session's workspace any more."""
     role = ((entry or {}).get('descriptor') or {}).get('role')
-    return role is None or role in ('writer', 'admin')
+    return role is None or role in CAPTURING_ROLES
 
 
 def stale(entry, now=None):

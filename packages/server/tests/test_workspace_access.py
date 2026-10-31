@@ -30,9 +30,9 @@ def label(ceiling, reason='', projects=(), kinds=None):
 
 
 class WorkspaceFixture(PostgresFixture):
-    """maple (operator workspace): maple-members writer {alice, bob, quinn}; group platform
-    reader {carol, group core {dave}}; alice admin. birch: alice admin, bob reader.
-    oak: alice admin, organization reader. erin is in no entry; quinn is quarantined."""
+    """maple (operator workspace): maple-members member {alice, bob, quinn}; group platform
+    member {carol, group core {dave}}; alice admin. birch: alice admin, bob member.
+    oak: alice admin, org-visible (everyone reads). erin is in no entry; quinn is quarantined."""
 
     def workspace_setup(self):
         self.postgres_setup()
@@ -51,7 +51,7 @@ class WorkspaceFixture(PostgresFixture):
         for name in ('birch', 'oak'):
             self.store.create_workspace(self.alice, {'name': name, 'visibility': 'private'})
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'bob',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         self.store.set_entry(self.alice, {'workspace': 'oak', 'subject_kind': 'organization', 'role': 'reader'})
         for name in ('platform', 'core'):
             self.store.create_group(self.alice, {'name': name})
@@ -59,7 +59,7 @@ class WorkspaceFixture(PostgresFixture):
         self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'dave'})
         self.store.add_group_member(self.alice, {'group': 'platform', 'member_kind': 'group', 'member': 'core'})
         self.store.set_entry(self.alice, {'workspace': 'maple', 'subject_kind': 'group', 'subject': 'platform',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         for name in ('maple', 'birch', 'oak'):
             self.store.enroll_connection(self.alice, 'a-' + name, 'a-' + name, name, ['agent'], visibility='organization')
         self.fixture = json.loads((Path(__file__).parent / 'fixtures/raw_default_v1.json').read_text())
@@ -158,7 +158,7 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
         everything = set(self.items.values())
         self.assertLayers(self.alice, everything, 'owner reads everything of theirs')
         self.assertLayers(self.bob, self.expect('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
-                          'writer in maple, reader in birch, organization reader of oak')
+                          'member of maple and birch, reads oak through org visibility')
         group_reader = self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group')
         self.assertLayers(self.carol, group_reader, 'direct member of a group entry; group share')
         self.assertLayers(self.dave, group_reader, 'nested group member')
@@ -195,7 +195,7 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
         self.store.remove_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'dave'})
         self.assertLayers(self.dave, self.expect('o_shared'), 'removed from the nested group (o_maple carries maple)')
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'group', 'subject': 'platform',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         self.assertLayers(self.carol, self.expect('m_shared', 'm_team', 'o_shared', 'o_maple', 'm_share_group',
                                                   'm_birch', 'm_birch_share'),
                           'adding an entry widens past items; the carried workspace now admits carol')
@@ -292,32 +292,42 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         return {r['id']: r['role'] for r in rows if r['role']}
 
     def test_every_mode_of_the_access_list_table_is_an_access_list(self):
-        rank = {'reader': 1, 'writer': 2, 'admin': 3}
+        # Membership is binary (migration 055): member (2) or admin (3); the organization
+        # entry is org visibility, read only (1).
+        rank = {'reader': 1, 'member': 2, 'admin': 3}
         modes = {
             'fully-private': [],
-            'chosen-people': [('principal', 'bob', 'writer'), ('principal', 'carol', 'reader')],
-            'team': [('group', 'platform', 'writer')],
-            'org-read-team-write': [('group', 'platform', 'writer'), ('organization', None, 'reader')],
-            'org-read-write': [('organization', None, 'writer')],
-            'read-only-group': [('group', 'core', 'reader')],
+            'chosen-people': [('principal', 'bob', 'member'), ('principal', 'carol', 'admin')],
+            'team': [('group', 'platform', 'member')],
+            'org-read-team-write': [('group', 'platform', 'member'), ('organization', None, None)],
         }
         everyone = {'alice', 'bob', 'carol', 'dave', 'erin', 'frank', 'quinn', 'admin'}
         expected = {
             'fully-private': {'alice': 3},
-            'chosen-people': {'alice': 3, 'bob': 2, 'carol': 1},
+            'chosen-people': {'alice': 3, 'bob': 2, 'carol': 3},
             'team': {'alice': 3, 'carol': 2, 'dave': 2},
             'org-read-team-write': dict({name: 1 for name in everyone}, alice=3, carol=2, dave=2),
-            'org-read-write': dict({name: 2 for name in everyone}, alice=3),
-            'read-only-group': {'alice': 3, 'dave': 1},
         }
         for mode, entries in modes.items():
             with self.subTest(mode=mode):
                 self.store.create_workspace(self.alice, {'name': mode, 'visibility': 'private'})
                 for kind, subject, role in entries:
-                    self.store.set_entry(self.alice, {'workspace': mode, 'subject_kind': kind, 'subject': subject,
-                                                      'role': role})
+                    self.store.set_entry(self.alice, dict({'workspace': mode, 'subject_kind': kind, 'subject': subject},
+                                                          **({'role': role} if role else {})))
                 self.assertEqual(self.audience(mode), expected[mode])
                 self.assertTrue(all(value in rank.values() for value in expected[mode].values()))
+        # The pre-055 role names are refused, never mapped (a `reader` grant must not gain write);
+        # the organization entry only ever reads.
+        for role in ('reader', 'writer'):
+            with self.assertRaisesRegex(ValueError, 'role_must_be_member_or_admin'):
+                self.store.set_entry(self.alice, {'workspace': 'team', 'subject_kind': 'principal', 'subject': 'erin',
+                                                  'role': role})
+        for role in ('member', 'writer', 'admin'):
+            with self.assertRaisesRegex(ValueError, 'organization_entry_is_read_only_visibility'):
+                self.store.set_entry(self.alice, {'workspace': 'team', 'subject_kind': 'organization', 'role': role})
+        with self.assertRaisesRegex(ValueError, 'role_must_be_member_or_admin'):
+            self.store.operator_workspace('set-entry', 'team', subject_kind='group', subject='core', role='reader')
+        self.assertEqual(self.audience('team'), expected['team'], 'refusals change nothing')
 
     def test_self_service_creation_admin_rule_and_tenant_restriction(self):
         created = self.store.create_workspace(self.bob, {'name': 'willow', 'visibility': 'private'})
@@ -348,30 +358,36 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         self.store.remove_entry(self.bob, {'workspace': 'willow', 'subject_kind': 'principal', 'subject': 'bob'})
         # Break-glass: a settings administrator manages any access list, audited.
         self.store.set_entry(settings_admin, {'workspace': 'willow', 'subject_kind': 'principal', 'subject': 'erin',
-                                              'role': 'reader'})
+                                              'role': 'member'})
         with self.store.open() as state:
             self.assertTrue(state.db.execute('''SELECT 1 FROM enterprise_audit WHERE operation='workspace_admin_override'
                 AND actor='admin' ''').fetchone())
-        # A writer cannot manage the access list.
+        # A member cannot manage the access list.
         with self.assertRaises(Denied):
             self.store.set_entry(self.bob, {'workspace': 'maple', 'subject_kind': 'principal', 'subject': 'erin',
-                                            'role': 'reader'})
+                                            'role': 'member'})
         # widest_entry refuses entries wider than it allows.
         self.store.tenant_policy(None, {'widest_entry': 'people_and_groups'})
         with self.assertRaisesRegex(ValueError, 'entry_wider_than_tenant_allows'):
             self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'organization', 'role': 'reader'})
 
     def test_roles_bound_credential_actions_and_owners_keep_self_service(self):
-        # bob is a reader in birch: no capture connection, no share, no moderation there.
+        # erin only reads oak (org visibility, not a member): no capture connection, no share,
+        # no moderation there.
         with self.assertRaises(Denied):
-            self.store.enroll_connection(self.bob, 'b-birch', 'b-birch', 'birch', ['agent'], visibility='organization')
+            self.store.enroll_connection(self.erin, 'e-oak', 'e-oak', 'oak', ['agent'], visibility='organization')
         with self.store.open() as state:
-            self.assertEqual(self.store._effective_actions(state.db, self.bob, 'birch'),
+            self.assertEqual(self.store._effective_actions(state.db, self.erin, 'oak'),
                              {'read', 'feedback', 'source_read'})
+            self.assertEqual(self.store._effective_actions(state.db, self.bob, 'birch') & {'ingest', 'manage'},
+                             {'ingest'}, 'a member writes but does not manage')
+        with self.assertRaises(Denied):
+            self.store.set_entry(self.erin, {'workspace': 'oak', 'subject_kind': 'principal', 'subject': 'dave',
+                                             'role': 'member'})
         with self.assertRaises(Denied):
             self.store.set_entry(self.bob, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'erin',
-                                            'role': 'reader'})
-        # bob writes in maple; a writer cannot moderate (admin role).
+                                            'role': 'member'})
+        # bob writes in maple; a member cannot moderate (admin role).
         self.store.enroll_connection(self.bob, 'b-maple', 'b-maple', 'maple', ['agent'], visibility='organization')
         mine = self.ingest(ctx=self.bob, connection='b-maple', tag='bob-own')['source_id']
         theirs = self.ingest(tag='alice-own', index=1)['source_id']
@@ -388,10 +404,10 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         self.store.change_sharing(self.bob, {'source_ids': [mine], 'sharing': 'private',
                                              'confirm': made['confirm_token']})
         refused = self.store.change_sharing(self.bob, {'source_ids': [mine], 'sharing': 'shared'})
-        self.assertEqual(refused.get('reason'), 'sharing_needs_the_writer_role')
+        self.assertEqual(refused.get('reason'), 'sharing_needs_membership')
         refused = self.store.grant(self.bob, {'scope': 'source', 'ids': [mine], 'grantee_kind': 'principal',
                                               'grantee': 'erin'})
-        self.assertEqual(refused.get('reason'), 'sharing_needs_the_writer_role')
+        self.assertEqual(refused.get('reason'), 'sharing_needs_membership')
         with self.assertRaises(Denied):
             self.ingest(ctx=self.bob, connection='b-maple', tag='bob-after')
         gone = self.store.forget(self.bob, {'source_ids': [mine]})
@@ -450,7 +466,7 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         self.store.add_group_member(self.alice, {'group': 'leaf', 'member_kind': 'principal', 'member': 'erin'})
         self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'group', 'member': 'leaf'})
         self.assertEqual(closure('platform'), ['alice', 'carol', 'dave', 'erin'])
-        self.assertEqual(self.audience('maple').get('erin'), 1)
+        self.assertEqual(self.audience('maple').get('erin'), 2, 'a member through platform, nested twice')
         self.store.remove_group_member(self.alice, {'group': 'core', 'member_kind': 'group', 'member': 'leaf'})
         self.assertEqual(closure('platform'), ['alice', 'carol', 'dave'])
         self.store.delete_group(self.alice, {'group': 'leaf'})
@@ -462,7 +478,7 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
                 VALUES('acme','scim-y','principal','erin',0)''')
             state.db.execute("SELECT access_refresh_groups('acme',ARRAY['scim-y'])")
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'group', 'subject': 'scim-y',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         self.assertNotIn('erin', self.audience('birch'))
         with self.assertRaisesRegex(ValueError, 'synced_group_is_read_only'):
             self.store.add_group_member(self.alice, {'group': 'scim-y', 'member_kind': 'principal', 'member': 'dave'})
@@ -579,7 +595,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
                          'narrowing intersects: maple ∩ birch = {alice, bob}')
         self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'erin',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         self.assertEqual(self.superset(self.alice, 'birch'), (False, ['birch', 'maple', 'oak']),
                          'erin is in maple through platform > core now')
         self.store.remove_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
@@ -609,7 +625,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
              'maple ∩ birch'),
             (self.carol, 'maple', {}, ('m_shared', 'm_team'), 'a group share to platform does not contain maple'),
             (self.erin, 'oak', {}, ('o_shared',), 'a share to erin alone does not contain the organization'),
-            (self.bob, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'), 'reader of birch'),
+            (self.bob, 'birch', {}, ('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'), 'member of birch'),
             (self.alice, 'maple', {'private': True}, tuple(self.items), 'a private session reads everything'),
         )
         for ctx, workspace, extra, expected, message in cases:
@@ -619,7 +635,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
     def test_a_share_whose_group_contains_the_session_audience_is_recalled(self):
         self.store.create_workspace(self.carol, {'name': 'pf', 'visibility': 'private'})
         self.store.set_entry(self.carol, {'workspace': 'pf', 'subject_kind': 'group', 'subject': 'platform',
-                                          'role': 'writer'})
+                                          'role': 'member'})
         found = self.label(self.carol, 'pf')['session_label']
         self.assertEqual((found['private'], found['groups']), (False, ['platform']))
         self.assertLayers(self.label(self.carol, 'pf'),
@@ -660,7 +676,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
     def test_descriptor_names_only_missing_people_from_the_sessions_own_access_list(self):
         # frank reads birch only; he is in nobody's session audience but birch's.
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'frank',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         descriptor = self.store.session_descriptor(self.alice, {'workspace': 'maple'})
         narrower = {item['id']: item for item in descriptor['narrower']}
         self.assertEqual(sorted(narrower), ['birch', 'oak'], 'readable but not containing maple')
@@ -686,12 +702,12 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
 
     def test_access_changes_report_newly_unreadable_workspaces(self):
         added = self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal',
-                                                  'subject': 'erin', 'role': 'reader'})
+                                                  'subject': 'erin', 'role': 'member'})
         self.assertEqual(added['newly_unreadable'], ['maple'], 'erin is not in maple; oak still contains her')
         self.assertIn('sessions in birch can no longer read maple', added['newly_unreadable_note'])
         self.assertNotIn('\n', added['newly_unreadable_note'])
         again = self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal',
-                                                  'subject': 'erin', 'role': 'reader'})
+                                                  'subject': 'erin', 'role': 'member'})
         self.assertEqual(again['newly_unreadable'], [], 'an unchanged entry loses nothing')
         joined = self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
         self.assertEqual(joined['newly_unreadable'], [], 'widening maple loses nothing for birch')
@@ -704,7 +720,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         # A synced group change has no admin to answer: it is logged.
         self.store.add_group_member(self.alice, {'group': 'core', 'member_kind': 'principal', 'member': 'erin'})
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'erin',
-                                          'role': 'reader'})
+                                          'role': 'member'})
         with self.assertLogs('agenthub.workspace_access', 'WARNING') as logged:
             with self.store.open() as state, state.db:
                 before = self.store.sync_containment(state.db, 'acme', ['core'])

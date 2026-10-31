@@ -29,7 +29,7 @@ class ServerBackfillTests(PostgresFixture, unittest.TestCase):
         # Everything that could widen a live capture is set wide: the workspace inherits,
         # the organization reads it, and both people share by default.
         self.store.operator_workspace('settings', 'maple', item_default='shared')
-        self.store.operator_workspace('set-entry', 'maple', subject_kind='organization', role='reader')
+        self.store.operator_workspace('set-entry', 'maple', subject_kind='organization')
         for ctx in (self.alice, self.bob):
             self.store.sharing_setting(ctx, {'contributions_default': 'shared'})
         self.tmp = tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -75,7 +75,7 @@ class ServerBackfillTests(PostgresFixture, unittest.TestCase):
         report = self.run_backfill()
         self.assertTrue(report['dry_run'])
         self.assertEqual(report['skipped'], {'invalid': 2, 'unmapped_author': 1, 'unmapped_workspace': 1,
-                                             'unknown_principal': 1, 'not_writer': 1, 'unknown_workspace': 0})
+                                             'unknown_principal': 1, 'not_member': 1, 'unknown_workspace': 0})
         self.assertEqual([(g['principal'], g['workspace'], g['sessions'], g['events']) for g in report['groups']],
                          [('alice', 'maple', 2, 4), ('bob', 'maple', 1, 1)])
         self.assertNotIn('maple import', json.dumps(report))

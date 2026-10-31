@@ -377,20 +377,26 @@ class WorkspaceCliTests(unittest.TestCase):
                                     {'workspace': 'maple', 'item_default': 'private', 'active': False}))
 
     def test_workspace_entries_set_and_remove(self):
-        response = {'workspace': 'maple', 'entry': {'subject_kind': 'principal', 'subject': 'bob', 'role': 'writer'},
+        response = {'workspace': 'maple', 'entry': {'subject_kind': 'principal', 'subject': 'bob', 'role': 'member'},
                     'operation': 'added', 'audience_before': 1, 'audience_after': 2}
         calls, _ = self._run('workspace', 'set-entry', 'maple',
-                             '--subject-kind', 'principal', '--subject', 'bob', '--role', 'writer',
-                             response=response)
+                             '--subject-kind', 'principal', '--subject', 'bob', response=response)
         self.assertEqual(calls[0], ('/enterprise/v3/workspaces/entries/set',
                                     {'workspace': 'maple', 'subject_kind': 'principal',
-                                     'subject': 'bob', 'role': 'writer'}))
-        # Organization entry omits --subject.
-        org_response = dict(response, entry={'subject_kind': 'organization', 'role': 'reader'})
+                                     'subject': 'bob', 'role': 'member'}), 'member is the default')
         calls, _ = self._run('workspace', 'set-entry', 'maple',
-                             '--subject-kind', 'organization', '--role', 'reader', response=org_response)
-        self.assertEqual(calls[0], ('/enterprise/v3/workspaces/entries/set',
-                                    {'workspace': 'maple', 'subject_kind': 'organization', 'role': 'reader'}))
+                             '--subject-kind', 'group', '--subject', 'platform', '--role', 'admin',
+                             response=dict(response, entry={'subject_kind': 'group', 'subject': 'platform',
+                                                            'role': 'admin'}))
+        self.assertEqual(calls[0][1]['role'], 'admin')
+        # The pre-055 role names are refused, never mapped; org-wide reading is set-visibility.
+        for role in ('reader', 'writer'):
+            with self.assertRaises(SystemExit) as refused:
+                self._run('workspace', 'set-entry', 'maple', '--subject-kind', 'principal', '--subject', 'bob',
+                          '--role', role, response=response)
+            self.assertIn('role_must_be_member_or_admin', str(refused.exception))
+        with self.assertRaises(SystemExit):
+            self._run('workspace', 'set-entry', 'maple', '--subject-kind', 'organization', response=response)
         remove_response = {'workspace': 'maple', 'removed': True, 'audience_before': 2, 'audience_after': 1}
         calls, _ = self._run('workspace', 'remove-entry', 'maple',
                              '--subject-kind', 'principal', '--subject', 'bob', response=remove_response)
@@ -398,7 +404,7 @@ class WorkspaceCliTests(unittest.TestCase):
                                     {'workspace': 'maple', 'subject_kind': 'principal', 'subject': 'bob'}))
         # Principal and group entries require --subject.
         with self.assertRaises(SystemExit):
-            self._run('workspace', 'set-entry', 'maple', '--subject-kind', 'principal', '--role', 'writer')
+            self._run('workspace', 'set-entry', 'maple', '--subject-kind', 'principal', '--role', 'member')
 
     def test_workspace_link_and_unlink_normalize_the_remote(self):
         link_response = {'workspace': 'maple', 'remote': 'example.com/example-org/maple',

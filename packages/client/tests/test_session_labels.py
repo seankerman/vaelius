@@ -19,7 +19,7 @@ from unittest import mock
 from agentclient import claude_guardrails, origin, session_label
 
 
-def descriptor(narrowed=(), private=False, *, now=None, role='writer', epoch=7):
+def descriptor(narrowed=(), private=False, *, now=None, role='member', epoch=7):
     now = time.time() if now is None else now
     contains = [{'id': 'team-a', 'name': 'team-a'}, {'id': 'org-c', 'name': 'org-c'}]
     if 'narrow-b' in narrowed:
@@ -43,7 +43,7 @@ class Service:
         self.calls = []
         self.refuse = set()
         self.epoch = 7
-        self.role = 'writer'
+        self.role = 'member'
 
     def request(self, path, value=None):
         self.calls.append((path, value))
@@ -191,7 +191,7 @@ class SessionLabelTest(LabelFixture):
         self.hook('UserPromptSubmit', prompt='refresh me')
         result = self.hook('UserPromptSubmit', prompt='not captured')
         self.assertEqual(len(Outbox.events), 2, 'the prompt that saw the newer epoch was the last capture')
-        self.assertIn('vaelius: you are now a reader in team-a — capture is off', result.get('systemMessage', ''))
+        self.assertIn('vaelius: you are now not a member in team-a — capture is off', result.get('systemMessage', ''))
 
 
 class HookDecisionTest(LabelFixture):

@@ -329,7 +329,7 @@ def collect(store, *, stale_days=DEFAULT_STALE_DAYS, now=None):
                     'active': bool(row['active']), 'requires_reconcile': bool(row['requires_reconcile']),
                     'projects': sorted(mapped_projects.get(row['external_id'], []))})
 
-    roles = {1: 'reader', 2: 'writer', 3: 'admin'}
+    roles = {1: 'reader', 2: 'member', 3: 'admin'}
 
     def effective(principal_role, group_role):
         if widest == 'none':

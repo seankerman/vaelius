@@ -16,14 +16,14 @@ no operator:
   (owner only) or `shared` (the workspace audience). Making private needs
   `withdraw` or `share` and applies on the next request, whatever the caller's
   current role (ownership survives role changes). Clearing private is a widening:
-  it needs `share`, the `writer` role in the source's workspace, a credential
+  it needs `share`, membership in the source's workspace, a credential
   that is not delegated and an operator setting that allows owner sharing, and
   it never applies to an origin-private source. Every change is recorded in
   `enterprise_sharing_changes` and the audit log;
 * **grants** (`grant`, `revoke`, `grants`): explicit shares naming a principal or
   a group that may read the passages (and, optionally, the originals) of a
   source, a capture session or a connection. Granting needs `share` and the
-  `writer` role in each covered workspace (or the operator `policy` action);
+  membership in each covered workspace (or the operator `policy` action);
   revoking needs `share`, `withdraw` or `policy`;
 * **moderation** (`moderate`): a workspace admin withdraws (hides) other people's
   sources in that workspace. It needs the `admin` role there and a credential
@@ -44,7 +44,7 @@ import json
 import re
 import time
 
-from agenthub.workspace_access import ADMIN, WRITER, origin_ceiling, origin_projects
+from agenthub.workspace_access import ADMIN, MEMBER, origin_ceiling, origin_projects
 
 MAX_SELECTION = 200
 MAX_LIST = 200
@@ -396,7 +396,7 @@ class OwnerControlsMixin:
         """Make the caller's selected sources private, or shared with their workspace.
 
         Making private applies on the next request. Clearing private needs `share`,
-        the writer role in each source's workspace, a credential that is not
+        membership in each source's workspace, a credential that is not
         delegated and owner sharing allowed by the operator; origin-private sources
         stay private.
         """
@@ -428,8 +428,8 @@ class OwnerControlsMixin:
                 refusal = 'delegated_credentials_cannot_share'
             elif not tenant or tenant['owner_sharing'] != 'allowed':
                 refusal = 'operator_restricts_owner_sharing_to_lowering'
-            elif any(p['needs_writer'] for p in raising):
-                refusal = 'sharing_needs_the_writer_role'
+            elif any(p['needs_member'] for p in raising):
+                refusal = 'sharing_needs_membership'
         parameters = {'sharing': requested, **{k: value[k] for k in sorted(value)}}
         token = confirm_token(ctx, 'sharing', parameters, rows)
         summary = self._sharing_summary(plan)
@@ -452,7 +452,7 @@ class OwnerControlsMixin:
         with self.delivery_lock(), self.open() as opened, opened.db:
             db = opened.db
             now = time.time()
-            if raising and any(self._workspace_role(db, ctx, p['workspace'])[0] < WRITER for p in raising):
+            if raising and any(self._workspace_role(db, ctx, p['workspace'])[0] < MEMBER for p in raising):
                 raise Denied()
             for item in plan:
                 current = db.execute('''SELECT tenant,owner,active,source_version,private
@@ -490,7 +490,7 @@ class OwnerControlsMixin:
             capped_by.append('origin')
         return {'id': row['id'], 'version': row['source_version'], 'private': private,
                 'workspace': row['external_project'], 'capped_by': capped_by,
-                'needs_writer': roles.get(row['external_project'], (0, 0))[0] < WRITER,
+                'needs_member': roles.get(row['external_project'], (0, 0))[0] < MEMBER,
                 'raises': private < row['private'], 'lowers': private > row['private']}
 
     @staticmethod
@@ -576,7 +576,7 @@ class OwnerControlsMixin:
             for ident in ids:
                 covered += scope_sources(db, ctx['tenant'], ctx['actor'], scope, ident, limit=5000)
             if issued_with == 'share' and not refusal:
-                # Sharing is a widening: the writer role in every covered workspace.
+                # Sharing is a widening: membership in every covered workspace.
                 roles = self._roles(db, ctx)
                 workspaces = {row[0] for row in db.execute(
                     'SELECT DISTINCT external_project FROM enterprise_sources WHERE id=ANY(?::text[])',
@@ -584,8 +584,8 @@ class OwnerControlsMixin:
                 if scope == 'connection':
                     workspaces |= {row[0] for row in db.execute('SELECT project FROM backend_connections WHERE id=ANY(?::text[])',
                                                                 (ids,))}
-                if any(roles.get(name, (0, 0))[0] < WRITER for name in workspaces):
-                    refusal = 'sharing_needs_the_writer_role'
+                if any(roles.get(name, (0, 0))[0] < MEMBER for name in workspaces):
+                    refusal = 'sharing_needs_membership'
             origins = self._grant_origins(db, ctx, covered, grantee_kind, grantee)
             rows = [{'id': i, 'source_version': 0} for i in ids]
         parameters = {'scope': scope, 'grantee_kind': grantee_kind, 'grantee': grantee, 'originals': include_originals}

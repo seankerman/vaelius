@@ -181,7 +181,7 @@ class AccessReviewPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(alice['privileged_actions'], ['policy', 'source_read'])
         self.assertIsNotNone(alice['last_activity_at'])
         self.assertEqual([(g['workspace'], g['role'], g['via']) for g in alice['workspace_access']],
-                         [('maple', 'writer', ['group:maple-members'])])
+                         [('maple', 'member', ['group:maple-members'])])
         self.assertEqual([g['group'] for g in alice['group_memberships']], ['maple-members'])
         self.assertEqual(alice['delegations']['represented_by'][0]['principal'], 'svc')
         bob = self.person(report, 'bob')

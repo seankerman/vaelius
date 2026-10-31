@@ -80,10 +80,11 @@ class AccessMigrationTests(unittest.TestCase):
             q = lambda sql, *args: db.execute(sql, args).fetchall()
             self.assertEqual(sorted((r[0], r[1], r[2]) for r in q('SELECT id,name,item_default FROM enterprise_projects')),
                              [('birch', 'birch', 'private'), ('maple', 'maple', 'shared')])
-            # Members are writers through the members group; nobody is an admin; no organization entry.
+            # Members are writers through the members group (`member` since 055); nobody is an
+            # admin; no organization entry.
             self.assertEqual(sorted(tuple(r.values()) for r in q('''SELECT workspace,subject_kind,subject,role
                 FROM workspace_entries ORDER BY 1''')),
-                [('birch', 'group', 'birch-members', 'writer'), ('maple', 'group', 'maple-members', 'writer')])
+                [('birch', 'group', 'birch-members', 'member'), ('maple', 'group', 'maple-members', 'member')])
             self.assertEqual(q('SELECT count(*) FROM enterprise_projects WHERE org_role>0')[0][0], 0)
             access = sorted((r[0], r[1], max(r[2], r[3])) for r in q(
                 'SELECT workspace,principal,principal_role,group_role FROM workspace_access'))
@@ -171,6 +172,51 @@ class AccessMigrationTests(unittest.TestCase):
                 self.assertIsNone(run("SELECT to_regclass(current_schema()||'.'||%s)", (table,)).fetchone()[0], table)
             with self.assertRaises(Exception, msg='the github source is gone'):
                 run("INSERT INTO groups(tenant,id,name,source,created) VALUES('acme','x','x','github',0)")
+
+    def test_055_collapses_roles_to_member_and_admin_and_the_organization_entry_only_reads(self):
+        migrate(self.admin_dsn, through=54)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            run("INSERT INTO enterprise_organizations(id) VALUES('acme')")
+            for name in ('alice', 'bob', 'carol', 'dave', 'erin'):
+                run("INSERT INTO enterprise_principals(tenant,id) VALUES('acme',%s)", (name,))
+            for name in ('oak', 'pine'):
+                run("INSERT INTO enterprise_projects(tenant,id,name) VALUES('acme',%s,%s)", (name, name))
+            run("INSERT INTO groups(tenant,id,name,source,created) VALUES('acme','crew','crew','local',0)")
+            run("INSERT INTO group_edges(tenant,group_id,member_kind,member,created) VALUES('acme','crew','principal','dave',0)")
+            for workspace, kind, subject, role in (('oak', 'principal', 'alice', 'admin'),
+                                                   ('oak', 'principal', 'bob', 'reader'),
+                                                   ('oak', 'principal', 'carol', 'writer'),
+                                                   ('oak', 'group', 'crew', 'reader'),
+                                                   ('pine', 'principal', 'alice', 'admin'),
+                                                   ('pine', 'organization', '', 'writer')):
+                run("""INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
+                    VALUES('acme',%s,%s,%s,%s,'alice',0)""", (workspace, kind, subject, role))
+            run("SELECT access_refresh_groups('acme',NULL)")
+            epoch = run("SELECT epoch FROM enterprise_projects WHERE id='oak'").fetchone()[0]
+        migrate(self.admin_dsn)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            entries = {(r[0], r[1], r[2]): r[3] for r in run('''SELECT workspace,subject_kind,subject,role
+                FROM workspace_entries''').fetchall()}
+            self.assertEqual(entries, {('oak', 'principal', 'alice'): 'admin', ('oak', 'principal', 'bob'): 'member',
+                                       ('oak', 'principal', 'carol'): 'member', ('oak', 'group', 'crew'): 'member',
+                                       ('pine', 'principal', 'alice'): 'admin', ('pine', 'organization', ''): 'reader'})
+            ranks = {(r[0], r[1]): max(r[2], r[3]) for r in run('''SELECT workspace,principal,principal_role,group_role
+                FROM workspace_access''').fetchall()}
+            self.assertEqual(ranks, {('oak', 'alice'): 3, ('oak', 'bob'): 2, ('oak', 'carol'): 2, ('oak', 'dave'): 2,
+                                     ('pine', 'alice'): 3})
+            self.assertEqual(run("SELECT org_role FROM enterprise_projects WHERE id='pine'").fetchone()[0], 1,
+                             'org visibility reads; it never writes')
+            role = lambda who, where: run("SELECT (search_workspace_role('acme',%s,%s,NULL)).role", (who, where)).fetchone()[0]
+            self.assertEqual((role('erin', 'pine'), role('erin', 'oak'), role('bob', 'oak')), (1, 0, 2))
+            self.assertGreater(run("SELECT epoch FROM enterprise_projects WHERE id='oak'").fetchone()[0], epoch)
+            for kind, subject, role_name in (('principal', 'erin', 'reader'), ('principal', 'erin', 'writer'),
+                                             ('organization', '', 'member')):
+                with self.assertRaises(Exception, msg=role_name):
+                    with db.transaction():
+                        run("""INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
+                            VALUES('acme','oak',%s,%s,%s,'alice',0)""", (kind, subject, role_name))
 
 
 if __name__ == '__main__':

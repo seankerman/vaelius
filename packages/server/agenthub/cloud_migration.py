@@ -219,7 +219,7 @@ def _import_memberships(db, rows):
 
 def _import_workspaces(db, tenant):
     """Imported projects become workspaces as in migration 048: a members group with a
-    writer entry, no admin and no organization entry, and every imported item private."""
+    member entry, no admin and no organization entry, and every imported item private."""
     now = time.time()
     for row in db.execute('SELECT id FROM enterprise_projects WHERE tenant=?', (tenant,)).fetchall():
         project = row['id']
@@ -227,7 +227,7 @@ def _import_workspaces(db, tenant):
         db.execute('''INSERT INTO groups(tenant,id,name,source,workspace,created_by,created)
             VALUES(?,?,?,'local',?,'migration',?) ON CONFLICT DO NOTHING''', (tenant, group, group, project, now))
         db.execute('''INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
-            VALUES(?,?,'group',?,'writer','migration',?) ON CONFLICT DO NOTHING''', (tenant, project, group, now))
+            VALUES(?,?,'group',?,'member','migration',?) ON CONFLICT DO NOTHING''', (tenant, project, group, now))
     db.execute('UPDATE enterprise_sources SET private=1 WHERE tenant=? AND private=0', (tenant,))
     db.execute('SELECT access_refresh_groups(?,NULL)', (tenant,))
 

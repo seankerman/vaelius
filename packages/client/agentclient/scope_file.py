@@ -370,7 +370,7 @@ def discover_remote(root):
 
     A scoped folder that is not a Git repository, a bare worktree, a repository
     with no remotes, or one with several remotes and no `origin` all return
-    None; the server accepts a remote-less capture on the person's writer role
+    None; the server accepts a remote-less capture on the person's membership
     alone (see `docs/ACCESS_MODEL.md` section 4). Cached per-process for
     ``_REMOTE_TTL`` seconds."""
     if not root:

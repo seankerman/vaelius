@@ -2,10 +2,14 @@
 
 A workspace (stored in `enterprise_projects`, same ids as the projects it
 replaces) has an access list: entries of a subject (`principal`, `group` or the
-whole `organization`) and a role (`reader` < `writer` < `admin`). A principal's
-role is the highest any entry gives them, directly, through any group they belong
-to (`group_closure`, materialized) or through the organization entry. Entries
-wider than the tenant's `widest_entry` are suspended at query time.
+whole `organization`). Membership is binary: a person or group entry is `member`
+(read, and write from the workspace's repositories) or `admin` (a member who also
+manages membership and settings). The organization entry is the workspace's
+visibility, not a membership: it lets everyone signed in to the tenant read
+(rank `reader`) and nothing more. A principal's rank is the highest any entry
+gives them, directly, through any group they belong to (`group_closure`,
+materialized) or through the organization entry. Entries wider than the tenant's
+`widest_entry` are suspended at query time.
 
 The audience of an item (a captured source and everything derived from it) is:
 
@@ -24,7 +28,7 @@ implemented three times and kept in agreement by parity tests:
 Effective actions in a workspace are the credential's actions intersected with
 those implied by the caller's role there (`ROLE_ACTIONS`). Owners keep every
 self-service right over their own items whatever their role; widening (sharing,
-clearing `private`) needs the `writer` role.
+clearing `private`) needs membership.
 
 Nothing about access is cached between requests: every check reads the current
 tables. Operator methods take no request context and audit as `local_operator`.
@@ -34,9 +38,13 @@ import json
 import re
 import time
 
-ROLES = ('reader', 'writer', 'admin')
-RANK = {'reader': 1, 'writer': 2, 'admin': 3}
-READER, WRITER, ADMIN = 1, 2, 3
+# Membership roles of person and group entries (migration 055). `reader` is not a
+# role anyone is given: it is the rank the organization entry (org visibility)
+# grants, read only. The pre-055 names `reader` and `writer` are refused on input.
+ROLES = ('member', 'admin')
+RANK = {'reader': 1, 'member': 2, 'admin': 3}
+READER, MEMBER, ADMIN = 1, 2, 3
+RETIRED_ROLES = ('reader', 'writer')
 SUBJECT_KINDS = ('principal', 'group', 'organization')
 WIDEST = ('none', 'people_and_groups', 'organization')
 CREATION = ('anyone', 'admins')
@@ -52,7 +60,7 @@ OPERATOR = 'local_operator'
 # Actions a role implies inside one workspace (credential actions ∩ these).
 ROLE_ACTIONS = {
     READER: frozenset({'read', 'feedback', 'source_read'}),
-    WRITER: frozenset({'read', 'feedback', 'source_read', 'ingest', 'correct', 'curate', 'withdraw', 'share'}),
+    MEMBER: frozenset({'read', 'feedback', 'source_read', 'ingest', 'correct', 'curate', 'withdraw', 'share'}),
     ADMIN: frozenset({'read', 'feedback', 'source_read', 'ingest', 'correct', 'curate', 'withdraw', 'share',
                       'moderate', 'manage'}),
 }
@@ -96,13 +104,23 @@ def lowest(*levels):
 
 
 def role_name(rank):
-    return {READER: 'reader', WRITER: 'writer', ADMIN: 'admin'}.get(rank)
+    """`member`, `admin`, or `reader` for someone who only reads through org visibility."""
+    return {READER: 'reader', MEMBER: 'member', ADMIN: 'admin'}.get(rank)
 
 
-def _role_rank(value):
-    if value not in RANK:
+def entry_role(kind, role):
+    """The stored role of a new entry. Person and group entries are `member` or
+    `admin`; the pre-055 names are refused (no silent mapping: `reader` would gain
+    write). The organization entry takes no role: it is org visibility (read only)."""
+    if kind == 'organization':
+        if role not in (None, 'reader'):
+            raise ValueError('organization_entry_is_read_only_visibility')
+        return 'reader'
+    if role in RETIRED_ROLES:
+        raise ValueError('role_must_be_member_or_admin')
+    if role not in ROLES:
         raise ValueError('invalid_role')
-    return RANK[value]
+    return role
 
 
 class WorkspaceAccessMixin:
@@ -718,7 +736,7 @@ class WorkspaceAccessMixin:
                 result = {'workspace': row['id'], 'operation': 'unchanged',
                           'entry': {'subject_kind': 'organization', 'subject': None, 'role': entry['role']}}
             else:
-                result = dict(self.set_entry(ctx, dict(target, role='reader')),
+                result = dict(self.set_entry(ctx, target),
                               items_now_visible_to_org=int(exposed), notice=ORG_NOTICE)
         elif entry:
             result = self.remove_entry(ctx, target)
@@ -800,13 +818,13 @@ class WorkspaceAccessMixin:
         return kind, group['id']
 
     def set_entry(self, ctx, value):
-        """Add an entry or change its role (admins; settings override). Audited with the
-        audience size before and after."""
+        """Add an entry or change its role (admins; settings override): a person or group
+        as `member` or `admin`, or the organization entry (org visibility, read only).
+        Audited with the audience size before and after."""
         if not isinstance(value, dict) or set(value) - {'workspace', 'subject_kind', 'subject', 'role'} \
                 or 'workspace' not in value:
             raise ValueError('invalid_request')
-        role = value.get('role')
-        _role_rank(role)
+        role = entry_role(value.get('subject_kind'), value.get('role'))
         with self.delivery_lock(), self.open() as state, state.db:
             db = state.db
             if hasattr(self, 'current_identity'):
@@ -1232,9 +1250,9 @@ class WorkspaceAccessMixin:
             if not row:
                 raise ValueError('unknown_workspace')
             if command == 'set-entry':
-                _role_rank(options.get('role'))
+                role = entry_role(options.get('subject_kind'), options.get('role'))
                 kind, subject = self._subject(db, ctx, options)
-                return self._write_entry(db, ctx, row['id'], kind, subject, options['role'])
+                return self._write_entry(db, ctx, row['id'], kind, subject, role)
             if command == 'remove-entry':
                 kind = options.get('subject_kind')
                 if kind not in SUBJECT_KINDS:

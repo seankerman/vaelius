@@ -13,6 +13,8 @@ from agentclient.local_state import private_dir
 # the wire shape (`contributions_default` for the person setting, `sharing` for
 # a selection) happens where the request is built.
 SHARING_LEVELS = ('shared', 'private', 'team', 'organization')
+# Workspace membership is binary (migration 055).
+WORKSPACE_ROLES = ('member', 'admin')
 
 
 def _contributions_default(level):
@@ -47,11 +49,12 @@ def _add_workspace_commands(sub):
     settings.add_argument('--name', help='new workspace name')
     settings.add_argument('--item-default', choices=('shared', 'private'))
     settings.add_argument('--active', choices=('true', 'false'), help='false archives')
-    set_entry = inner.add_parser('set-entry', help='add or change an entry on the access list')
+    set_entry = inner.add_parser('set-entry', help='add a member or admin (a person or a group), or change their role')
     set_entry.add_argument('workspace')
-    set_entry.add_argument('--subject-kind', choices=('principal', 'group', 'organization'), required=True)
-    set_entry.add_argument('--subject', help='principal/group id or name (omit for organization)')
-    set_entry.add_argument('--role', choices=('reader', 'writer', 'admin'), required=True)
+    set_entry.add_argument('--subject-kind', choices=('principal', 'group'), required=True)
+    set_entry.add_argument('--subject', required=True, help='principal/group id or name')
+    set_entry.add_argument('--role', default='member', help='member (default: read and write) or admin (also '
+                           'manages membership and settings); org-wide reading is `set-visibility org`')
     remove_entry = inner.add_parser('remove-entry', help='remove an entry from the access list')
     remove_entry.add_argument('workspace')
     remove_entry.add_argument('--subject-kind', choices=('principal', 'group', 'organization'), required=True)
@@ -475,15 +478,14 @@ def _workspace_payload(args):
         if args.active is not None: body['active'] = (args.active == 'true')
         return '/enterprise/v3/workspaces/settings', body
     if command == 'set-entry':
-        if args.subject_kind == 'organization':
-            if args.subject:
-                raise SystemExit(json.dumps({'error': '--subject is not allowed with --subject-kind organization'}))
-            body = {'workspace': args.workspace, 'subject_kind': 'organization', 'role': args.role}
-        else:
-            if not args.subject:
-                raise SystemExit(json.dumps({'error': '--subject is required for principal and group entries'}))
-            body = {'workspace': args.workspace, 'subject_kind': args.subject_kind,
-                    'subject': args.subject, 'role': args.role}
+        if args.role not in WORKSPACE_ROLES:
+            # reader and writer were merged into member (migration 055); refused, not
+            # mapped, so a script meant to grant read only never grants write.
+            raise SystemExit(json.dumps({'error': 'role_must_be_member_or_admin', 'reason':
+                'workspace roles are member (read and write) and admin; reader and writer were merged into '
+                'member. Everyone in the org reads an org-visible workspace (`workspace set-visibility`).'}))
+        body = {'workspace': args.workspace, 'subject_kind': args.subject_kind,
+                'subject': args.subject, 'role': args.role}
         return '/enterprise/v3/workspaces/entries/set', body
     if command == 'remove-entry':
         if args.subject_kind == 'organization':

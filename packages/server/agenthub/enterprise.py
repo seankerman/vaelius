@@ -104,7 +104,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
 
     def create_project(self, tenant, project):
         """Operator: a workspace managed by tenant administrators, as projects were:
-        a local `<id>-members` group with a writer entry, no admin and no organization entry."""
+        a local `<id>-members` group with a member entry, no admin and no organization entry."""
         if not isinstance(project,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}",project):
             raise ValueError("invalid_project")
         with self.open() as state, state.db:
@@ -117,7 +117,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             db.execute("""INSERT INTO groups(tenant,id,name,source,workspace,created_by,created)
                 VALUES(?,?,?,'local',?,?,?) ON CONFLICT DO NOTHING""",(tenant,group,group,project,'local_operator',now))
             db.execute("""INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
-                VALUES(?,?,'group',?,'writer','local_operator',?)""",(tenant,project,group,now))
+                VALUES(?,?,'group',?,'member','local_operator',?)""",(tenant,project,group,now))
             self._refresh_groups(db,tenant,[group])
 
     def set_membership(self, tenant, project, principal, active):
@@ -263,7 +263,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         # Explicit enrollment and project grant are the only intake authority.
         with self.delivery_lock(), self.open() as state:
             db=state.db
-            # Capture needs the writer role in the workspace (credential ∩ role).
+            # Capture needs membership in the workspace (credential ∩ role).
             if not self._project_member(db,ctx,value["project"],2):raise Denied()
             body=value["body"]
             cleaned,reasons=clean_private(body)

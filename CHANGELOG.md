@@ -6,6 +6,22 @@ The release workflow publishes the section whose heading matches the tag.
 
 ## [Unreleased]
 
+### Changed
+
+- **Workspace roles are `member` and `admin`** (migration 055). Membership is
+  binary: a member reads and writes from the workspace's repositories; an admin is
+  a member who also manages membership and settings. Person and group entries that
+  were `reader` or `writer` become `member`; `admin` stays. The organization entry
+  is the workspace's visibility (everyone signed in to the tenant reads) and never
+  writes: an older `writer`/`admin` organization entry becomes read only. The
+  old names are **refused** on input (`role_must_be_member_or_admin`), not mapped,
+  so a script meant to grant read only never grants write. `vaelius-client
+  workspace set-entry` takes `--role member` (the default) or `admin` for a person
+  or group; org-wide reading is `workspace set-visibility org`. Someone who reads
+  only through org visibility is reported with the rank `reader`. Rank numbers are
+  unchanged, so the read predicate keeps one shape in Python, the indexed SQL filter
+  and row-level security.
+
 ### Security
 
 - **Unscoped reads are denied, not narrowed.** In a labelled Claude Code session

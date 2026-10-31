@@ -7,7 +7,7 @@ person's own words, and one curated document over it whose audience follows the
 source. Nothing here adds a permission path:
 
 * writing needs only the person's own credential with `ingest` (the action that
-  already creates their content) and the writer role in the workspace it is stored
+  already creates their content) and membership in the workspace it is stored
   in; it never needs `curate`, because the person's explicit command is the review;
 * the item starts owner-private and is recalled only where the existing audience
   rules admit it (the owner's private sessions, per the session-label rule); sharing
@@ -128,7 +128,7 @@ class RememberMixin:
                     raise ValueError('replace_keeps_the_workspace')
             if not isinstance(workspace, str) or not NAME.fullmatch(workspace):
                 raise ValueError('invalid_remember_workspace')
-            # Writing needs the writer role there, as capture does.
+            # Writing needs membership there, as capture does.
             if not self._project_member(db, ctx, workspace, 2):
                 raise Denied()
             sharing = 'private'

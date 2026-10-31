@@ -2,7 +2,7 @@
 
 Synthetic PostgreSQL cases, no model calls. Only the owner acts on their sources;
 deletion is the canonical purge and a legal hold wins; an item is private or
-shared with its workspace, and sharing needs the writer role and never passes
+shared with its workspace, and sharing needs membership and never passes
 the origin; shares name readers (principals or groups), are revocable and audited
 and stand in for the workspace audience only; derived documents need the
 audience of every source; moderation follows the workspace admin role and hides
@@ -45,7 +45,7 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
         for ident, project, visibility in (('a-maple', 'maple', 'organization'), ('a-birch', 'birch', 'organization')):
             self.store.enroll_connection(self.alice, ident, ident, project, ['agent'], visibility=visibility)
         self.store.enroll_connection(self.bob, 'b-maple', 'b', 'maple', ['agent'], visibility='organization')
-        self.store.operator_workspace('set-entry', 'maple', subject_kind='organization', role='reader')
+        self.store.operator_workspace('set-entry', 'maple', subject_kind='organization')
         self.fixture = json.loads((Path(__file__).parent / 'fixtures/raw_default_v1.json').read_text())
 
     def tearDown(self):

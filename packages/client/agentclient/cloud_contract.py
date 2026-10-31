@@ -1,6 +1,10 @@
 """Explicit cloud-local response capabilities without expanding legacy envelopes."""
 import json
 VERSION='cloud-local-1'
+# Workspace role names on the wire: member/admin since migration 055 (reader = read
+# through org visibility); writer from an older service.
+ROLE_NAMES=frozenset({'reader','member','admin','writer'})
+
 
 def validate_response(path,value):
     if not isinstance(value,dict) or len(json.dumps(value,ensure_ascii=True))>524288:
@@ -134,9 +138,9 @@ def validate_response(path,value):
                     not isinstance(workspace['id'],str) or not isinstance(workspace['name'],str) or
                     workspace['item_default'] not in {'shared','private'} or
                     type(workspace['active']) not in (bool,int) or
-                    (workspace['role'] is not None and workspace['role'] not in {'reader','writer','admin'}) or
+                    (workspace['role'] is not None and workspace['role'] not in ROLE_NAMES) or
                     (workspace['organization_entry'] is not None and
-                        workspace['organization_entry'] not in {'reader','writer','admin'})):
+                        workspace['organization_entry'] not in ROLE_NAMES)):
                 raise ValueError('invalid_workspace_listing')
     elif route in {'workspaces/create','workspaces/show','workspaces/settings'}:
         if not isinstance(value,dict) or not isinstance(value.get('workspace'),dict):
@@ -156,7 +160,7 @@ def validate_response(path,value):
                 if (not isinstance(entry,dict)
                         or not {'subject_kind','role'}<=set(entry)
                         or entry['subject_kind'] not in {'principal','group','organization'}
-                        or entry['role'] not in {'reader','writer','admin'}):
+                        or entry['role'] not in ROLE_NAMES):
                     raise ValueError('invalid_workspace_response')
         if route=='workspaces/settings' and type(value.get('changed',False)) is not bool:
             raise ValueError('invalid_workspace_response')

@@ -74,7 +74,7 @@ class PushFixture(unittest.TestCase):
         (self.profile / 'config.json').write_text(json.dumps(self.config))
         isolation = [patch.dict(os.environ, {'HOME': str(self.homedir), 'CLAUDE_CONFIG_DIR': str(self.claude),
                                              'CODEX_HOME': str(self.codex), 'TMPDIR': str(base / 'tmp')}),
-                     patch('agentclient.push_session._role', return_value='writer')]
+                     patch('agentclient.push_session._role', return_value='member')]
         (base / 'tmp').mkdir()
         for item in isolation:
             item.start();self.addCleanup(item.stop)
@@ -123,7 +123,7 @@ class PushSessionTests(PushFixture):
         report = self.push()
         self.assertTrue(report['dry_run'])
         self.assertEqual((report['host'], report['workspace'], report['sharing'], report['role']),
-                         ('claude-code', 'maple', 'private', 'writer'))
+                         ('claude-code', 'maple', 'private', 'member'))
         self.assertEqual(report['counts']['by_kind'], {'UserPromptSubmit': 2, 'PostToolUse': 3, 'Stop': 2})
         self.assertEqual(report['counts']['tainted_private'], 3)
         for text in ('app entry point', 'personal', 'Documents', 'print(1)'):
@@ -206,7 +206,7 @@ class PushSessionTests(PushFixture):
         with self.assertRaisesRegex(PushRefused, 'subagent'):
             self.push(str(next((self.claude / 'projects').rglob('agent-a1.jsonl'))))
         with patch('agentclient.push_session._role', return_value='reader'):
-            with self.assertRaisesRegex(PushRefused, 'writer_role_required'):
+            with self.assertRaisesRegex(PushRefused, 'membership_required'):
                 self.push(apply=True)
         self.assertEqual(self.backend.delivered(), [])
 

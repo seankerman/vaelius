@@ -214,18 +214,24 @@ def refresh(home, config, session, entry=None, *, timeout=2):
     return labels.update(session, **values)
 
 
+# What a reader or non-member's chat in a workspace folder captures into: their
+# personal memory only (decided by the service on every capture).
+PERSONAL = 'this chat is saved to your personal memory only'
+
+
 def role_line(entry, descriptor):
     role = descriptor.get('role') or 'not a reader'
     name = (descriptor.get('workspace') or {}).get('name') or entry['workspace']
-    capture = 'capture is off' if role not in ('writer', 'admin') else 'capture is on'
+    capture = PERSONAL if role not in ('writer', 'admin') else 'capture is on'
     return 'vaelius: you are now ' + ('a ' + role if role in ('reader', 'writer') else 'an ' + role) + \
         ' in ' + name + ' — ' + capture
 
 
-def captures(entry):
-    """False when the service says the person cannot capture in the session's workspace any more."""
-    role = ((entry or {}).get('descriptor') or {}).get('role')
-    return role is None or role in ('writer', 'admin')
+def writes_workspace(entry):
+    """False when the service says the person is not a writer in the session's workspace:
+    their chat is captured into personal memory only."""
+    descriptor = (entry or {}).get('descriptor')
+    return not descriptor or descriptor.get('role') in ('writer', 'admin')
 
 
 def stale(entry, now=None):
@@ -280,6 +286,10 @@ def status_line(entry, *, private=False):
         return None
     if entry.get('read_only'):
         return READ_ONLY_STATUS
+    if not writes_workspace(entry):
+        role = (entry.get('descriptor') or {}).get('role')
+        return ('vaelius: you are ' + ('a reader' if role == 'reader' else 'not a member') + ' in ' + display(entry)
+                + ' — ' + PERSONAL)
     if entry.get('private'):
         return 'vaelius: session ' + display(entry) + ' is private (you only) — capture limited to you'
     if entry.get('narrowed'):
@@ -340,6 +350,21 @@ def decide(entry, info, path, *, private=False, now=None, home=None):
                 "'s admin to add them.")
     return ('vaelius: denied — ' + where + ' (workspace "' + workspace + '") is visible to fewer people than this '
             'session (' + label + '). Start a session there to work on it.')
+
+
+def memory_reason(path, home=None):
+    """The one-line denial for Claude Code's auto-memory folder in a shared session."""
+    home = home or os.path.expanduser('~')
+    try:
+        shown = '~/' + str(Path(path).relative_to(home)) if Path(path) != Path(home) else '~'
+    except ValueError:
+        shown = str(path)
+    return ('vaelius: ' + shown + " is Claude Code's auto memory, which any earlier chat may have written, so "
+            "this shared session does not read it. Keep what matters with 'vaelius-client import-memory'.")
+
+
+def _private(entry, private):
+    return bool(private or entry.get('private') or ((entry.get('descriptor') or {}).get('session') or {}).get('private'))
 
 
 def unscoped_reason(path, home=None):
@@ -492,14 +517,16 @@ def hook_reason(home, event, *, now=None):
         category = info.get('category')
         unscoped = context.root is not None and (category in UNSCOPED or (
             category == 'claude_state' and not info.get('root') and not info.get('own')))
-        if category not in ('scoped', 'claude_state') and not unscoped:
+        # Claude Code auto memory: any earlier chat, whatever it read, may have written it.
+        memory = category == 'claude_memory'
+        if category not in ('scoped', 'claude_state') and not unscoped and not memory:
             continue
         if private is None:
             private = session_private(home, session)
-        if unscoped:
-            if private or entry.get('private'):
-                continue  # a private session may read it; the backstop already holds
-            return unscoped_reason(path, str(context.home))
+        if unscoped or memory:
+            if _private(entry, private):
+                continue  # a private (personal) session may read it; its capture stays with the person
+            return (memory_reason if memory else unscoped_reason)(path, str(context.home))
         reason = decide(entry, info, path, private=private, now=now, home=str(context.home))
         if reason:
             return reason

@@ -697,10 +697,8 @@ def handle(home, event, *, host='codex', via='settings'):
     if host=='claude-code':
         entry=_session_label(Path(home),config,scope,event,label_notices)
         if entry is not None:
-            from agentclient import session_label
-            if scope['capture']=='on' and not session_label.captures(entry):
-                # The service says the person is no longer a writer here (the status line says so).
-                scope=dict(scope,capture='read-only')
+            # A reader or non-member keeps capturing: the service stores it as their personal
+            # memory only (the status line says so).
             if entry.get('read_only'):
                 # A read-only chat: nothing from it is captured from now on (one-way).
                 scope=dict(scope,capture='read-only')

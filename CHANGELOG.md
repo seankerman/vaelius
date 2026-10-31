@@ -6,6 +6,23 @@ The release workflow publishes the section whose heading matches the tag.
 
 ## [Unreleased]
 
+### Changed
+
+- **Readers and non-members capture into personal memory.** Someone who is not
+  a writer in the workspace a folder names (a reader, or not on the access list at
+  all) may work there: the service stores what their chats capture as their own
+  personal memory (owner-only), deciding on the current role at every capture,
+  never on the client. Their session there is personal: it recalls what they can
+  read, and the status line says `this chat is saved to your personal memory only`.
+  Before, capture switched off for readers and was refused for non-members. A
+  remote linked to another workspace is still refused.
+- **Claude Code auto memory is denied in shared sessions.** Reading
+  `~/.claude/projects/<project>/memory/` (written by any earlier chat, whatever it
+  read) no longer turns a session private: the guardrail hook denies it with one
+  line in a shared session and allows it in a personal one. `vaelius-client
+  import-memory` keeps entries as remembered items. The taint backstop stays for
+  reads the hook cannot see.
+
 ### Removed
 
 - **Per-item sharing** (migration 055). An item is read by its workspace's

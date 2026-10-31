@@ -155,6 +155,18 @@ class WorkspaceAccessMixin:
         """The reader holds at least `minimum` (default reader) in an active workspace."""
         return self._workspace_role(db, ctx, project)[0] >= minimum
 
+    @staticmethod
+    def _capture_workspace(db, ctx, project):
+        """The workspace exists and is active, so a capture may name it. Whether the capture
+        joins the workspace (writers) or stays personal memory (readers and non-members)
+        is decided per capture by `_ingest_privacy`; a delegated credential still captures
+        only in its delegated workspaces."""
+        delegated = ctx.get('delegated_projects')
+        if delegated is not None and project not in delegated:
+            return False
+        return bool(db.execute('SELECT 1 FROM enterprise_projects WHERE tenant=? AND id=? AND active=1',
+                               (ctx['tenant'], project)).fetchone())
+
     def _need_role(self, db, ctx, workspace, minimum, action=None):
         """Credential action ∩ role: raise Denied unless both allow it."""
         from agenthub.enterprise import Denied
@@ -293,8 +305,11 @@ class WorkspaceAccessMixin:
         New items inherit the workspace audience unless something makes them
         private: no sharing request (an older client's default), a legacy `team`
         request in a workspace with an organization entry, a private capture
-        connection, the person's contributions_default, or the workspace's
-        item_default. A request never widens anything."""
+        connection, the person's contributions_default, the workspace's
+        item_default, or the person not being a writer there. A reader or a
+        non-member working in a workspace's repository captures into their personal
+        memory only (owner-private); the service decides it on the current role, never
+        on what the client says. A request never widens anything."""
         requested = value.get('sharing', 'private')
         if requested not in SHARING + ('shared',):
             raise ValueError('invalid_sharing_request')
@@ -313,6 +328,8 @@ class WorkspaceAccessMixin:
             reasons.append('person')
         if not row or row['item_default'] == 'private':
             reasons.append('workspace')
+        if self._workspace_role(db, ctx, value['project'])[0] < WRITER:
+            reasons.append('not_a_writer')
         return bool(reasons), requested, reasons
 
     def _check_remote(self, db, ctx, workspace, remote):
@@ -1396,10 +1413,13 @@ class WorkspaceAccessMixin:
         requested = label.get('sharing')
         # A read-only chat writes nothing, so it cannot leak what it recalls: it gets the
         # person's full readable set, like a private session.
+        # A reader or non-member captures only into personal memory, so the session is
+        # personal: it recalls what the person can read, and nothing it writes is shared.
         private = bool(label.get('private') or label.get('read_only') or requested == 'private'
                        or not person or person['contributions_default'] == 'private'
                        or workspace['item_default'] == 'private'
-                       or (requested == 'team' and workspace['org_role'] > 0))
+                       or (requested == 'team' and workspace['org_role'] > 0)
+                       or roles.get(workspace['id'], (0, 0))[0] < WRITER)
         epoch = db.execute('SELECT coalesce(sum(epoch),0) FROM enterprise_projects WHERE tenant=?',
                            (ctx['tenant'],)).fetchone()[0]
         result = {'workspace': workspace['id'], 'narrowed': names[1:], 'readable': readable, 'epoch': int(epoch),
@@ -1548,9 +1568,11 @@ class WorkspaceAccessMixin:
             if hasattr(self, 'current_identity'):
                 self.current_identity(db, ctx)
             roles = self._roles(db, ctx)
-            for ref in [label['workspace'], *label.get('narrowed', ())]:
+            for index, ref in enumerate([label['workspace'], *label.get('narrowed', ())]):
                 row = self._resolve_workspace(db, ctx['tenant'], ref, active_only=True)
-                if not row or roles.get(row['id'], (0, 0))[0] < READER:
+                # A non-member may start a (personal) session in a workspace's folder;
+                # a narrowed workspace still needs read.
+                if not row or (index and roles.get(row['id'], (0, 0))[0] < READER):
                     raise Denied()
             session = self._session_label(db, ctx, label)
             workspace = self._resolve_workspace(db, ctx['tenant'], label['workspace'], active_only=True)
@@ -1559,8 +1581,9 @@ class WorkspaceAccessMixin:
                 (ctx['tenant'], session['readable'])).fetchall()}
             person = db.execute('SELECT contributions_default FROM enterprise_principals WHERE tenant=? AND id=?',
                                 (ctx['tenant'], ctx['actor'])).fetchone()
+            member = roles.get(workspace['id'], (0, 0))[0] >= READER
             repos = [r[0] for r in db.execute('SELECT remote FROM workspace_repos WHERE tenant=? AND workspace=? '
-                                              'ORDER BY remote', (ctx['tenant'], workspace['id']))]
+                                              'ORDER BY remote', (ctx['tenant'], workspace['id']))] if member else []
             epoch = session['epoch']
             narrower = []
             if not session['private']:

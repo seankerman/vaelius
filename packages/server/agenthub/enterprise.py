@@ -263,8 +263,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         # Explicit enrollment and project grant are the only intake authority.
         with self.delivery_lock(), self.open() as state:
             db=state.db
-            # Capture needs the writer role in the workspace (credential ∩ role).
-            if not self._project_member(db,ctx,value["project"],2):raise Denied()
+            # A writer captures into the workspace; anyone else into personal memory.
+            if not self._capture_workspace(db,ctx,value["project"]):raise Denied()
             body=value["body"]
             cleaned,reasons=clean_private(body)
             if "possible_secret" in reasons:raise ValueError("secret_source_rejected")

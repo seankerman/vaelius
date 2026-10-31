@@ -485,7 +485,7 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         with self.store.open() as state, state.db:
             state.db.execute("UPDATE groups SET sync_state='current' WHERE id='scim-y'")
             state.db.execute("SELECT access_refresh_groups('acme',ARRAY['scim-y'])")
-        self.assertEqual(self.audience('birch').get('erin'), 1)
+        self.assertEqual(self.audience('birch').get('erin'), 2, 'a member once the group is current')
 
 
 if __name__ == '__main__':

@@ -63,11 +63,12 @@ from agenthub.backend_retrieval import RetrievalMixin
 
 from agenthub.governance import GovernanceMixin
 from agenthub.workspace_access import WorkspaceAccessMixin
+from agenthub.read_only import ReadOnlySessionsMixin
 from agenthub.owner_controls import OwnerControlsMixin
 from agenthub.github_sync import GitHubSyncMixin
 
 
-class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,GitHubSyncMixin,WorkspaceAccessMixin,GeneralSourcesMixin,RetrievalMixin):
+class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,GitHubSyncMixin,WorkspaceAccessMixin,ReadOnlySessionsMixin,GeneralSourcesMixin,RetrievalMixin):
     def __init__(self, *args, **kwargs):
         raise RuntimeError('PostgreSQL authority required; use CloudStore')
 

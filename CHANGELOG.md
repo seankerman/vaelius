@@ -8,6 +8,24 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Security
 
+- **Unscoped reads are denied, not narrowed.** In a labelled Claude Code session
+  the guardrail hook now denies reads of existing paths outside every scoped
+  folder (a repository or folder without `.vaelius`, a dotfile, another volume)
+  with one line: add a `.vaelius`, or run `vaelius-client session use private`.
+  A private session may still read them. Before, such a read was allowed and
+  silently made the rest of the session private. Tooling, caches, system paths,
+  temp and Claude Code configuration are unchanged; read-only, off and unlabelled
+  sessions are unaffected; the taint stays as the backstop for reads the hook
+  cannot see.
+- **Read-only chats, enforced by the service** (migration 053,
+  `read_only_sessions`). `vaelius-client session read-only`, or the new MCP tool
+  `read_only_session` when the person asks, makes the rest of a chat write nothing,
+  one-way until `/clear` or a new chat. The service refuses every write route and
+  tool with `403 read_only_session` for a connection carrying
+  `X-Vaelius-Read-Only: 1` or a `read_only` session label, and for any request that
+  names a registered chat or MCP connection id. `capture = "read-only"` folders
+  get the same refusal. `push-session` refuses chats that ran read-only.
+
 - Guardrails: both profiles and both managed-settings templates ask before the agent
   changes its own configuration (`~/.claude/CLAUDE.md`, settings, skills, agents,
   commands, hooks, output styles, reference, `~/.claude.json`, Codex `config.toml`,
@@ -191,6 +209,20 @@ The release workflow publishes the section whose heading matches the tag.
   the same number of SQL statements as the owner's.
 
 ### Changed
+
+- **Workspace visibility is chosen on the server at creation.** `vaelius-client
+  workspace create NAME --visibility private|org` (and `POST
+  /enterprise/v3/workspaces/create`) now require it; `org` adds an organization
+  reader entry, capped by `widest_entry`. Admins change it with `workspace
+  set-visibility NAME private|org` (`POST /enterprise/v3/workspaces/visibility`),
+  which reports `newly_unreadable`. A `visibility` key in `.vaelius` is ignored
+  with a one-time warning. Scripts that create workspaces must add the flag.
+- **`read` in `.vaelius`**: the default recall scope (`read = ["ws-a", "ws-b"]` or
+  `["*"]`). Without it, recall covers the current workspace only (before: every
+  workspace the label allowed; add `read = ["*"]` to keep that). The service
+  intersects it with the session label and uses it only to narrow retrieval. The
+  MCP `search_memory` tool takes `scope: "all"` or workspace names to broaden one
+  search; the "memories hidden" note only names workspaces in the list.
 
 - **Role-bound credential actions.** A credential's effective actions in a
   workspace are its credential actions ∩ the actions the role implies

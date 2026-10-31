@@ -892,6 +892,12 @@ class HybridRetrievalMixin:
             with reader:
                 predicates = ['TRUE', "d.lifecycle='active'"]
                 args = []
+                read = (ctx.get('session_label') or {}).get('read')
+                if read is not None:
+                    # The `.vaelius` `read` list: which workspaces recall ranks from. Retrieval
+                    # narrowing only; the label's own filter still authorizes every result.
+                    predicates.append('(ed.source_project=ANY(?::text[]) OR ed.source_project IS NULL)')
+                    args.append(read)
                 if self.retrieval_corpus=='sources':
                     predicates.append("ed.representation IN ('raw','source')")
                     cutoff=filters.get('source_as_of')

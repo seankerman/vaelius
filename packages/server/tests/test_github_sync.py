@@ -164,7 +164,7 @@ class GitHubSyncTests(PostgresFixture, unittest.TestCase):
             self.tokens[name] = self.store.enroll('acme', name, name + '-full', FULL)
         self.ctx = {name: self.store.authenticate(self.tokens[name]) for name in ('alice', 'bob', 'carol', 'dave')}
         self.admin = self.store.authenticate(self.tokens['admin'])
-        self.store.create_workspace(self.ctx['alice'], {'name': 'teamspace'})
+        self.store.create_workspace(self.ctx['alice'], {'name': 'teamspace', 'visibility': 'private'})
         self.deliveries = 0
 
     def tearDown(self):

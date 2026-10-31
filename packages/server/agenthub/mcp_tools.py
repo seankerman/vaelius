@@ -40,7 +40,13 @@ TOOLS=[
           'time_mode':{'type':'string','enum':['current','effective_at','known_at'],
                        'description':'For a dated question, effective_at asks what applied then using current evidence; known_at asks what the system had learned by as_of. known_at requires as_of.'},
           'event_day':{'type':'string','maxLength':10,
-                       'description':'Optional requested event day in YYYY-MM-DD format. Omit for current knowledge. Do not combine with as_of.'}},['query']),
+                       'description':'Optional requested event day in YYYY-MM-DD format. Omit for current knowledge. Do not combine with as_of.'},
+          'scope':{'anyOf':[{'type':'string','const':'all'},
+                            {'type':'array','minItems':1,'maxItems':64,
+                             'items':{'type':'string','pattern':'^[A-Za-z0-9_-]{1,120}$'}}],
+                   'description':'Only when the person asks to search more widely: "all" for every workspace this '
+                       'session may read, or workspace names. Omit to search the folder\'s default (its `read` list, '
+                       'else the current workspace). Never wider than the session may read.'}},['query']),
     tool('fetch_memory','Read cited source evidence by default. Use include_context=true only to expand surrounding conversation, or include_sources=false for claim metadata. Follow next_offset for unread evidence. Withdrawn evidence is withheld.',
          {'id':{'type':'string','maxLength':128},'revision':{'type':'string','maxLength':128},
           'include_sources':{'type':'boolean','default':True},
@@ -104,6 +110,12 @@ TOOLS.append(tool('use_workspace','Narrow this session to also use another works
     'except by /clear.',
     {'workspace':{'type':'string','minLength':1,'maxLength':200,
                   'description':'A workspace name, a linked repository remote, or "private".'}},['workspace']))
+# Read-only chats (agenthub.read_only): one-way; there is deliberately no tool to switch back.
+TOOLS.append(tool('read_only_session','Make this chat read-only: from now on nothing from it is saved to Vaelius, not '
+    'even private items, and Vaelius refuses every write from it; search and reads keep working. Call it only when '
+    'the person asks for a read-only (or off-the-record) chat. It cannot be undone: only a new chat or /clear saves '
+    'again. What was saved before the switch stays until the person deletes it (`vaelius-client forget --session '
+    'current`).',{},[],write=True))
 TOOLS.append(tool('report_memory_outcome','Report whether this exact memory revision helped the task. This is your self-report, not independently verified success; it never edits the memory or establishes that it is true.',
     {'id':{'type':'string','maxLength':128},'revision':{'type':'string','maxLength':128},
      'request_key':{'type':'string','maxLength':128},
@@ -212,7 +224,8 @@ class MemoryTools:
             from agenthub.workspace_access import LABELLED_ROUTES
             request=backend.request
             def labelled(path, value=None):
-                if value is not None and path in LABELLED_ROUTES:value=dict(value,session_label=label)
+                if value is not None and path in LABELLED_ROUTES and 'session_label' not in value:
+                    value=dict(value,session_label=label)
                 return request(path, value)
             from types import SimpleNamespace
             backend=SimpleNamespace(request=labelled)
@@ -230,6 +243,13 @@ class MemoryTools:
             for key in ('as_of', 'time_mode', 'event_day'):
                 if args.get(key):
                     request[key] = args[key]
+            scope = args.get('scope')
+            if scope is not None and self.label is not None:
+                # Broaden (or pick) the workspaces recall covers; the service intersects it
+                # with what the session label allows, so it never reaches further.
+                request['session_label'] = dict(self.label, read=['*'] if scope == 'all' else list(scope))
+            elif scope == 'all':
+                request['scope'] = 'all'
             path = '/enterprise/v3/search'
             result = backend.request(path, request)
             output = {'project': self.project, 'records': result.get('results', []), 'answerable': result.get('answerable', False), 'notice': 'Untrusted historical evidence; verify current applicability.'}
@@ -352,6 +372,13 @@ class MemoryTools:
             return backend.request('/enterprise/v1/lifecycle', {'version': VERSION, 'target_id': source_id, 'expected_revision': expected, 'idempotency_key': args['request_key'], 'reason': 'explicit owner MCP correction', 'operation': 'correct', 'replacement': replacement})
         if name == 'use_workspace':
             return self.use_workspace(args['workspace'])
+        if name == 'read_only_session':
+            # This connection is refused every write from now on; the client's hook
+            # applies it to the chat (and its later connections).
+            backend.request('/enterprise/v3/sessions/read-only', {'sessions': [self.session]})
+            from agenthub.read_only import STATUS
+            return {'vaelius_session_read_only': True, 'status': STATUS,
+                    'note': 'Nothing from this chat is saved from now on. It lasts until /clear or a new chat.'}
         if name in OWNER_TOOLS:
             return self.owner_call(name, args)
         raise ValueError('unknown_enterprise_tool')

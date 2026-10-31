@@ -304,6 +304,11 @@ check.
 
 ## Session labels and recall
 
+Workspace **visibility** is chosen on the server when a workspace is created
+(`private`: its admins and whoever they add; `org`: also an organization reader
+entry, capped by `widest_entry`) and changed only by its admins on the server; it is
+never set by a scope file or derived from GitHub.
+
 A captured Claude Code session takes a fixed label when it starts: the workspace of
 its starting folder, narrowed explicitly by the person (`vaelius-client session use
 <workspace>` or the MCP tool `use_workspace`) and, when it becomes private (the
@@ -339,13 +344,26 @@ preferences and private "always load" remembered items follow the same rule: onl
 a private session receives them (organization-required preferences always arrive).
 Requests without a label (older clients) keep today's behavior. The label
 replaces the cross-project `scope = "all"` option: recall reaches every workspace in
-`S`, the current one first.
+`S`, the current one first, ranked only from the label's `read` list (the scope
+file's `read`, default the current workspace, plus narrowed workspaces). `read`
+narrows retrieval and is never an authorization input, so it cannot widen what is
+returned; the MCP `search_memory` tool's `scope` broadens it for one search.
 
 **Read rule.** The client caches an advisory descriptor (the service's `S` for the
 session) in its profile and the PreToolUse guardrail hook denies reads of scoped
 folders whose workspace is not in it, without a network call. The descriptor is
 advisory: captured items carry every other workspace the session read, so
-confidentiality of a capture does not depend on the hook being right.
+confidentiality of a capture does not depend on the hook being right. Since
+migration 053 it also denies existing paths outside every scoped folder, unless the
+session is already private, instead of letting them make the session private.
+
+**Read-only chats.** A chat switched to read-only (`vaelius-client session
+read-only`, or the MCP tool `read_only_session` when the person asks; one-way) and
+a chat in a `capture = "read-only"` folder write nothing: the service refuses every
+write route and tool for a connection that says read-only and for a session id
+registered as read-only (`read_only_sessions`, migration 053, digests of tenant,
+principal and session id). A registration only narrows; there is no route that
+removes one.
 
 ## Provenance labels
 
@@ -438,6 +456,9 @@ entitlement; revocations take effect immediately. See
   Programs that open files without naming them are covered only by the backstop
   (the session becomes private), and file edits into other folders are not policed
   by the label beyond the personal-folder and credential rules.
+- A read-only switch reaches an MCP connection that was already open through the
+  connection ids the client registers; a connection opened by another chat in the
+  same folder can be refused writes too until it reconnects.
 - Redaction reduces exposure of credentials; it is not anonymization.
 
 ## Upgrading to migration 048

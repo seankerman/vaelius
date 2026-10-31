@@ -17,6 +17,19 @@ def retry_after(error, *, ceiling=3600):
     return min(ceiling,max(1,value))
 
 
+def _error_body(exc):
+    """The JSON error body of an HTTP error, read once and kept on the exception."""
+    if not hasattr(exc,'_vaelius_body'):
+        body={}
+        try:
+            raw=exc.read() if hasattr(exc,'read') else b''
+            body=json.loads(raw.decode('utf-8','replace')) if raw else {}
+        except Exception:body={}
+        try:exc._vaelius_body=body if isinstance(body,dict) else {}
+        except Exception:return body if isinstance(body,dict) else {}
+    return exc._vaelius_body
+
+
 class Outbox:
     def __init__(self, home, *, max_bytes=64 * 1024 * 1024, max_age=86400):
         self.home = Path(home);self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -128,6 +141,14 @@ class Outbox:
                     notices.append({'kind':'parts_notice','text':receipt['notice'],
                                     'ident':'parts_notice:'+row['digest']})
             except Exception as exc:
+                if getattr(exc,'code',None)==403 and _error_body(exc).get('error')=='read_only_session':
+                    # The chat was switched to read-only: the service will never accept this
+                    # event, so it is dropped (a gap is recorded) and draining continues.
+                    with self.db:
+                        self.db.execute('DELETE FROM pending WHERE digest=?',(row['digest'],))
+                        self.db.execute('INSERT INTO gaps(reason,count,created) VALUES(?,?,?)',
+                                        ('read_only_session_refused',1,time.time()))
+                    continue
                 delay=min(300,2**min(row['failures'],8))
                 # A 429 keeps the event and waits for the service's Retry-After.
                 if getattr(exc,'code',None)==429:delay=max(delay,retry_after(exc))
@@ -135,12 +156,8 @@ class Outbox:
                 # workspace. The event stays queued; retry sparingly and surface
                 # the admin fix on the status line (`docs/ACCESS_MODEL.md` 4, 11).
                 if getattr(exc,'code',None)==409:
-                    body={}
-                    try:
-                        raw=exc.read() if hasattr(exc,'read') else b''
-                        body=json.loads(raw.decode('utf-8','replace')) if raw else {}
-                    except Exception:body={}
-                    if isinstance(body,dict) and body.get('error')=='repo_not_linked':
+                    body=_error_body(exc)
+                    if body.get('error')=='repo_not_linked':
                         delay=max(delay,900)  # 15 minutes
                         remote=event.get('remote','')
                         workspace=event.get('workspace') or event.get('project') or ''

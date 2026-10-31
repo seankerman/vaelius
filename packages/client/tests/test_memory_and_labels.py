@@ -101,7 +101,9 @@ class LabelRecordTests(LabelFixture):
         with mock.patch('agentclient.transport.enterprise_client', return_value=backend), \
                 mock.patch('agentclient.transport.require_backend', return_value={}), \
                 mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
-            return json.loads(mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))['X-Vaelius-Session-Label'])
+            value = json.loads(mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))['X-Vaelius-Session-Label'])
+        self.assertEqual(value.pop('read'), ['team-a'], 'the default read list: the current workspace')
+        return value
 
     def use(self, target):
         with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
@@ -142,7 +144,7 @@ class LabelRecordTests(LabelFixture):
         result = self.start()
         sent = [v for p, v in self.service.calls if p.endswith('preferences')][-1]
         self.assertEqual(sent['session_label'], {'workspace': 'team-a', 'narrowed': [], 'private': False,
-                                                 'sharing': 'organization'})
+                                                 'sharing': 'organization', 'read': ['team-a']})
         self.assertIn('Answer briefly.', result['hookSpecificOutput']['additionalContext'])
         # Delivered private memory makes what follows private, so an echo stays with its owner.
         self.assertEqual(origin.SessionOrigins(self.home).get('s1')['ceiling'], 'private')

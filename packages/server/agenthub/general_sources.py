@@ -163,7 +163,13 @@ class GeneralSourcesMixin:
                 self._connection(state.db,ctx,value['connection'])
                 state.db.execute('DELETE FROM backend_parts WHERE connection=? AND external_id=? AND revision=?',key)
             raise ValueError('invalid_or_unredacted_enterprise_source') from None
-        result=self.ingest_general(ctx,payload)
+        from agenthub.read_only import ReadOnlySession
+        try:result=self.ingest_general(ctx,payload)
+        except ReadOnlySession:
+            # Never accepted later either: drop the staged fragments now.
+            with self.open() as state,state.db:
+                state.db.execute('DELETE FROM backend_parts WHERE connection=? AND external_id=? AND revision=?',key)
+            raise
         with self.open() as state,state.db:
             state.db.executemany("INSERT INTO backend_part_hashes VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
                 ((*key,r['part_index'],hashlib.sha256(r['data']).hexdigest()) for r in rows))
@@ -181,6 +187,8 @@ class GeneralSourcesMixin:
         value,_=redact_capture(value)
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db;connection=self._connection(db,ctx,value['connection'])
+            # A chat switched to read-only saves nothing (agenthub.read_only).
+            self.refuse_read_only(ctx,[value.get('conversation')],db)
             # `project` (or its alias `workspace`) names the workspace by name or id.
             workspace=self._resolve_workspace(db,ctx['tenant'],value['project'])
             if (not workspace or workspace['id']!=connection['project']

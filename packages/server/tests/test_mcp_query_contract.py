@@ -62,8 +62,31 @@ class SearchScopeToolTests(unittest.TestCase):
         self.assertEqual(request['project'], 'maple')
         self.assertNotIn('scope', request)
         self.assertNotIn('scope', output)
-        with self.assertRaises(ValueError):
-            self.run_search({'query': 'Where is the dataset?', 'scope': 'all'})
+        self.assertNotIn('session_label', request, 'no label of its own: the connection label applies')
+        # `scope` broadens on request (`.vaelius` `read` sets the default); the service caps it.
+        _, request = self.run_search({'query': 'Where is the dataset?', 'scope': 'all'})
+        self.assertEqual(request['scope'], 'all', 'an unlabelled connection keeps the earlier option')
+        for bad in ('some', [], ['../x']):
+            with self.assertRaises(ValueError):
+                self.run_search({'query': 'Where is the dataset?', 'scope': bad})
+
+    def test_scope_broadens_the_label_read_list_and_never_the_label(self):
+        from agenthub.mcp_tools import MemoryTools
+        calls = []
+
+        class Backend:
+            def request(self, path, value):
+                calls.append(value)
+                return {'answerable': False, 'results': []}
+        label = {'workspace': 'maple', 'narrowed': [], 'private': False, 'read': ['maple']}
+        tools = MemoryTools('maple', Backend(), label=label)
+        tools.call('search_memory', {'query': 'q'})
+        tools.call('search_memory', {'query': 'q', 'scope': 'all'})
+        tools.call('search_memory', {'query': 'q', 'scope': ['birch', 'oak']})
+        self.assertEqual([c['session_label']['read'] for c in calls], [['maple'], ['*'], ['birch', 'oak']])
+        self.assertTrue(all(dict(c['session_label'], read=None) == dict(label, read=None) for c in calls),
+                        'only the read list changes')
+        self.assertNotIn('scope', calls[1])
 
     def test_use_workspace_checks_the_target_with_the_service(self):
         from agenthub.mcp_tools import MemoryTools

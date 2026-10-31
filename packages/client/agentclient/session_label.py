@@ -21,8 +21,16 @@ read rule from local state only, never a network call:
   PostToolUse origin label carries that workspace;
 * a scoped folder of any other workspace (narrower, unreadable, unknown, or a scope
   file that does not parse): deny with one plain line, never `ask`;
-* everything else falls through to the guardrail profile and the #32 backstop
-  (unscoped and unknown paths are allowed and make the session private).
+* an existing path outside every scoped folder (a repository or folder without a
+  scope file, the rest of the home folder, other volumes): deny with one line naming
+  the two ways forward (add a scope file, or `vaelius-client session use private`),
+  unless the session is already private;
+* everything else falls through to the guardrail profile (credentials and personal
+  folders), and tooling, caches, system paths, temp and Claude Code configuration stay
+  readable. The #32 taint is the backstop only for reads the hook cannot see.
+
+A read-only chat (`vaelius-client session read-only`, or the MCP tool
+`read_only_session`) captures nothing, so none of these rules apply to it.
 
 The descriptor comes from the service (`POST /enterprise/v3/workspaces/descriptor`)
 at SessionStart, after `refresh_after` (15 minutes) at the next prompt, and when a
@@ -47,6 +55,16 @@ NAME = re.compile(r'[A-Za-z0-9_-]{1,120}')
 # Scope origins that name a real workspace (capture-all fallbacks invent project names).
 LABELLED_ORIGINS = ('scope_file', 'enrolled_root', 'enrolled_worktree', 'session')
 SESSION_ENV = ('CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'VAELIUS_SESSION_ID')
+# Paths outside every scoped folder: denied in a labelled session (not a private one).
+UNSCOPED = ('unscoped_repo', 'unknown')
+READ_ONLY_STATUS = 'vaelius: read-only — nothing from this chat is saved'
+READ_ONLY_FORGET = (" (what was saved before stays; run 'vaelius-client forget --session current' in a terminal "
+                    "to delete it)")
+# Durable record of chats that ran read-only (push-session refuses them), kept after /clear.
+READ_ONLY_STATE = 'read-only-sessions.json'
+READ_ONLY_DAYS = 400
+MCP_CONNECTIONS = 'mcp-connections'
+MCP_CONNECTION_KEEP = 7
 ACTIVE_SECONDS = 12 * 3600  # `use` without --session picks a session active this recently
 
 
@@ -107,7 +125,11 @@ class SessionLabels:
             key = _key(session)
             entry = state.get(key)
             if not isinstance(entry, dict):
+                read = scope.get('read')
                 entry = {'workspace': scope['project'], 'root': scope.get('root'), 'cwd': cwd,
+                         'session_id': str(session),
+                         # Default recall scope (`.vaelius` `read`): the current workspace only.
+                         'read': list(read) if read else [scope['project']],
                          'scope_file': scope.get('scope_file'), 'sharing': scope.get('sharing', 'organization'),
                          'allowed_paths': list(scope.get('allowed_paths') or ()),
                          'allowed_mcp_servers': list(scope.get('allowed_mcp_servers') or ()),
@@ -171,6 +193,10 @@ def request_label(entry):
              'private': bool(entry.get('private'))}
     if entry.get('sharing') in ('private', 'team', 'organization'):
         label['sharing'] = entry['sharing']
+    if isinstance(entry.get('read'), list) and entry['read']:
+        label['read'] = list(entry['read'])
+    if entry.get('read_only'):
+        label['read_only'] = True
     return label
 
 
@@ -259,6 +285,8 @@ def status_line(entry, *, private=False):
     """The session label for the person, or None for an ordinary unnarrowed session."""
     if not entry:
         return None
+    if entry.get('read_only'):
+        return READ_ONLY_STATUS
     if entry.get('private'):
         return 'vaelius: session ' + display(entry) + ' is private (you only) — capture limited to you'
     if entry.get('narrowed'):
@@ -322,6 +350,17 @@ def decide(entry, info, path, *, private=False, now=None, home=None):
             + workspace + '`; capture is then limited to people in both.')
 
 
+def unscoped_reason(path, home=None):
+    """The one-line denial for an existing path outside every scoped folder."""
+    home = home or os.path.expanduser('~')
+    try:
+        shown = '~/' + str(Path(path).relative_to(home)) if Path(path) != Path(home) else '~'
+    except ValueError:
+        shown = str(path)
+    return ('vaelius: ' + shown + " isn't in a Vaelius folder (no .vaelius). Add one, or run "
+            "'vaelius-client session use private' to read it in a private session.")
+
+
 # Why a narrower workspace is narrower ------------------------------------------------
 #
 # The descriptor's `narrower` list carries, for each workspace the person can read but
@@ -356,8 +395,11 @@ def who(summary):
 
 def hidden_line(entry):
     """The once-per-session status line for memories the session's recall leaves out, or None."""
+    read = (entry or {}).get('read')
     found = [item for item in ((entry or {}).get('descriptor') or {}).get('narrower') or ()
-             if isinstance(item, dict) and type(item.get('hidden_items')) is int and item['hidden_items'] > 0]
+             if isinstance(item, dict) and type(item.get('hidden_items')) is int and item['hidden_items'] > 0
+             # Only workspaces recall would otherwise cover: those in the `read` list (or all, with "*").
+             and (not isinstance(read, list) or '*' in read or item.get('id') in read or item.get('name') in read)]
     if not found:
         return None
     found.sort(key=lambda item: (-item['hidden_items'], str(item.get('name') or item.get('id'))))
@@ -433,8 +475,8 @@ def hook_reason(home, event, *, now=None):
     if not session or (tool != 'Bash' and tool not in READ_TOOLS):
         return None
     entry = SessionLabels(home).get(session)
-    if not entry:
-        return None
+    if not entry or entry.get('read_only'):
+        return None  # unlabelled, or read-only: nothing is captured, so no label rule
     from agentclient.origin import Context
     config = _read(Path(home) / 'config.json')
     scope = {'project': entry['workspace'], 'root': entry.get('root'), 'scope_file': entry.get('scope_file'),
@@ -445,10 +487,17 @@ def hook_reason(home, event, *, now=None):
     private = None
     for path in targets(event, context):
         info = context._scope_of(path)
-        if info.get('category') not in ('scoped', 'claude_state'):
+        category = info.get('category')
+        unscoped = context.root is not None and (category in UNSCOPED or (
+            category == 'claude_state' and not info.get('root') and not info.get('own')))
+        if category not in ('scoped', 'claude_state') and not unscoped:
             continue
         if private is None:
             private = session_private(home, session)
+        if unscoped:
+            if private or entry.get('private'):
+                continue  # a private session may read it; the backstop already holds
+            return unscoped_reason(path, str(context.home))
         reason = decide(entry, info, path, private=private, now=now, home=str(context.home))
         if reason:
             return reason
@@ -540,6 +589,30 @@ def apply_use(home, session, entry, descriptor, *, private=False, keyed=False):
             'private': bool(result.get('private')), 'status': values['announce']}
 
 
+def read_only_result(response):
+    """True when an MCP read_only_session result says the service registered it."""
+    found = [False]
+    def walk(value, depth=0):
+        if depth > 6 or found[0]:
+            return
+        if isinstance(value, str) and value.strip()[:1] in '[{':
+            try:
+                walk(json.loads(value), depth + 1)
+            except ValueError:
+                pass
+        elif isinstance(value, list):
+            for item in value[:20]:
+                walk(item, depth + 1)
+        elif isinstance(value, dict):
+            if value.get('vaelius_session_read_only') is True:
+                found[0] = True
+                return
+            for item in list(value.values())[:20]:
+                walk(item, depth + 1)
+    walk(response)
+    return found[0]
+
+
 def use_result(response):
     """The `vaelius_session_use` record in an MCP use_workspace result, or None."""
     def walk(value, depth=0):
@@ -601,6 +674,8 @@ def record_mcp_label(home, session, entry, *, private=False, key=None):
     value = {'root': os.path.realpath(str(root)), 'session': key or _key(session), 'workspace': entry['workspace'],
              'narrowed': [n for n in entry.get('narrowed') or () if isinstance(n, str) and NAME.fullmatch(n)],
              'private': bool(entry.get('private') or private), 'updated': time.time()}
+    if entry.get('read_only'):
+        value['read_only'] = True
     path = mcp_label_path(home, root)
     _write(path, value)
     return value
@@ -638,6 +713,8 @@ def compose(folder, recorded, *, now=None):
         label['narrowed'] = list(dict.fromkeys([*(folder.get('narrowed') or []), *extra]))[:16]
     if recorded.get('private') is True or folder.get('private'):
         label['private'] = True
+    if recorded.get('read_only') is True or folder.get('read_only'):
+        label['read_only'] = True  # only ever narrows: nothing from the chat is written
     return label
 
 
@@ -646,3 +723,107 @@ def mcp_label(home, root, folder):
     if not folder or not root:
         return folder
     return compose(folder, _read(mcp_label_path(home, root)))
+
+
+# Read-only chats ---------------------------------------------------------------------
+#
+# `vaelius-client session read-only` (or the MCP tool `read_only_session`, applied by
+# the PostToolUse hook) makes the rest of a labelled chat read-only: the hooks capture
+# nothing, the MCP connection's label says `read_only`, and the service is told the
+# chat's session id and the folder's recent MCP connection ids, so it refuses every
+# write naming them (agenthub.read_only). One-way: only /clear or a new chat resets it.
+# The chat is also recorded in `read-only-sessions.json`, which outlives /clear, so
+# `push-session` refuses it later.
+
+def _read_only_key(session):
+    return _key(session)
+
+
+def was_read_only(home, session):
+    """True when this chat ran read-only at some point (push-session refuses it)."""
+    entry = _read(Path(home) / READ_ONLY_STATE).get(_read_only_key(session))
+    if entry:
+        return True
+    current = SessionLabels(home).get(session)
+    return bool(current and current.get('read_only'))
+
+
+def _remember_read_only(home, keys):
+    path = Path(home) / READ_ONLY_STATE
+    with (Path(home) / 'session-labels.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = _read(path)
+        cutoff = time.time() - READ_ONLY_DAYS * 86400
+        state = {k: v for k, v in state.items() if isinstance(v, (int, float)) and v >= cutoff}
+        for key in keys:
+            state.setdefault(key, time.time())
+        _write(path, state)
+
+
+def record_mcp_connection(home, root, connection):
+    """The header helper notes each MCP connection id it hands out, per folder."""
+    if not root or not isinstance(connection, str):
+        return
+    digest = hashlib.sha256(os.path.realpath(str(root)).encode()).hexdigest()[:32]
+    path = Path(home) / MCP_CONNECTIONS / (digest + '.json')
+    now = time.time()
+    value = _read(path)
+    recent = [c for c in value.get('connections') or () if isinstance(c, dict) and isinstance(c.get('id'), str)
+              and now - c.get('at', 0) <= ACTIVE_SECONDS]
+    recent = (recent + [{'id': connection, 'at': now}])[-MCP_CONNECTION_KEEP:]
+    _write(path, {'connections': recent})
+
+
+def recent_connections(home, root):
+    if not root:
+        return []
+    digest = hashlib.sha256(os.path.realpath(str(root)).encode()).hexdigest()[:32]
+    now = time.time()
+    return [c['id'] for c in _read(Path(home) / MCP_CONNECTIONS / (digest + '.json')).get('connections') or ()
+            if isinstance(c, dict) and isinstance(c.get('id'), str) and now - c.get('at', 0) <= ACTIVE_SECONDS]
+
+
+def apply_read_only(home, config, session, entry, *, keyed=False, mid_session=True, register=True):
+    """Make a labelled chat read-only (one-way) and tell the service; returns the status."""
+    labels = SessionLabels(home)
+    status = READ_ONLY_STATUS + (READ_ONLY_FORGET if mid_session else '')
+    key = session if keyed else _key(session)
+    def change(state):
+        current = state.get(key)
+        if not isinstance(current, dict):
+            return None
+        already = bool(current.get('read_only'))
+        current.update(read_only=True, updated=time.time())
+        if not already:
+            current['announce'] = status
+        return dict(current, already=already)
+    result = labels._locked(change)
+    if result is None:
+        raise UseRefused('the session ended')
+    _remember_read_only(home, [key])
+    try:
+        record_mcp_label(home, None, result, key=key)
+    except OSError:
+        pass
+    registered = False
+    if register:
+        sessions = [s for s in [result.get('session_id')] if s]
+        sessions += recent_connections(home, result.get('root') or result.get('cwd'))
+        sessions = list(dict.fromkeys(sessions))[:8]
+        if sessions:
+            from agentclient.transport import enterprise_client
+            try:
+                enterprise_client(config, timeout=5).request('/enterprise/v3/sessions/read-only',
+                                                             {'sessions': sessions})
+                registered = True
+            except Exception:
+                registered = False  # the hooks still capture nothing; the MCP label says so on reconnect
+    return {'session': result.get('short'), 'read_only': True, 'already': result['already'],
+            'registered_with_service': registered, 'status': status}
+
+
+def read_only(home, config, *, cwd=None, session=None):
+    """`vaelius-client session read-only`: the chat active in this folder (or --session)."""
+    from agentclient.scope_file import scope_names
+    key, entry = resolve_session(home, cwd or os.getcwd(), session, scope_names(config))
+    return apply_read_only(home, config, key, entry, keyed=True)

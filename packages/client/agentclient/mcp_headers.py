@@ -45,7 +45,8 @@ def headers(home, *, project=None, project_dir=None, url=None):
         if scope and scope['origin']=='scope_file':enrolled.add(scope['project'])
     if selected is not None and selected not in enrolled:
         raise ValueError('project_not_enrolled')
-    result={'Authorization':'Bearer '+backend.token,'X-AgentNetwork-Session':'mcp-'+uuid.uuid4().hex}
+    connection='mcp-'+uuid.uuid4().hex
+    result={'Authorization':'Bearer '+backend.token,'X-AgentNetwork-Session':connection}
     if selected:result['X-AgentNetwork-Project']=selected
     label=session_label(scope,selected)
     if label:
@@ -55,6 +56,14 @@ def headers(home, *, project=None, project_dir=None, url=None):
         try:label=mcp_label(home,scope.get('root'),label)
         except Exception:pass
         result['X-Vaelius-Session-Label']=json.dumps(label,separators=(',',':'))
+    if (scope and scope.get('capture')=='read-only' and selected) or (label and label.get('read_only')):
+        # A read-only folder or chat: the service refuses every write on this connection.
+        result['X-Vaelius-Read-Only']='1'
+    if scope and selected:
+        # So `vaelius-client session read-only` can tell the service which connections to refuse.
+        from agentclient.session_label import record_mcp_connection
+        try:record_mcp_connection(home,scope.get('root'),connection)
+        except Exception:pass
     return result
 
 
@@ -71,6 +80,8 @@ def session_label(scope, selected):
         return None
     label={'workspace':selected}
     if scope.get('sharing') in ('private','team'):label['sharing']=scope['sharing']
+    # Default recall scope (`.vaelius` `read`), else the current workspace only.
+    label['read']=list(scope.get('read') or [selected])
     return label
 
 

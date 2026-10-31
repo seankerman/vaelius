@@ -160,6 +160,12 @@ def validate_response(path,value):
                     raise ValueError('invalid_workspace_response')
         if route=='workspaces/settings' and type(value.get('changed',False)) is not bool:
             raise ValueError('invalid_workspace_response')
+    elif route=='workspaces/visibility':
+        if not isinstance(value,dict) or value.get('visibility') not in {'private','org'}:
+            raise ValueError('invalid_workspace_visibility_response')
+    elif route=='sessions/read-only':
+        if not isinstance(value,dict) or value.get('read_only') is not True:
+            raise ValueError('invalid_read_only_response')
     elif route=='workspaces/entries/set':
         if (not {'workspace','entry','operation','audience_before','audience_after'}<=set(value)
                 or value['operation'] not in {'added','changed','unchanged'}

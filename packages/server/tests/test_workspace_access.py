@@ -49,7 +49,7 @@ class WorkspaceFixture(PostgresFixture):
             self.store.authenticate(self.tokens[n]) for n in ('bob', 'carol', 'dave', 'erin', 'quinn'))
         self.store.operator_workspace('set-entry', 'maple', subject_kind='principal', subject='alice', role='admin')
         for name in ('birch', 'oak'):
-            self.store.create_workspace(self.alice, {'name': name})
+            self.store.create_workspace(self.alice, {'name': name, 'visibility': 'private'})
         self.store.set_entry(self.alice, {'workspace': 'birch', 'subject_kind': 'principal', 'subject': 'bob',
                                           'role': 'reader'})
         self.store.set_entry(self.alice, {'workspace': 'oak', 'subject_kind': 'organization', 'role': 'reader'})
@@ -312,7 +312,7 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
         }
         for mode, entries in modes.items():
             with self.subTest(mode=mode):
-                self.store.create_workspace(self.alice, {'name': mode})
+                self.store.create_workspace(self.alice, {'name': mode, 'visibility': 'private'})
                 for kind, subject, role in entries:
                     self.store.set_entry(self.alice, {'workspace': mode, 'subject_kind': kind, 'subject': subject,
                                                       'role': role})
@@ -320,18 +320,18 @@ class WorkspaceManagementTests(WorkspaceFixture, unittest.TestCase):
                 self.assertTrue(all(value in rank.values() for value in expected[mode].values()))
 
     def test_self_service_creation_admin_rule_and_tenant_restriction(self):
-        created = self.store.create_workspace(self.bob, {'name': 'willow'})
+        created = self.store.create_workspace(self.bob, {'name': 'willow', 'visibility': 'private'})
         self.assertEqual(created['role'], 'admin')
         with self.assertRaises(Conflict):
-            self.store.create_workspace(self.carol, {'name': 'willow'})
+            self.store.create_workspace(self.carol, {'name': 'willow', 'visibility': 'private'})
         no_manage = self.store.authenticate(self.store.enroll('acme', 'erin', 'erin-plain', ['read', 'ingest']))
         with self.assertRaises(Denied):
-            self.store.create_workspace(no_manage, {'name': 'elder'})
+            self.store.create_workspace(no_manage, {'name': 'elder', 'visibility': 'private'})
         self.store.tenant_policy(None, {'workspace_creation': 'admins'})
         with self.assertRaises(Denied):
-            self.store.create_workspace(self.carol, {'name': 'elder'})
+            self.store.create_workspace(self.carol, {'name': 'elder', 'visibility': 'private'})
         settings_admin = self.store.authenticate(self.store.enroll('acme', 'admin', 'admin-full', FULL + ['settings']))
-        self.store.create_workspace(settings_admin, {'name': 'elder'})
+        self.store.create_workspace(settings_admin, {'name': 'elder', 'visibility': 'private'})
         # The last counting admin stays; a synced group never counts towards it.
         with self.store.open() as state, state.db:
             state.db.execute('''INSERT INTO groups(tenant,id,name,source,external_id,created)
@@ -477,6 +477,73 @@ if __name__ == '__main__':
 
 
 @unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
+class VisibilityAndReadOnlyTests(WorkspaceFixture, unittest.TestCase):
+    """Visibility chosen at creation on the server; read-only chats refused at ingest."""
+
+    def setUp(self):
+        self.workspace_setup()
+
+    def tearDown(self):
+        self.postgres_teardown()
+
+    def entries(self, workspace):
+        with self.store.open() as state:
+            return {(r['subject_kind'], r['subject'], r['role']) for r in state.db.execute(
+                "SELECT subject_kind,subject,role FROM workspace_entries WHERE tenant='acme' AND workspace=?",
+                (workspace,))}
+
+    def test_visibility_is_required_and_decides_the_first_entries(self):
+        with self.assertRaisesRegex(ValueError, 'visibility_required'):
+            self.store.create_workspace(self.bob, {'name': 'nothing'})
+        with self.assertRaisesRegex(ValueError, 'visibility_required'):
+            self.store.create_workspace(self.bob, {'name': 'nothing', 'visibility': 'public'})
+        private = self.store.create_workspace(self.bob, {'name': 'pine', 'visibility': 'private'})
+        self.assertEqual((private['role'], private['workspace']['visibility']), ('admin', 'private'))
+        self.assertEqual(self.entries('pine'), {('principal', 'bob', 'admin')}, 'only the creator')
+        org = self.store.create_workspace(self.bob, {'name': 'cedar', 'visibility': 'org'})
+        self.assertEqual(org['workspace']['visibility'], 'org')
+        self.assertEqual(self.entries('cedar'), {('principal', 'bob', 'admin'), ('organization', '', 'reader')})
+        self.assertEqual(self.store.show_workspace(self.erin, {'workspace': 'cedar'})['role'], 'reader',
+                         'everyone in the organization reads it')
+        self.store.tenant_policy(None, {'widest_entry': 'people_and_groups'})
+        with self.assertRaisesRegex(ValueError, 'entry_wider_than_tenant_allows'):
+            self.store.create_workspace(self.bob, {'name': 'spruce', 'visibility': 'org'})
+        with self.store.open() as state:
+            self.assertIsNone(state.db.execute("SELECT 1 FROM enterprise_projects WHERE id='spruce'").fetchone(),
+                              'nothing is created when the tenant caps org')
+
+    def test_set_visibility_is_an_admin_operation_and_reports_newly_unreadable(self):
+        self.store.create_workspace(self.bob, {'name': 'pine', 'visibility': 'private'})
+        with self.assertRaises(Denied):
+            self.store.set_visibility(self.carol, {'workspace': 'pine', 'visibility': 'org'})
+        opened = self.store.set_visibility(self.bob, {'workspace': 'pine', 'visibility': 'org'})
+        self.assertEqual((opened['visibility'], opened['operation']), ('org', 'added'))
+        self.assertIn('newly_unreadable', opened)
+        self.assertEqual(self.store.set_visibility(self.bob, {'workspace': 'pine', 'visibility': 'org'})['operation'],
+                         'unchanged')
+        closed = self.store.set_visibility(self.bob, {'workspace': 'pine', 'visibility': 'private'})
+        self.assertEqual(closed['visibility'], 'private')
+        self.assertIn('newly_unreadable', closed)
+        self.assertEqual(self.entries('pine'), {('principal', 'bob', 'admin')})
+        with self.assertRaises(Denied):
+            self.store.show_workspace(self.erin, {'workspace': 'pine'})
+
+    def test_a_registered_read_only_chat_is_refused_at_ingest_for_its_owner_only(self):
+        from agenthub.read_only import ReadOnlySession
+        self.ingest(tag='before')
+        conversation = self.fixture['conversation'] + 'ro'
+        self.store.mark_read_only(self.alice, {'sessions': [conversation]})
+        with self.assertRaises(ReadOnlySession):
+            self.ingest(tag='ro', index=1)
+        self.assertEqual(self.ingest(tag='other', index=1)['disposition'], 'accepted', 'another chat writes')
+        self.store.mark_read_only(self.bob, {'sessions': [self.fixture['conversation'] + 'bob']})
+        self.assertEqual(self.ingest(tag='bob', index=2)['disposition'], 'accepted',
+                         'a registration only covers the person who made it')
+        with self.assertRaises(ValueError):
+            self.store.mark_read_only(self.alice, {'sessions': []})
+
+
+@unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
 class SessionLabelTests(ParityItems, unittest.TestCase):
     """PR B: the superset list behind a session label and the recall filter in all three layers.
 
@@ -516,7 +583,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
     def test_private_sessions(self):
         self.assertEqual(self.superset(self.alice, 'maple', private=True)[0], True)
         self.assertEqual(self.superset(self.alice, 'maple', sharing='private')[0], True)
-        self.store.create_workspace(self.alice, {'name': 'solo'})
+        self.store.create_workspace(self.alice, {'name': 'solo', 'visibility': 'private'})
         self.assertEqual(self.superset(self.alice, 'solo'), (True, ['birch', 'maple', 'oak', 'solo']),
                          'an audience of the person alone is a private session: everything they can read')
         self.store.sharing_setting(self.alice, {'contributions_default': 'private'})
@@ -544,7 +611,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
                 self.assertLayers(self.label(ctx, workspace, **extra), self.expect(*expected), message)
 
     def test_a_share_whose_group_contains_the_session_audience_is_recalled(self):
-        self.store.create_workspace(self.carol, {'name': 'pf'})
+        self.store.create_workspace(self.carol, {'name': 'pf', 'visibility': 'private'})
         self.store.set_entry(self.carol, {'workspace': 'pf', 'subject_kind': 'group', 'subject': 'platform',
                                           'role': 'writer'})
         found = self.label(self.carol, 'pf')['session_label']
@@ -666,5 +733,7 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         tools.call('search_memory', {'query': 'synthetic'})
         self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple'})
         self.assertNotIn('scope', sent[-1][1])
-        with self.assertRaises(ValueError):
-            tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})
+        # `scope: "all"` widens only the read list, which the service intersects with the label.
+        tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})
+        self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple', 'read': ['*']})
+        self.assertNotIn('scope', sent[-1][1])

@@ -1132,7 +1132,7 @@ def in_scope_line(scope, cwd, config=None, *, labelled=False, allowed=None):
         shown = str(root)
     head, tail = 'vaelius: in-scope folders: ', ' (reads elsewhere make this session private)'
     if labelled:
-        tail = ' (narrower workspaces are denied; unscoped reads make this session private)'
+        tail = ' (narrower workspaces and folders without a .vaelius are denied)'
     line = head + shown + tail
     if len(line) > SCOPE_LINE_MAX:
         return None

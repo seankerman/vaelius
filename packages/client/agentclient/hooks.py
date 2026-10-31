@@ -116,8 +116,9 @@ def resolve_scope(config, event):
 
 
 def _exceptions(request):
-    """A scope file's origin exceptions (`capture.allowed_paths`, `capture.allowed_mcp_servers`)."""
-    return {key:request[key] for key in ('allowed_paths','allowed_mcp_servers') if request.get(key)}
+    """A scope file's origin exceptions (`capture.allowed_paths`, `capture.allowed_mcp_servers`) and
+    its default recall scope (`read`)."""
+    return {key:request[key] for key in ('allowed_paths','allowed_mcp_servers','read') if request.get(key)}
 
 
 def binding(config, event):
@@ -358,7 +359,12 @@ def _session_label(home, config, scope, event, notices):
             entry=session_label.refresh(home,config,session,entry) or entry
         elif kind in TOOL_EVENTS:
             from agentclient.enterprise_capture import self_tool
-            if self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
+            if (self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('read_only_session')
+                    and session_label.read_only_result(event.get('tool_response'))):
+                # The person asked the agent to make this chat read-only: one-way.
+                session_label.apply_read_only(home,config,session,entry)
+                entry=labels.get(session) or entry
+            elif self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
                 record=session_label.use_result(event.get('tool_response'))
                 if record:
                     label=session_label.request_label(entry)
@@ -554,7 +560,8 @@ def _scope_warnings(home, scope):
     """Format a one-time status line for warnings from the scope file (shown once per root)."""
     if not scope or not scope.get('warnings') or not scope.get('root'):
         return None
-    from agentclient.scope_file import record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED
+    from agentclient.scope_file import (record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED,
+                                        WARN_VISIBILITY_IGNORED)
     file_path=scope.get('scope_file') or scope['root']
     lines=[]
     for warning in scope['warnings']:
@@ -564,6 +571,9 @@ def _scope_warnings(home, scope):
             lines.append('vaelius: `sharing` in '+file_path+' is ignored because the file names a '
                          '`workspace` -- the workspace access list decides who can read captures; '
                          'add `sharing = "private"` to opt out entirely.')
+        elif warning == WARN_VISIBILITY_IGNORED:
+            lines.append('vaelius: `visibility` in '+file_path+' is ignored -- visibility is set on the server '
+                         '(`vaelius-client workspace set-visibility`).')
         elif warning == WARN_ORIGINALS_IGNORED:
             lines.append('vaelius: `originals` in '+file_path+' is ignored and is no longer sent to the '
                          "service; sharing an original is now an explicit `vaelius-client share --originals` grant.")
@@ -688,6 +698,16 @@ def handle(home, event, *, host='codex', via='settings'):
             if scope['capture']=='on' and not session_label.captures(entry):
                 # The service says the person is no longer a writer here (the status line says so).
                 scope=dict(scope,capture='read-only')
+            if entry.get('read_only'):
+                # A read-only chat: nothing from it is captured from now on (one-way).
+                scope=dict(scope,capture='read-only')
+        elif kind=='SessionStart' and scope['capture']=='read-only' and event.get('session_id'):
+            # A `capture = "read-only"` folder: the service refuses writes naming this chat too.
+            try:
+                from agentclient.transport import enterprise_client
+                enterprise_client(config,timeout=0.5).request('/enterprise/v3/sessions/read-only',
+                                                              {'sessions':[str(event['session_id'])]})
+            except Exception:pass
     metadata={'project':project,'kind':kind,'capture':scope['capture'],'sharing':scope['sharing'],
               'originals':scope.get('originals','private'),
               'workspace_key':bool(scope.get('workspace_key')),

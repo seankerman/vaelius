@@ -18,10 +18,10 @@ exists and how it fits together) that document describes the full specification.
   **audience** (everyone the access list reaches as a reader). Its owner may also
   share it to a named principal or group. The per-item `private` / `team` /
   `organization` ladder is gone.
-- Groups come in three sources: `github` (teams synced from a GitHub App
-  installation, PR C), `scim` (identity-provider groups) and `local` (managed in
-  Vaelius). Membership is **materialized** as a transitive principal set; no check
-  walks the graph.
+- Groups come in two sources: `scim` (identity-provider groups) and `local`
+  (managed in Vaelius). GitHub team sync and the GitHub identity link were removed
+  in migration 054; nothing about access comes from GitHub. Membership is
+  **materialized** as a transitive principal set; no check walks the graph.
 - A **repository** links to one workspace by normalized remote. A capture whose
   remote is linked elsewhere is refused; one with no remote is accepted on the
   person's writer role alone.
@@ -63,7 +63,7 @@ See [enterprise identity and authorization](ENTERPRISE_AUTH.md).
   role any entry gives them (a direct entry, an entry for any group they belong
   to transitively, or the organization entry). Roles never subtract: there are
   no deny entries.
-- A **group** has one of three sources — `github`, `scim` or `local` — and an
+- A **group** has one of two sources — `scim` or `local` — and an
   activity and `sync_state` (`current`, `stale`, `failed`). A `scim` group
   awaiting reconcile is `stale`. A stale or failed synced group contributes
   **no members** until the next good sync, so a sync outage can only take access
@@ -119,8 +119,7 @@ restores. Creating an entry wider than `widest_entry` is refused
 
 A workspace that has an admin entry whose subject is a principal, or a `local`
 group with an active member, keeps at least one: a change that removes the last
-counting admin is refused with `last_admin`. Synced groups (`github`, `scim`)
-never count, so a sync failure never orphans a workspace.
+counting admin is refused with `last_admin`. Synced (`scim`) groups never count, so a sync failure never orphans a workspace.
 
 Workspaces without any such admin — including every workspace produced by the
 migration (section 11) — are managed by tenant settings administrators (the

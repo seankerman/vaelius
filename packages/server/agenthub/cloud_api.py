@@ -124,13 +124,6 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/groups/members/add'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/groups/members/remove'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/groups/delete'):(('manage',),('settings',)),
-    # GitHub identity link (agenthub.github_sync): the presented principal's own link,
-    # proven by a device-flow authorization; delegated credentials are refused. A
-    # settings administrator may unlink another principal (the business method checks).
-    ('POST','/enterprise/v3/identity/github'):READ,
-    ('POST','/enterprise/v3/identity/github/link/start'):READ,
-    ('POST','/enterprise/v3/identity/github/link/poll'):READ,
-    ('POST','/enterprise/v3/identity/github/unlink'):(('read',),('settings',)),
     # Tenant policy: settings administrators only (the business method checks the flag).
     ('POST','/enterprise/v3/tenant-policy'):(('settings',),),
     ('POST','/enterprise/v3/preferences'):READ,
@@ -199,22 +192,12 @@ WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/
     '/enterprise/v3/groups/create':'create_group','/enterprise/v3/groups/members/add':'add_group_member',
     '/enterprise/v3/groups/members/remove':'remove_group_member','/enterprise/v3/groups/delete':'delete_group',
     '/enterprise/v3/tenant-policy':'tenant_policy'}
-# GitHub identity-link routes and the business method each calls.
-IDENTITY_ROUTES={'/enterprise/v3/identity/github':'github_identity',
-    '/enterprise/v3/identity/github/link/start':'github_link_start',
-    '/enterprise/v3/identity/github/link/poll':'github_link_poll',
-    '/enterprise/v3/identity/github/unlink':'github_unlink'}
-# GitHub App webhook deliveries: authenticated by their HMAC signature
-# (X-Hub-Signature-256), never by a Bearer credential. Absent configuration it is 404.
-GITHUB_WEBHOOK='/enterprise/v3/github/webhook'
-WEBHOOK_LIMIT=1024*1024
 # Routes that carry their own credential in the body (or are a credential
 # exchange) and so run before Bearer authentication.
 CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/enterprise/v3/auth/aws-sts',
-    '/enterprise/v3/auth/renew','/enterprise/v3/auth/revoke','/enterprise/v3/github/webhook')
+    '/enterprise/v3/auth/renew','/enterprise/v3/auth/revoke')
 INVALID_BODY=object()
 from agenthub.workspace_access import LABELLED_ROUTES  # recall routes that honor a session label
-from agenthub.github_sync import InvalidSignature, ReplayedDelivery
 from agenthub.read_only import ReadOnlySession, header_read_only, is_write, named_sessions
 TENANT_PATH=re.compile(r'[A-Za-z0-9_.:-]{1,128}')
 
@@ -472,7 +455,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         if method=='POST' and path=='/enterprise/v3/sharing':return store.sharing_setting(ctx,data)
         if method=='POST' and path in OWNER_ROUTES:return getattr(store,OWNER_ROUTES[path])(ctx,data)
         if method=='POST' and path in WORKSPACE_ROUTES:return getattr(store,WORKSPACE_ROUTES[path])(ctx,data)
-        if method=='POST' and path in IDENTITY_ROUTES:return getattr(store,IDENTITY_ROUTES[path])(ctx,data)
         if method=='POST' and path=='/enterprise/v3/preferences/curate':
             return store.curate_preference(ctx,data['source_id'],data['candidate'],replace_document=data.get('replace_document'))
         if method=='POST' and path=='/enterprise/v3/preferences/withdraw':return store.withdraw_preference(ctx,data['document_id'])
@@ -574,14 +556,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                         data['version'],data['filename'],temporary,title=data.get('title'),media_type=data.get('media_type'),
                         sharing=data.get('sharing'))
                 return JSONResponse(value)
-            if path==GITHUB_WEBHOOK:
-                app=getattr(registry,'github_app',None)
-                if app is None or request.method!='POST':raise FileNotFoundError()
-                # The signature covers the exact bytes, so they are verified before parsing.
-                from agenthub.github_sync import webhook
-                raw=await bounded_body(request,WEBHOOK_LIMIT)
-                status,value=await run_in_threadpool(webhook,registry,app,request.headers,bytes(raw))
-                return JSONResponse(value,status_code=status,headers=NO_STORE)
             data=None
             if request.method=='POST':
                 raw=await bounded_body(request,JSON_LIMIT)
@@ -695,8 +669,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         except RepoNotLinked:return JSONResponse({'error':'repo_not_linked'},status_code=409)
         except ReadOnlySession as refused:
             return JSONResponse({'error':refused.code,'message':refused.message},status_code=403,headers=NO_STORE)
-        except InvalidSignature:return JSONResponse({'error':'invalid_signature'},status_code=401,headers=NO_STORE)
-        except ReplayedDelivery:return JSONResponse({'error':'replayed_delivery'},status_code=409,headers=NO_STORE)
         except Conflict:return JSONResponse({'error':'conflict'},status_code=409)
         except (ValueError,TypeError,KeyError):return JSONResponse({'error':'invalid_request'},status_code=400)
         except Exception:return JSONResponse({'error':'service_error'},status_code=503)

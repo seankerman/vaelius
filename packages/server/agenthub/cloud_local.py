@@ -148,9 +148,7 @@ def main(argv=None):
         'doctor','up','worker-run','status','stop','reindex',
         'source-index-reconcile',
         'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
-        *GOVERNANCE_COMMANDS,'workspace','tenant-policy','github','backfill'])
-    parser.add_argument('github_command',nargs='?',choices=['status','sync'],
-        help='github: status (installations, last sync, stale groups, unlinked members) or sync')
+        *GOVERNANCE_COMMANDS,'workspace','tenant-policy','backfill'])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',default='acme',type=tenant_id)
     parser.add_argument('--provider-free',action='store_true')
     parser.add_argument('--live',action='store_true');parser.add_argument('--ledger');parser.add_argument('--job-id')
@@ -177,7 +175,6 @@ def main(argv=None):
     parser.add_argument('--workspace-creation',choices=['anyone','admins'],help='tenant-policy')
     parser.add_argument('--widest-entry',choices=['none','people_and_groups','organization'],help='tenant-policy')
     parser.add_argument('--owner-sharing',choices=['allowed','lower_only'],help='tenant-policy')
-    parser.add_argument('--now',action='store_true',help='github sync: reconcile now instead of at the next tick')
     # Operator backfill of server-side conversation history (agenthub.server_backfill, docs/SELF_HOSTING.md).
     parser.add_argument('--input',help='backfill: a JSONL event file or a folder of them')
     parser.add_argument('--map',help='backfill: the principal and workspace mapping file')
@@ -187,8 +184,6 @@ def main(argv=None):
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
     if args.live and args.provider_free:parser.error('choose one execution mode')
     if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
-    if (args.command=='github')!=(args.github_command is not None):parser.error('use: github status|sync [--now]')
-    if args.now and args.github_command!='sync':parser.error('--now applies to github sync')
     if args.max_jobs<1 or args.max_seconds<1 or args.max_calls<1 or args.max_retries<0:parser.error('invalid local run size')
     if args.command=='doctor':value=doctor(profile)
     elif args.command=='up':value=up(profile)
@@ -256,11 +251,6 @@ def main(argv=None):
                 # Always owner-private: there are no sharing options (docs/ACCESS_MODEL.md).
                 value=server_backfill.run(store,args.input,args.map,apply=args.apply,max_events=args.max_events,
                     max_seconds=args.max_seconds)
-        elif args.command=='github':
-            # GitHub App team sync (docs/ACCESS_MODEL.md section 3, docs/ENTERPRISE_AUTH.md).
-            if args.github_command=='status':value=store.github_status()
-            elif args.now:value=store.github_reconcile()
-            else:value=store.github_mark_due()
         elif args.command=='tenant-policy':
             value=store.tenant_policy(None,{key:item for key,item in (('workspace_creation',args.workspace_creation),
                 ('widest_entry',args.widest_entry),('owner_sharing',args.owner_sharing)) if item is not None})

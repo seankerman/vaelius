@@ -160,27 +160,6 @@ def _add_group_commands(sub):
     delete.add_argument('group')
 
 
-def _add_github_commands(sub):
-    """`vaelius-client github` subcommands over /enterprise/v3/identity/github*."""
-    github = sub.add_parser('github', help='link your GitHub account so synced GitHub teams count for you')
-    inner = github.add_subparsers(dest='github_command', required=True)
-    inner.add_parser('link', help='prove you own a GitHub account (device flow in your browser); relinking replaces it')
-    inner.add_parser('status', help='your linked GitHub account, if any')
-    unlink = inner.add_parser('unlink', help='remove your link; your GitHub team memberships stop counting')
-    unlink.add_argument('--principal', help='settings administrators: unlink another person')
-
-
-def _github_command(config, args):
-    from agentclient import github_link
-    from agentclient.transport import enterprise_client
-    client = enterprise_client(config, timeout=15)
-    if args.github_command == 'status':
-        return github_link.status(client)
-    if args.github_command == 'unlink':
-        return github_link.unlink(client, args.principal)
-    return github_link.link(client, notify=lambda value: print(value['message'], file=sys.stderr, flush=True))
-
-
 def main(argv=None, *, profile_namespace='agentnetwork'):
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__)
@@ -254,7 +233,6 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     _add_push_commands(sub)
     _add_workspace_commands(sub)
     _add_group_commands(sub)
-    _add_github_commands(sub)
     _add_session_commands(sub)
     args=parser.parse_args(argv)
     if args.command=='guardrail-check':
@@ -359,8 +337,6 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             result=_workspace_command(config,args)
         elif args.command=='group':
             result=_group_command(config,args)
-        elif args.command=='github':
-            result=_github_command(config,args)
         elif args.command in ('session','use'):
             result=_session_command(home,config,args)
         elif args.command=='install' and (args.claude_code or args.guardrails or args.guardrails_only):

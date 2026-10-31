@@ -136,15 +136,11 @@ mapping: migration 048 produces one `<project>-members` local group per
 workspace, with each SCIM group that was mapped to that project nested inside
 it.
 
-### GitHub teams
+### No GitHub sync
 
-GitHub teams become `github` groups through a GitHub App installed on the
-organization. They are read-only in Vaelius, nest by parent team, never count as a
-workspace's last admin, and count for a person only after that person has proven,
-with the GitHub device flow, that they own the GitHub account
-(`vaelius-client github link`). Setup is below, in
-[GitHub App team sync](#github-app-team-sync); the model is in
-[ACCESS_MODEL.md section 3](ACCESS_MODEL.md#github-teams-pr-c).
+Vaelius takes nothing from GitHub: there is no team sync and no identity link
+(both were removed in migration 054). Repository permissions are not memory
+audiences. Groups are `scim` (above) or `local`.
 
 ### Settings-admin break-glass override
 
@@ -246,114 +242,6 @@ should download retained originals, which still requires source ownership or an
 explicit owner grant. Interactive enrollment without operator `enrollment_actions`
 likewise omits `source_read`. See the
 [raw-access policy](DATA_BOUNDARIES.md#raw-access-policy) for upgrade steps.
-
-## GitHub App team sync
-
-Vaelius syncs GitHub teams with a GitHub App that you create and an organization
-owner installs. It never uses a personal access token and never acts as a user.
-
-### What the App may do
-
-| Setting | Value | Why |
-| --- | --- | --- |
-| Organization permission **Members** | Read-only | List the organization's teams, their parent teams and their members |
-| Repository permission **Metadata** | Read-only | Granted to every GitHub App automatically; reserved for repository-access checks (not used yet) |
-| Every other permission | No access | |
-| Subscribed events | **Membership**, **Organization**, **Team** | Hints that make a removal or a team change apply within seconds |
-| Installation events | Delivered to every App; nothing to tick | `deleted` or `suspend` marks the App's groups `failed` at once |
-| **Enable Device Flow** | On | The identity link uses the OAuth device flow |
-| Callback URL, "Request user authorization (OAuth) during installation", setup URL | None, off, none | Not used |
-| Webhook | Active, URL `https://<your service>/enterprise/v3/github/webhook`, content type `application/json`, a random secret | Signed deliveries only |
-| Where can this App be installed | Only on this account | |
-
-The service mints each installation token with `{"permissions": {"members":
-"read"}}`, so even an App later granted more cannot use more from Vaelius. Tokens
-live at most an hour and are kept only in memory. The device flow's user token is
-used for one `GET /user` call and then discarded; nothing a person authorizes is
-stored.
-
-### Step by step
-
-1. **Create the App** under the organization: *Settings → Developer settings →
-   GitHub Apps → New GitHub App*. Set the name, homepage URL (your service), the
-   webhook URL and secret, the permissions and events from the table above, and
-   tick *Enable Device Flow*. Generate the webhook secret with, for example,
-   `openssl rand -hex 32`.
-2. **Generate a private key** on the App's page (*Private keys → Generate*). GitHub
-   downloads a `.pem` file. Note the **App ID** and **Client ID** on the same page.
-3. **Install it.** *Install App* → the organization → *All repositories* or the
-   repositories you choose (team sync does not depend on repository selection). An
-   **organization owner must approve the installation**: if the person creating
-   the App is not an owner, GitHub files an installation request that an owner
-   approves under *Settings → GitHub Apps → Pending requests*. After the
-   installation, note the **installation id**: it is the number at the end of the
-   installation's settings address (`.../settings/installations/<id>`).
-4. **Store the secrets** as owner-only files (mode `0600` or `0400`, owned by the
-   service user), mounted the same way as the introspection secret above. Both are
-   re-read on rotation without a restart.
-5. **Configure the service** in `runtime.json`:
-
-   ```json
-   {"github": {
-     "app_id": 123456,
-     "client_id": "Iv1.0123456789abcdef",
-     "private_key_file": "/absolute/private/github-app.pem",
-     "webhook_secret_file": "/absolute/private/github-webhook.secret",
-     "installations": [{"id": 87654321, "tenant": "company", "org": "example-org"}],
-     "reconcile_seconds": 21600,
-     "max_staleness_seconds": 86400
-   }}
-   ```
-
-   `installations` maps each installation to exactly one tenant. `reconcile_seconds`
-   (default 6 hours, 60 to 86,400) is how often every team is re-read;
-   `max_staleness_seconds` (default 24 hours, more than `reconcile_seconds`) is how
-   long a group may go without a successful sync before it contributes no members.
-   Run migrations (050 adds the sync tables) and restart the API.
-6. **Run the first sync** and check it:
-
-   ```sh
-   vaelius github sync --now --profile PROFILE --tenant company
-   vaelius github status --profile PROFILE --tenant company
-   ```
-
-   `status` reports each installation (state, last success, last attempt and
-   error, next reconcile), the number of synced groups, the groups that are
-   `stale` or `failed`, how many principals have linked an account, and how many
-   GitHub team members have not linked yet (`unlinked_members`; they grant
-   nothing). `vaelius github sync` without `--now` asks the API's background
-   reconciler to sync on its next tick (within a minute).
-7. **Ask people to link** their accounts: `vaelius-client github link` (or
-   `--link-github` when enrolling). See [the client guide](CLIENT.md#github-identity-link).
-8. **Grant access** to teams like any group, by the group name `gh_<org>_<team
-   slug>` or its id `gh-<team id>`:
-   `vaelius-client workspace set-entry maple --subject-kind group --subject gh_example-org_platform --role writer`.
-
-### How it stays correct
-
-- **Webhooks are hints.** Each delivery's `X-Hub-Signature-256` is checked against
-  the webhook secret with a constant-time comparison before the body is parsed; a
-  missing or wrong signature is refused (`401`). A delivery id that was already
-  applied is refused (`409`), and ids are kept for 30 days. A `membership` delivery
-  makes the service re-read that team's members from GitHub; a `team` delivery
-  re-reads the installation; an `organization` `member_removed` delivery removes
-  the person from every team snapshot immediately, without waiting for GitHub.
-  Because the service applies current state rather than the event, duplicate and
-  out-of-order deliveries converge.
-- **The reconcile** runs in each API process every `reconcile_seconds`, claimed
-  through the database so replicas do not repeat each other, and on demand. It
-  replaces every team's members, renames groups whose team slug changed, follows
-  login renames (links are by numeric user id), makes deleted teams inactive groups
-  and rewrites the parent-team nesting.
-- **Stale sync fails safe.** A sweep that needs only the database runs every minute
-  in each API process and whenever the sync or status runs. A group with no
-  successful sync for `max_staleness_seconds` becomes `stale` (`failed` when its
-  installation is suspended, uninstalled or its last attempt errored) and
-  contributes no members until the next good sync. Workspace admins keep access
-  through their own entries, because a synced group never counts as the last admin.
-  Every state change is audited as `group_sync`.
-- **Removing the App.** Uninstall it in GitHub first (the `installation` delivery
-  marks its groups `failed`), then remove its `installations` entry.
 
 ## Plugin enrollment and migration
 

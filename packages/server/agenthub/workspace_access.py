@@ -997,7 +997,8 @@ class WorkspaceAccessMixin:
         if not isinstance(name, str) or not GROUP_NAME.fullmatch(name):
             raise ValueError('invalid_group')
         if name.lower().startswith(('gh-', 'gh_')):
-            # Reserved for groups synced from GitHub teams (agenthub.github_sync).
+            # Ids and names of the removed GitHub-synced groups (migration 054) are never
+            # reused, so nothing that once named one can attach to a new group.
             raise ValueError('reserved_group_name')
         if 'manage' not in ctx['actions'] or ctx.get('acting_for'):
             raise Denied()

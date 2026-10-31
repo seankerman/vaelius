@@ -188,7 +188,7 @@ def validate_response(path,value):
         for group in value['groups']:
             if (not isinstance(group,dict) or
                     not {'id','name','source','sync_state','active','admin','member'}<=set(group) or
-                    group['source'] not in {'github','scim','local'} or
+                    group['source'] not in {'scim','local'} or
                     group['sync_state'] not in {'current','stale','failed'} or
                     type(group['active']) not in (bool,int) or
                     type(group['admin']) not in (bool,int) or type(group['member']) not in (bool,int)):
@@ -198,7 +198,7 @@ def validate_response(path,value):
             raise ValueError('invalid_group_response')
         group=value['group']
         if (not {'id','name','source'}<=set(group)
-                or group['source'] not in {'github','scim','local'}):
+                or group['source'] not in {'scim','local'}):
             raise ValueError('invalid_group_response')
         if route=='groups/show':
             if not isinstance(value.get('members'),list):raise ValueError('invalid_group_response')
@@ -220,27 +220,6 @@ def validate_response(path,value):
     elif route=='groups/delete':
         if (not {'group','deleted'}<=set(value) or type(value['deleted']) not in (bool,int)):
             raise ValueError('invalid_group_delete_response')
-    elif route in {'identity/github','identity/github/link/poll'}:
-        # GitHub identity link: the account id and login only, never a token.
-        statuses={'linked','pending','expired','denied'}
-        if (set(value)-{'provider','linked','user_id','login','linked_at','github_groups','status','interval'}
-                or ('status' in value and value['status'] not in statuses)
-                or ('linked' in value and type(value['linked']) is not bool)
-                or ('user_id' in value and type(value['user_id']) is not int)
-                or ('login' in value and not isinstance(value['login'],str))
-                or ('interval' in value and type(value['interval']) is not int)
-                or (route=='identity/github' and 'linked' not in value)
-                or (route=='identity/github/link/poll' and 'status' not in value)):
-            raise ValueError('invalid_identity_link_response')
-    elif route=='identity/github/link/start':
-        if (set(value)!={'flow','user_code','verification_uri','expires_in','interval'}
-                or not all(isinstance(value[k],str) and value[k] for k in ('flow','user_code','verification_uri'))
-                or not value['verification_uri'].startswith('https://')
-                or any(type(value[k]) is not int or value[k]<=0 for k in ('expires_in','interval'))):
-            raise ValueError('invalid_identity_link_response')
-    elif route=='identity/github/unlink':
-        if set(value)!={'provider','principal','unlinked'} or type(value['unlinked']) is not bool:
-            raise ValueError('invalid_identity_link_response')
     elif route=='my-data':
         listed=value.get('items') if value.get('view')=='sources' else value.get('sessions')
         if (value.get('view') not in ('sources','sessions') or not isinstance(listed,list) or len(listed)>200

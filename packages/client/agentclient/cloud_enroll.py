@@ -206,21 +206,6 @@ def enroll(home,*,url,tenant,broker,enrollment,callback,request=None,browser=Non
             'local_corpus_opened':False,'host_hooks_installed':False,'capture_notice':on_enrollment(profile)}
 
 
-def _link_github(args,result):
-    """Optionally link GitHub right after enrollment; a failure never undoes the enrollment."""
-    if not getattr(args,'link_github',False):return result
-    try:
-        from agentclient import github_link
-        from agentclient.transport import enterprise_client
-        config=json.loads((Path(result['profile'])/'config.json').read_text())
-        linked=github_link.link(enterprise_client(config,timeout=15),
-            notify=lambda value:print(value['message'],file=sys.stderr,flush=True))
-        return dict(result,github_link=linked.get('status'))
-    except Exception as error:
-        return dict(result,github_link='failed',github_link_error=type(error).__name__,
-            github_link_retry='vaelius-client github link')
-
-
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Enroll a new isolated local enterprise client profile')
     for name in ('home','url','tenant','enrollment'):parser.add_argument('--'+name,required=True)
@@ -238,8 +223,6 @@ def main(argv=None):
     parser.add_argument('--reauthenticate',action='store_true',help='preserve this existing profile and enrollment')
     parser.add_argument('--credential-store',choices=('auto','keyring','file'),default='auto',
         help='auto uses the OS keychain when the optional keyring package has a usable backend')
-    parser.add_argument('--link-github',action='store_true',
-        help='after signing in, link your GitHub account (device flow; same as `vaelius-client github link`)')
     args=parser.parse_args(argv)
     if args.auth=='aws-sts':
         if args.broker or args.oauth_client_id or args.oauth_issuer or args.callback_uri or args.reauthenticate:
@@ -253,7 +236,7 @@ def main(argv=None):
             result=aws_enroll(args.home,url=args.url,tenant=args.tenant,enrollment=args.enrollment,
                 profile=args.aws_profile,region=args.aws_region,server_id=args.aws_server_id,
                 credential_store=args.credential_store)
-            print(json.dumps(_link_github(args,result)),flush=True);return 0
+            print(json.dumps(result),flush=True);return 0
         _callback_uri(args.callback_uri)
         with CallbackServer(args.callback_uri) as callback:
             common=dict(url=args.url,tenant=args.tenant,enrollment=args.enrollment,callback=callback,timeout=args.timeout,
@@ -267,7 +250,7 @@ def main(argv=None):
                 if args.reauthenticate:raise EnrollmentError('oauth_client_id_required_for_reauthentication')
                 if not args.broker:raise EnrollmentError('legacy_broker_required')
                 result=enroll(args.home,broker=args.broker,**common)
-        print(json.dumps(_link_github(args,result)),flush=True);return 0
+        print(json.dumps(result),flush=True);return 0
     except (EnrollmentError,ValueError) as error:
         print(json.dumps({'error':str(error)}),file=sys.stderr);return 1
 

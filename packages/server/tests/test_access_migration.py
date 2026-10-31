@@ -172,6 +172,33 @@ class AccessMigrationTests(unittest.TestCase):
             with self.assertRaises(Exception, msg='the github source is gone'):
                 run("INSERT INTO groups(tenant,id,name,source,created) VALUES('acme','x','x','github',0)")
 
+    def test_055_revokes_every_passage_and_owner_share_and_keeps_operator_originals(self):
+        migrate(self.admin_dsn, through=54)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            run("INSERT INTO enterprise_organizations(id) VALUES('acme')")
+            for name in ('alice', 'bob'):
+                run("INSERT INTO enterprise_principals(tenant,id) VALUES('acme',%s)", (name,))
+            for scope, passages, originals, issued in (('s-passages', 1, 0, 'share'), ('s-both', 1, 1, 'policy'),
+                                                       ('s-owner-originals', 0, 1, 'share'),
+                                                       ('s-operator-originals', 0, 1, 'policy')):
+                run('''INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,created,
+                    passages,originals,issued_with) VALUES('acme','source',%s,'principal','bob','alice',0,%s,%s,%s)''',
+                    (scope, passages, originals, issued))
+        migrate(self.admin_dsn)
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            active = {r[0] for r in run('SELECT scope_id FROM raw_source_grants WHERE revoked IS NULL').fetchall()}
+            self.assertEqual(active, {'s-operator-originals'}, 'only the operator originals grant stays')
+            self.assertEqual({r[0] for r in run("SELECT revoked_by FROM raw_source_grants WHERE revoked IS NOT NULL")},
+                             {'migration_055'}, 'revoked rows are kept for audit')
+            for passages, issued in ((1, 'policy'), (0, 'share')):
+                with self.assertRaises(Exception, msg=(passages, issued)):
+                    with db.transaction():
+                        run('''INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,
+                            created,passages,originals,issued_with) VALUES('acme','source','new','principal','bob',
+                            'alice',0,%s,1,%s)''', (passages, issued))
+
 
 if __name__ == '__main__':
     unittest.main()

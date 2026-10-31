@@ -33,7 +33,7 @@ SHARING_CONTROL = 'vaelius-client sharing --set shared|private'
 # The two states the person's own `contributions_default` can hold under the
 # access model. Older services (`max_sharing`) are translated: `private`
 # stays private, anything else is treated as `shared`.
-AUDIENCE = {'shared': 'the workspace audience (people and groups on its access list)',
+AUDIENCE = {'shared': 'the workspace audience (its members, or everyone in the org when it is org-visible)',
             'private': 'only you'}
 
 
@@ -159,7 +159,7 @@ def text(notice, project=None):
         personal = normalize_contributions_default(readers.get('personal_sharing'))
         if personal is not None:
             lines.append('Your sharing setting: ' + personal + '. Items you capture inherit ' +
-                         AUDIENCE[personal] + ' unless you share them explicitly. '
+                         AUDIENCE[personal] + '. '
                          'Change: ' + SHARING_CONTROL + '.')
     if notice.get('policy_url'):
         lines.append('Policy: ' + notice['policy_url'])

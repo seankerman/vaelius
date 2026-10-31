@@ -4,7 +4,7 @@ A chat is read-only when the person switched it (`vaelius-client session read-on
 or the MCP tool `read_only_session` when they ask), or when it runs in a folder whose
 scope file says `capture = "read-only"`. Nothing from it is written any more, not even
 private items. The client stops capturing; the service refuses every write route
-(captures, boundaries, receipts, remember, feedback, corrections, withdrawals, shares,
+(captures, boundaries, receipts, remember, feedback, corrections, withdrawals,
 workspace administration) for:
 
 * a request whose `X-Vaelius-Read-Only` header is `1`, or whose

@@ -6,6 +6,26 @@ The release workflow publishes the section whose heading matches the tag.
 
 ## [Unreleased]
 
+### Removed
+
+- **Per-item sharing** (migration 055). An item is read by its workspace's
+  audience, or only by its owner when it is personal memory; nobody shares single
+  items with chosen people or groups any more. Removed: the MCP tools
+  `share_memories`, `unshare_memories`, `change_memory_sharing` and
+  `list_memory_shares`, the routes `/enterprise/v3/my-data/sharing`, `/grant`,
+  `/revoke` and `/grants`, and `vaelius-client share`, `unshare` and `sharing` with
+  a selection. `list_my_memories`, `forget_memories`, `remember`, `list_remembered`,
+  `forget_remembered`, `vaelius-client mine`, `forget` and the personal `sharing
+  --set` setting stay. The migration revokes every passage share and every
+  owner-issued share (kept for audit; revoking only removes access) and a CHECK
+  constraint keeps every active grant an operator-issued originals grant
+  (`agenthub.raw_access`, `policy`), so the share term of the read predicate
+  matches nothing in any of the three layers.
+- **Explicit session narrowing.** `vaelius-client session use` (and `use`) and
+  the MCP tool `use_workspace` are gone; denials and the hidden-memories line no
+  longer suggest them. A `narrowed` list recorded by an older client is still
+  honored (it only narrows). `session status` and `session read-only` stay.
+
 ### Security
 
 - **Unscoped reads are denied, not narrowed.** In a labelled Claude Code session

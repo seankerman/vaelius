@@ -52,7 +52,7 @@ class BackendMCP(unittest.TestCase):
                     async with streamable_http_client(f'http://127.0.0.1:{port}/mcp',http_client=http) as streams:
                         async with ClientSession(*streams,read_timeout_seconds=10) as session:
                             await session.initialize()
-                            self.assertEqual(len((await session.list_tools()).tools),24)
+                            self.assertEqual(len((await session.list_tools()).tools),19)
                             result=await session.call_tool('search_memory',{'query':'Where is the guide?'})
                             self.assertFalse(result.is_error)
                             self.assertEqual(json.loads(result.content[0].text)['records'][0]['revision'],'r1')
@@ -75,8 +75,8 @@ class BackendMCP(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         self.assertIn('vaelius',response.json()['result']['serverInfo']['name'])
         catalog=self.rpc('tools/list').json()['result']['tools']
-        self.assertEqual(len(catalog),24)
-        self.assertIn('use_workspace',[t['name'] for t in catalog])
+        self.assertEqual(len(catalog),19)
+        self.assertNotIn('use_workspace',[t['name'] for t in catalog])
         fetch=next(t for t in catalog if t['name']=='fetch_source_document')
         self.assertNotIn('download_to',fetch['inputSchema']['properties'])
         self.assertEqual(self.store.calls,[])

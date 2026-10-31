@@ -10,9 +10,8 @@ source. Nothing here adds a permission path:
   already creates their content) and the writer role in the workspace it is stored
   in; it never needs `curate`, because the person's explicit command is the review;
 * the item starts owner-private and is recalled only where the existing audience
-  rules admit it (the owner's private sessions, per the session-label rule); sharing
-  it later is the ordinary owner sharing of its source (`vaelius-client share`,
-  `change_memory_sharing`);
+  rules admit it (the owner's private sessions, per the session-label rule); it is
+  personal memory and is never shared (there is no per-item sharing);
 * a new version is a lifecycle correction of the source (same document, new
   revision) and removal is a lifecycle withdrawal, both audited and journaled.
   They are applied here for the item's owner only, so `ingest` suffices for them;

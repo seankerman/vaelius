@@ -87,9 +87,6 @@ class ReadOnlyEnforcementTests(unittest.TestCase):
             'report_memory_outcome': {'id': 'd', 'revision': 'r', 'request_key': 'k2', 'outcome': 'helpful'},
             'withdraw_memory': {'id': 's', 'expected_revision': '1', 'request_key': 'k3'},
             'forget_memories': {'session': 'current', 'confirm': CONFIRM},
-            'change_memory_sharing': {'session': 'current', 'sharing': 'private', 'confirm': CONFIRM},
-            'share_memories': {'session': 'current', 'with_principal': 'bob', 'confirm': CONFIRM},
-            'unshare_memories': {'session': 'current', 'with_principal': 'bob', 'confirm': True},
             'forget_remembered': {'id': 'm', 'confirm': CONFIRM},
             'submit_memory_candidate': {'request_key': 'k4', 'title': 'Note', 'evidence': 'x' * 30,
                                         'source_ids': ['s']},
@@ -113,7 +110,7 @@ class ReadOnlyEnforcementTests(unittest.TestCase):
         headers = {'Authorization': 'Bearer synthetic', 'X-Vaelius-Read-Only': '1'}
         for path, body in (('/enterprise/v3/remember', {'text': 'x'}), ('/enterprise/v1/lifecycle',
                                                                            {'operation': 'withdraw'}),
-                           ('/enterprise/v3/my-data/grant', {}), ('/enterprise/v2/parts', {}),
+                           ('/enterprise/v3/my-data/forget', {}), ('/enterprise/v2/parts', {}),
                            ('/enterprise/v1/boundary', {}), ('/enterprise/v1/receipts', {}),
                            ('/enterprise/v3/workspaces/create', {})):
             with self.subTest(path=path):
@@ -152,8 +149,7 @@ class ReadOnlyEnforcementTests(unittest.TestCase):
                      '/enterprise/v3/sessions/read-only', '/enterprise/v3/remember/list', '/enterprise/v3/my-data'):
             self.assertNotIn(path, writes)
         for path in ('/enterprise/v3/remember', '/enterprise/v3/remember/forget', '/enterprise/v3/feedback',
-                     '/enterprise/v3/my-data/forget', '/enterprise/v3/my-data/sharing', '/enterprise/v3/my-data/grant',
-                     '/enterprise/v3/my-data/revoke', '/enterprise/v2/parts', '/enterprise/v1/sources',
+                     '/enterprise/v3/my-data/forget', '/enterprise/v2/parts', '/enterprise/v1/sources',
                      '/enterprise/v1/boundary', '/enterprise/v1/receipts', '/enterprise/v1/reviewed-notes',
                      '/enterprise/v3/workspaces/visibility'):
             self.assertIn(path, writes)

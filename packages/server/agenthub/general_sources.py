@@ -41,10 +41,11 @@ class GeneralSourcesMixin:
         readers=sorted(set(reader_ids or []))
         with self.delivery_lock(),self.open() as state,state.db:
             db=state.db
-            # Anyone may enroll a capture connection for an active workspace: a writer's
-            # captures go to the workspace, anyone else's to their personal memory
-            # (owner-private; WorkspaceAccessMixin._ingest_privacy decides per capture).
-            if not self._capture_workspace(db,ctx,project): raise Denied()
+            # Anyone may enroll a chat-capture (`agent`) connection for an active
+            # workspace: a writer's captures go to the workspace, anyone else's to their
+            # personal memory (owner-private; WorkspaceAccessMixin._ingest_privacy decides
+            # per capture). Other connectors (documents, Slack, ...) need the writer role.
+            if not self._may_capture(db,ctx,project,source_types): raise Denied()
             for reader in readers:
                 if not db.execute('SELECT 1 FROM enterprise_principals WHERE tenant=? AND id=? AND active=1', (ctx['tenant'],reader)).fetchone():
                     raise ValueError('unknown_connection_reader')
@@ -65,8 +66,13 @@ class GeneralSourcesMixin:
         if (not row or row['tenant']!=ctx['tenant'] or not row['active'] or
                 (not allow_stale and row['permission_observed']+row['freshness_seconds']<time.time())): raise Denied()
         if ingest and (row['enrollment']!=ctx['enrollment'] or row['owner']!=ctx['actor'] or
-                       not self._capture_workspace(db,ctx,row['project'])): raise Denied()
+                       not self._may_capture(db,ctx,row['project'],json.loads(row['source_types']))): raise Denied()
         return row
+
+    def _may_capture(self, db, ctx, project, source_types):
+        """Chat capture (`agent` only) needs an active workspace; anything else the writer role."""
+        if set(source_types)<={'agent'}: return self._capture_workspace(db,ctx,project)
+        return self._project_member(db,ctx,project,2)
 
     def _general_source_allowed(self, db, ctx, source):
         link=db.execute('SELECT connection FROM backend_source_revisions WHERE source_id=?',(source['id'],)).fetchone()

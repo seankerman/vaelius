@@ -496,6 +496,16 @@ capture = "on"               # on | read-only | off
 # sharing = "private"        # optional: owner-only; omit to inherit the workspace audience
 ```
 
+The keys are `workspace` and `capture`:
+
+- There is no `visibility` key, and no `read` key (both are ignored with a one-time
+  line for you). Who can read a workspace is set on the server when
+  it is created and changed there (see [workspaces and groups](#workspaces-and-groups));
+  a `visibility` in the file is ignored with a one-time line for you.
+- A workspace does not need a repository: any folder whose scope file names the
+  workspace captures into it when you are a writer there. Linking a Git remote
+  (below) is a Vaelius-internal safeguard and never calls GitHub.
+
 The access model (`docs/ACCESS_MODEL.md`) decides who can read a capture from
 the workspace's **access list** (people, groups and the optional organization
 entry), not from a per-item sharing ladder. Writing `workspace =` is the
@@ -650,7 +660,10 @@ Workspace and group management move from the operator CLI to the client:
 
 ```sh
 vaelius-client --home /absolute/private/client-profile workspace list
-vaelius-client --home /absolute/private/client-profile workspace create maple --item-default shared
+vaelius-client --home /absolute/private/client-profile workspace create handbook
+# vaelius: handbook visible to everyone in the org (use --private to restrict)
+vaelius-client --home /absolute/private/client-profile workspace create maple --private
+vaelius-client --home /absolute/private/client-profile workspace set-visibility maple org
 vaelius-client --home /absolute/private/client-profile workspace show maple
 vaelius-client --home /absolute/private/client-profile workspace settings maple --name maple --item-default private
 vaelius-client --home /absolute/private/client-profile workspace set-entry maple \
@@ -672,6 +685,19 @@ vaelius-client --home /absolute/private/client-profile group remove-member maple
     --member-kind principal --member bob
 vaelius-client --home /absolute/private/client-profile group delete maple-team
 ```
+
+A new workspace is **org** by default: everyone signed in to your organization can
+read it (there is no internet-public tier). `--private` makes it only you, as
+admin, plus whoever an admin adds; no reason is needed. When the tenant's
+`widest_entry` does not allow organization entries, the default becomes private and
+the command says so. The first session in a folder whose workspace is org-visible
+shows you that once. Admins are the
+creator plus whoever an admin adds with `--role admin`. `set-visibility` (admins
+only) adds or removes the organization reader entry; private to org reports how
+many existing items become visible to the org (`items_now_visible_to_org`), org to
+private needs no confirmation; like `set-entry` and
+`remove-entry` it reports `newly_unreadable` when sessions of another workspace can
+no longer read this one. Visibility is never read from a scope file or from GitHub.
 
 Workspace-admin operations need the `manage` credential action (`vaelius:manage`
 on provider OAuth; a credential issued before migration 048 that holds `share`
@@ -741,9 +767,10 @@ with every recall (automatic context, and through the MCP connection's
 history tools). The service then returns only items whose audience contains the
 session's: the current workspace first, then every other workspace at least as wide
 (an organization workspace, a workspace the same team can read), each marked
-`"from": "<workspace> · <author> · <date>"`. Your own private items are recalled only
-in a private session. The cross-project `scope = "all"` option is gone from the MCP
-tool: the label decides. Clients and sessions without a label keep the earlier
+`"from": "<workspace> · <author> · <date>"`, current-workspace results ranked first.
+Your own private items are recalled only in a private session, and a read-only chat
+recalls everything you can read (it saves nothing). The MCP tool has no `scope`
+option: the label decides. Clients and sessions without a label keep the earlier
 behavior (the current project, then organization-shared items; `"scope": "all"` in an
 HTTP search request still widens it).
 
@@ -759,8 +786,14 @@ Sessions that start read-only, off or outside every workspace have no label.
   narrower workspace the line names who is missing, for example
   `vaelius: denied — ~/src/birch: birch isn't visible to carol (in this session's
   audience, maple). The person can run 'vaelius-client session use birch' for this
-  session, or ask birch's admin to add them.` It never asks. Unscoped folders stay
-  readable and make the session private. See "Why can't this session read X?" below.
+  session, or ask birch's admin to add them.` It never asks.
+- **Folders without a scope file are denied.** An existing path outside every scoped
+  folder (a sibling checkout, a dotfile, another volume) gets `vaelius: ~/src/x
+  isn't in a Vaelius folder (no .vaelius). Add one, or run 'vaelius-client session
+  use private' to read it in a private session.` A private session may read it.
+  Tooling, caches, system paths, temporary folders and Claude Code configuration
+  stay readable; personal folders and credential files stay denied. See "Why can't
+  this session read X?" below.
 - **Narrowing is explicit.** `vaelius-client session use birch` (or a folder of it,
   a linked remote, or `private`) narrows the session active in this folder; with
   several sessions, pass `--session <id>`. In Claude Code you can also ask the agent
@@ -794,6 +827,30 @@ Sessions that start read-only, off or outside every workspace have no label.
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
 ```
 
+### Read-only chats
+
+```sh
+vaelius-client --home /absolute/private/client-profile session read-only
+```
+
+Nothing from the current chat is saved from then on, not even private items; search
+and recall keep working and reach everything you can read, since nothing can leak
+from a chat that saves nothing. It is one-way: only `/clear` or a new chat saves again. You
+can also ask the agent ("make this chat read-only"); it calls the MCP tool
+`read_only_session`, and there is no tool to switch back. The status line says
+`vaelius: read-only — nothing from this chat is saved`; switched mid-chat, it adds
+that what was saved before stays until you run `vaelius-client forget --session
+current`.
+
+The service enforces it, not just the hooks: the client tells it the chat's session
+id and this folder's recent MCP connections, and the MCP connection says read-only
+when it next connects. Every write (captures, remember, feedback, corrections,
+withdrawals, shares, receipts) is then refused with `read_only_session` and one
+clear line. Folders with `capture = "read-only"` get the same refusal. A chat that
+ran read-only cannot be pushed later with `push-session`. If another chat is open
+in the same folder, its MCP connection may be refused writes too until it
+reconnects, since the folder's connections are not tied to one chat.
+
 ### Why can't this session read X?
 
 Say repo1's workspace is read by Team A and repo2's by Team A plus Carol. A session
@@ -819,6 +876,11 @@ working. Vaelius says so plainly:
   `remove-entry` and `vaelius-client group add-member` / `remove-member`. Synced
   GitHub and SCIM groups only log it on the server.
 
+A folder with **no scope file** is a different case: Vaelius cannot tell who may
+read it, so a labelled session is denied it. Add a `.vaelius` naming a workspace,
+or run `vaelius-client session use private` (the rest of the session then captures
+for you only).
+
 There are three ways forward:
 
 1. **Add the people as readers** of repo1 (repo1's admin). Every repo2 session can
@@ -833,8 +895,9 @@ There are three ways forward:
 ### Content from outside the repository
 
 In a labelled session this is the backstop for what the guardrail hook cannot see
-(programs that open files without naming them, other MCP servers, unscoped
-folders); an allowed read of another workspace only adds it to what captures carry.
+(programs that open files without naming them, other MCP servers, unknown tools);
+the hook denies unscoped folders, and an allowed read of another workspace only adds
+it to what captures carry.
 Each captured tool event is labelled with what it touched, and the label sticks to
 the rest of the session: once an agent reads a personal folder, a credentials file,
 a repository without a scope file, or uses an MCP server other than Vaelius, that
@@ -917,6 +980,7 @@ there is no bulk mode.
   in the file; the profile's `pushed-sessions.json` records what was queued, so
   pushing a session again sends nothing twice.
 - Transcript files are only read, never changed or deleted.
+- A chat that ran [read-only](#read-only-chats) is refused (`session_ran_read_only`).
 
 Operators can import history that already lives server-side with `vaelius backfill`
 ([self-hosting](SELF_HOSTING.md#backfilling-past-conversations)).

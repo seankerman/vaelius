@@ -110,6 +110,9 @@ ROUTE_ACTIONS={
     # needs `read` and a role in every workspace it names.
     ('POST','/enterprise/v3/workspaces/descriptor'):READ,
     ('POST','/enterprise/v3/workspaces/create'):(('manage',),),
+    ('POST','/enterprise/v3/workspaces/visibility'):(('manage',),('settings',)),
+    # Read-only chats (agenthub.read_only): registering the caller's own chat only narrows.
+    ('POST','/enterprise/v3/sessions/read-only'):READ,
     ('POST','/enterprise/v3/workspaces/settings'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/workspaces/entries/set'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/workspaces/entries/remove'):(('manage',),('settings',)),
@@ -189,6 +192,7 @@ OWNER_ROUTES={'/enterprise/v3/my-data':'mine','/enterprise/v3/my-data/forget':'f
 WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/workspaces/show':'show_workspace',
     '/enterprise/v3/workspaces/descriptor':'session_descriptor',
     '/enterprise/v3/workspaces/create':'create_workspace','/enterprise/v3/workspaces/settings':'workspace_settings',
+    '/enterprise/v3/workspaces/visibility':'set_visibility','/enterprise/v3/sessions/read-only':'mark_read_only',
     '/enterprise/v3/workspaces/entries/set':'set_entry','/enterprise/v3/workspaces/entries/remove':'remove_entry',
     '/enterprise/v3/workspaces/repos/link':'link_repo','/enterprise/v3/workspaces/repos/unlink':'unlink_repo',
     '/enterprise/v3/groups':'list_groups','/enterprise/v3/groups/show':'show_group',
@@ -211,6 +215,7 @@ CREDENTIAL_ROUTES=('/enterprise/v3/auth/begin','/enterprise/v3/auth/complete','/
 INVALID_BODY=object()
 from agenthub.workspace_access import LABELLED_ROUTES  # recall routes that honor a session label
 from agenthub.github_sync import InvalidSignature, ReplayedDelivery
+from agenthub.read_only import ReadOnlySession, header_read_only, is_write, named_sessions
 TENANT_PATH=re.compile(r'[A-Za-z0-9_.:-]{1,128}')
 
 
@@ -328,6 +333,12 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
         # A malformed body is reported only to an authenticated caller.
         if data is INVALID_BODY:raise ValueError('json_object_required')
         authorize_route(ctx,method,path,data)
+        if is_write(route_rule(method,path,data),path):
+            # A read-only chat writes nothing (agenthub.read_only): the connection says so,
+            # or the request names a session the person registered as read-only.
+            if header_read_only(request.headers):raise ReadOnlySession()
+            sessions=named_sessions(path,data,request.headers)
+            if sessions and hasattr(store,'refuse_read_only'):store.refuse_read_only(ctx,sessions)
         label=None
         if method=='POST' and path in LABELLED_ROUTES and isinstance(data,dict) and 'session_label' in data:
             data=dict(data);label=data.pop('session_label')
@@ -682,6 +693,8 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
             return JSONResponse({'error':'not_found'},status_code=404)
         except (Denied,IdentityError,FileNotFoundError):return JSONResponse({'error':'not_found'},status_code=404)
         except RepoNotLinked:return JSONResponse({'error':'repo_not_linked'},status_code=409)
+        except ReadOnlySession as refused:
+            return JSONResponse({'error':refused.code,'message':refused.message},status_code=403,headers=NO_STORE)
         except InvalidSignature:return JSONResponse({'error':'invalid_signature'},status_code=401,headers=NO_STORE)
         except ReplayedDelivery:return JSONResponse({'error':'replayed_delivery'},status_code=409,headers=NO_STORE)
         except Conflict:return JSONResponse({'error':'conflict'},status_code=409)

@@ -56,6 +56,14 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
             self.assertEqual(found['capture'], 'off', text)
             self.assertIn('error', found)
 
+    def test_visibility_and_read_keys_are_ignored_with_a_warning(self):
+        self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nvisibility = "org"\nread = ["*", 1]\n')
+        found = discover(self.repo)
+        self.assertEqual(found['capture'], 'on', 'ignored, not invalid')
+        self.assertEqual(found['warnings'], [scope_file.WARN_VISIBILITY_IGNORED, scope_file.WARN_READ_IGNORED])
+        self.assertNotIn('visibility', found)
+        self.assertNotIn('read', found)
+
     def test_legacy_name_needs_explicit_configuration_and_maps_only_known_fields(self):
         self.write(self.repo / '.mindshare', 'mode: read-only\ntags: [alpha, beta]\nteam: example-team\nsearch:\n  tags:\n    scope: [x]\n')
         self.assertIsNone(discover(self.repo, scope_file.scope_names({})))

@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 
 from agenthub.enterprise import Denied
 from agenthub.cloud_identity import IdentityError
+from agenthub.read_only import ReadOnlySession
 from agenthub.mcp_tools import CONTEXT_READ_INSTRUCTIONS, MemoryTools, enterprise_tools
 
 
@@ -64,6 +65,8 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
                 return tools.call(params.name,arguments)
             result=await run_in_threadpool(invoke)
             return types.CallToolResult(content=[types.TextContent(type='text',text=json.dumps(result,ensure_ascii=True))])
+        except ReadOnlySession as refused:
+            return types.CallToolResult(isError=True,content=[types.TextContent(type='text',text=refused.message)])
         except Exception:
             return types.CallToolResult(isError=True,content=[types.TextContent(type='text',
                 text='Memory request unavailable or invalid. Check identity, project and revision; reuse the same request_key for identical writes.')])

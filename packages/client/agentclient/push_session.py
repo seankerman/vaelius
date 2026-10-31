@@ -393,6 +393,9 @@ def push(config, home, target, *, apply=False, claude=None, codex=None, max_seco
     from agentclient.transport import capture_connection, enterprise_client
     host, session, path, start = locate(target, claude=claude, codex=codex)
     result = {'dry_run': not apply, 'host': host, 'session': session, 'sharing': 'private'}
+    from agentclient.session_label import was_read_only
+    if was_read_only(home, session):
+        raise PushRefused('session_ran_read_only')
     scope = _scope(config, session, start)
     if scope is None:
         raise PushRefused('session_not_started_in_a_scoped_folder_with_capture_on')

@@ -24,7 +24,7 @@ def descriptor(narrowed=(), private=False, *, now=None, role='writer', epoch=7):
     contains = [{'id': 'team-a', 'name': 'team-a'}, {'id': 'org-c', 'name': 'org-c'}]
     if 'narrow-b' in narrowed:
         contains.append({'id': 'narrow-b', 'name': 'narrow-b'})
-    return {'workspace': {'id': 'team-a', 'name': 'team-a'}, 'epoch': epoch, 'role': role,
+    return {'workspace': {'id': 'team-a', 'name': 'team-a'}, 'epoch': epoch, 'role': role, 'visibility': 'org',
             'item_default': 'shared', 'contributions_default': 'shared',
             'session': {'workspace': 'team-a', 'narrowed': list(narrowed), 'private': private},
             'contains_session_audience': contains,
@@ -212,8 +212,12 @@ class HookDecisionTest(LabelFixture):
         self.assertIn('cannot read or which does not exist', self.read(self.src / 'ghost/notes.md'))
         self.assertIn('scope file Vaelius cannot read', self.read(self.src / 'bad/notes.md'))
         self.assertIn('personal folder', self.read(self.home_dir / 'Documents/plan.md'), 'unchanged')
-        self.assertIsNone(self.read(self.home_dir / 'dotfile'), 'unscoped: allowed, the backstop applies')
-        self.assertIsNone(self.read(self.src / 'plain/readme.md'), 'unscoped repository: allowed')
+        self.assertEqual(self.read(self.home_dir / 'dotfile'),
+                         "vaelius: ~/dotfile isn't in a Vaelius folder (no .vaelius). Add one, or run "
+                         "'vaelius-client session use private' to read it in a private session.",
+                         'unscoped: denied with one line, never ask')
+        self.assertIn("~/src/plain/readme.md isn't in a Vaelius folder", self.read(self.src / 'plain/readme.md'),
+                      'unscoped repository: denied')
 
     def test_narrower_denial_names_who_is_missing_from_the_cached_descriptor(self):
         entry = self.label()
@@ -245,8 +249,8 @@ class HookDecisionTest(LabelFixture):
         self.assertTrue(self.check('Bash', {'command': "python -c \"open('" + b + "/notes.md')\""}))
         self.assertIsNone(self.check('Bash', {'command': 'cat notes.md && ls ../c'}))
         self.assertIsNone(self.check('Bash', {'command': 'make test'}), 'names nothing: the backstop')
-        self.assertIsNone(self.check('Grep', {'pattern': 'x', 'path': str(self.src)}),
-                          'a search rooted outside every scoped folder is as unknown')
+        self.assertIn("isn't in a Vaelius folder", self.check('Grep', {'pattern': 'x', 'path': str(self.src)}),
+                      'a search rooted outside every scoped folder is as unknown: denied')
         self.assertIsNone(self.check('Edit', {'file_path': b + '/notes.md', 'old_string': 'a', 'new_string': 'b'}),
                           'edits are not policed by the label')
 
@@ -417,7 +421,119 @@ class HeaderTest(LabelFixture):
             labelled = mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))
             quiet = mcp_headers.headers(self.home, project_dir=str(self.src / 'quiet'))
         self.assertEqual(json.loads(labelled['X-Vaelius-Session-Label']), {'workspace': 'team-a'})
+        self.assertNotIn('X-Vaelius-Read-Only', labelled)
         self.assertNotIn('X-Vaelius-Session-Label', quiet, 'read-only: no label rule')
+        self.assertEqual(quiet['X-Vaelius-Read-Only'], '1', 'a read-only folder: the service refuses writes')
+
+
+class OrgVisibilityNoticeTest(LabelFixture):
+    def test_org_workspace_is_announced_once_per_folder_to_the_person(self):
+        first = self.start()
+        line = ("vaelius: workspace team-a is visible to everyone in the org (an admin can restrict it: "
+                "'vaelius-client workspace set-visibility team-a private')")
+        self.assertIn(line, first.get('systemMessage', ''))
+        self.assertNotIn('visible to everyone', json.dumps(first.get('hookSpecificOutput', {})), 'person only')
+        self.assertNotIn('visible to everyone', self.start(session='s2').get('systemMessage', ''), 'once')
+
+
+class UnscopedReadTest(LabelFixture):
+    """Part 1 of the bundle: an existing path outside every scoped folder is denied, not narrowed."""
+
+    def test_unscoped_reads_are_denied_with_one_line_unless_private_or_read_only(self):
+        self.start()
+        dotfile = self.home_dir / 'dotfile'
+        reason = self.read(dotfile)
+        self.assertEqual(reason, session_label.unscoped_reason(dotfile, str(self.home_dir)))
+        self.assertNotIn('\n', reason)
+        self.assertIn("vaelius-client session use private", reason)
+        self.assertTrue(self.check('Bash', {'command': 'cat ' + str(dotfile)}), 'Bash paths too')
+        # Allowed categories keep no restriction.
+        self.assertIsNone(self.read(self.src / 'a/notes.md'), 'own workspace')
+        self.assertIsNone(self.read(self.src / 'c/notes.md'), 'a wider workspace')
+        self.assertIsNone(self.read(Path(tempfile.gettempdir()) / 'vaelius-missing-or-temp'), 'temp')
+        self.assertIsNone(self.read(Path('/usr/bin/env')), 'system')
+        cache = self.home_dir / '.cache/tool/data'
+        cache.parent.mkdir(parents=True)
+        cache.write_text('synthetic\n')
+        self.assertIsNone(self.read(cache), 'tooling and caches')
+        self.assertIsNone(self.read(self.home_dir / 'not-yet-created.md'), 'a missing path holds nothing')
+        self.assertIn('personal folder', self.read(self.home_dir / 'Documents/plan.md'), 'still denied')
+        # The taint backstop (a read the hook could not see) or `use private` reopens it.
+        session_label.SessionLabels(self.home).update('s1', private=True)
+        self.assertIsNone(self.read(dotfile), 'a private session may read it')
+        session_label.SessionLabels(self.home).update('s1', private=False, read_only=True)
+        self.assertIsNone(self.read(dotfile), 'a read-only chat captures nothing: no label rule')
+
+    def test_unlabelled_and_read_only_folder_sessions_are_unaffected(self):
+        self.start(cwd=self.src / 'quiet')
+        self.assertIsNone(self.read(self.home_dir / 'dotfile', cwd=self.src / 'quiet'), 'capture = read-only')
+        self.assertIsNone(self.read(self.home_dir / 'dotfile', session='never-started'), 'no label')
+
+
+class ReadOnlyChatTest(LabelFixture):
+    """Part 4: read-only chats."""
+
+    def register_calls(self):
+        return [v for p, v in self.service.calls if p == '/enterprise/v3/sessions/read-only']
+
+    def test_session_read_only_is_one_way_stops_capture_and_tells_the_service(self):
+        from agentclient import mcp_headers
+        self.start()
+        self.hook('UserPromptSubmit', prompt='before')
+        captured = len(Outbox.events)
+        self.assertGreater(captured, 0)
+        backend = mock.Mock(token='synthetic-token')
+        with mock.patch('agentclient.transport.enterprise_client', return_value=backend), \
+                mock.patch('agentclient.transport.require_backend', return_value={}), \
+                mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
+            before = mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))
+        self.assertNotIn('X-Vaelius-Read-Only', before)
+        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
+            result = session_label.read_only(self.home, self.config, cwd=str(self.src / 'a'))
+        self.assertEqual(result['status'], session_label.READ_ONLY_STATUS + session_label.READ_ONLY_FORGET)
+        self.assertIn("vaelius-client forget --session current", result['status'])
+        self.assertEqual(self.register_calls(), [{'sessions': ['s1', before['X-AgentNetwork-Session']]}],
+                         'the chat and its MCP connection are refused writes by the service')
+        first = self.hook('UserPromptSubmit', prompt='after')
+        self.assertIn(session_label.READ_ONLY_STATUS, first.get('systemMessage', ''), 'announced once')
+        self.hook('PostToolUse', tool_name='Read', tool_input={'file_path': str(self.src / 'a/notes.md')},
+                  tool_response={})
+        self.assertEqual(len(Outbox.events), captured, 'nothing captured after the switch')
+        self.hook('PostCompact', trigger='auto')
+        self.assertNotIn('/enterprise/v1/boundary', [p for p, _ in self.service.calls], 'no boundary write')
+        with mock.patch('agentclient.transport.enterprise_client', return_value=backend), \
+                mock.patch('agentclient.transport.require_backend', return_value={}), \
+                mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
+            after = mcp_headers.headers(self.home, project_dir=str(self.src / 'a'))
+        self.assertEqual(after['X-Vaelius-Read-Only'], '1', 'a reconnect carries read-only')
+        self.assertIs(json.loads(after['X-Vaelius-Session-Label'])['read_only'], True)
+        self.assertTrue(session_label.was_read_only(self.home, 's1'))
+        self.hook('SessionEnd', reason='clear')
+        self.assertTrue(session_label.was_read_only(self.home, 's1'), 'recorded past /clear for push-session')
+        self.start(session='s2')
+        self.assertFalse(session_label.SessionLabels(self.home).get('s2').get('read_only'), 'a new chat writes')
+
+    def test_the_mcp_tool_result_switches_the_chat(self):
+        self.start()
+        self.hook('PostToolUse', tool_name='mcp__plugin_vaelius_vaelius__read_only_session', tool_input={},
+                  tool_response=[{'type': 'text', 'text': json.dumps({'vaelius_session_read_only': True})}])
+        self.assertTrue(self.label().get('read_only'))
+        self.assertEqual(self.register_calls()[-1]['sessions'][0], 's1')
+        captured = len(Outbox.events)
+        self.hook('UserPromptSubmit', prompt='after')
+        self.assertEqual(len(Outbox.events), captured)
+
+    def test_read_only_chat_recall_uses_the_full_readable_set(self):
+        self.start()
+        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
+            session_label.read_only(self.home, self.config, cwd=str(self.src / 'a'))
+        self.hook('UserPromptSubmit', prompt='anything')
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search']
+        self.assertIs(searched[-1]['session_label']['read_only'], True, 'the service treats it as private')
+
+    def test_a_read_only_folder_registers_its_chat(self):
+        self.start(session='q1', cwd=self.src / 'quiet')
+        self.assertEqual(self.register_calls(), [{'sessions': ['q1']}])
 
 
 if __name__ == '__main__':

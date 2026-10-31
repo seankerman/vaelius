@@ -41,6 +41,10 @@ SUBJECT_KINDS = ('principal', 'group', 'organization')
 WIDEST = ('none', 'people_and_groups', 'organization')
 CREATION = ('anyone', 'admins')
 ITEM_DEFAULTS = ('shared', 'private')
+# Chosen when a workspace is created, and changed later only on the server.
+VISIBILITIES = ('private', 'org')
+DEFAULT_VISIBILITY = 'org'
+ORG_NOTICE = 'visible to everyone in the org (use --private to restrict)'
 GROUP_ROLES = ('member', 'admin')
 NAME = re.compile(r'[A-Za-z0-9_-]{1,120}')
 GROUP_NAME = re.compile(r'[A-Za-z0-9_-]{1,128}')
@@ -578,8 +582,10 @@ class WorkspaceAccessMixin:
 
     @staticmethod
     def _workspace_view(row):
+        # Visibility is decided on the server only (never in `.vaelius`): `org` while the
+        # workspace has an organization entry, else `private` (admins and whoever they add).
         return {'id': row['id'], 'name': row['name'], 'item_default': row['item_default'],
-                'active': bool(row['active'])}
+                'active': bool(row['active']), 'visibility': 'org' if row['org_role'] else 'private'}
 
     def list_workspaces(self, ctx, value=None):
         """Workspaces the caller can read, with their role and the organization entry."""
@@ -599,11 +605,20 @@ class WorkspaceAccessMixin:
     def create_workspace(self, ctx, value):
         """Self-service: any principal whose credential holds `manage` (and, when the
         tenant restricts creation, holds the settings_admin flag) creates a workspace
-        and becomes its first admin."""
+        and becomes its first admin.
+
+        Visibility is chosen here, on the server, and defaults to `org`: an
+        organization reader entry, so everyone signed in to the tenant reads it (there
+        is no internet-public tier). `private` is only the creator, as admin, plus
+        whoever the admins add. The tenant's `widest_entry` still caps `org`: an
+        explicit `org` is refused, and the default falls back to `private`, saying so."""
         from agenthub.enterprise import Denied, Conflict
-        if not isinstance(value, dict) or set(value) - {'name', 'item_default'}:
+        if not isinstance(value, dict) or set(value) - {'name', 'item_default', 'visibility'}:
             raise ValueError('invalid_request')
         name, item_default = value.get('name'), value.get('item_default', 'shared')
+        visibility = value.get('visibility', DEFAULT_VISIBILITY)
+        if visibility not in VISIBILITIES:
+            raise ValueError('invalid_visibility')
         if not isinstance(name, str) or not NAME.fullmatch(name) or item_default not in ITEM_DEFAULTS:
             raise ValueError('invalid_workspace')
         if 'manage' not in ctx['actions'] or ctx.get('acting_for'):
@@ -623,15 +638,26 @@ class WorkspaceAccessMixin:
                     raise Denied()
             if self._resolve_workspace(db, ctx['tenant'], name):
                 raise Conflict()
+            widest = db.execute('SELECT widest_entry FROM enterprise_organizations WHERE id=?',
+                                (ctx['tenant'],)).fetchone()['widest_entry']
+            if visibility == 'org' and self._suspended(widest, 'organization', 'reader'):
+                if 'visibility' in value:
+                    raise ValueError('entry_wider_than_tenant_allows')
+                visibility = 'private'  # the default, capped by the tenant
             now = time.time()
             db.execute('''INSERT INTO enterprise_projects(tenant,id,name,created_by,created,item_default)
                 VALUES(?,?,?,?,?,?)''', (ctx['tenant'], name, name, ctx['actor'], now, item_default))
             db.execute('''INSERT INTO workspace_entries(tenant,workspace,subject_kind,subject,role,granted_by,created)
                 VALUES(?,?,'principal',?,'admin',?,?)''', (ctx['tenant'], name, ctx['actor'], ctx['actor'], now))
             self._refresh_workspaces(db, ctx['tenant'], [name])
-            self._audit(db, ctx, 'workspace_create', 'created', name)
+            self._audit(db, ctx, 'workspace_create', 'created:' + visibility, name)
+            if visibility == 'org':
+                self._write_entry(db, ctx, name, 'organization', '', 'reader')
             row = db.execute('SELECT * FROM enterprise_projects WHERE tenant=? AND id=?', (ctx['tenant'], name)).fetchone()
-        return {'workspace': self._workspace_view(row), 'role': 'admin'}
+        notice = (ORG_NOTICE if visibility == 'org' else
+                  'private: only you and whoever an admin adds' + (
+                      ' (this organization does not allow org-wide workspaces)' if 'visibility' not in value else ''))
+        return {'workspace': self._workspace_view(row), 'role': 'admin', 'notice': notice}
 
     def show_workspace(self, ctx, value):
         """Settings, access list, linked repositories and audience size (readers and admins)."""
@@ -661,6 +687,46 @@ class WorkspaceAccessMixin:
                              'suspended': self._suspended(widest, e['subject_kind'], e['role']),
                              'granted_by': e['granted_by'], 'created': e['created']} for e in entries],
                 'repos': repos, 'audience_size': size}
+
+    def set_visibility(self, ctx, value):
+        """Change a workspace's visibility (admins; settings override): `org` adds an
+        organization reader entry when there is none, `private` removes the organization
+        entry. Principal and group entries are untouched. Returns `newly_unreadable` like
+        any entry change."""
+        if not isinstance(value, dict) or set(value) != {'workspace', 'visibility'}:
+            raise ValueError('invalid_request')
+        if value['visibility'] not in VISIBILITIES:
+            raise ValueError('visibility_required')
+        with self.open() as state:
+            row = self._resolve_workspace(state.db, ctx['tenant'], value['workspace'])
+            entry = state.db.execute('''SELECT role FROM workspace_entries WHERE tenant=? AND workspace=?
+                AND subject_kind='organization' ''', (ctx['tenant'], row['id'])).fetchone() if row else None
+        target = {'workspace': value['workspace'], 'subject_kind': 'organization'}
+        if value['visibility'] == 'org':
+            if not entry and row:
+                # What opening it exposes: its shared items with no narrower origin.
+                with self.open() as state:
+                    self._manage_workspace(state.db, ctx, value['workspace'])
+                    exposed = state.db.execute('''SELECT count(*) FROM enterprise_sources WHERE tenant=?
+                        AND external_project=? AND active=1 AND private=0
+                        AND coalesce(origin_ceiling,'')!='private' AND coalesce(origin_projects,'[]')='[]' ''',
+                        (ctx['tenant'], row['id'])).fetchone()[0]
+            if entry:
+                # Check the caller manages it before reporting anything about it.
+                with self.open() as state:
+                    self._manage_workspace(state.db, ctx, value['workspace'])
+                result = {'workspace': row['id'], 'operation': 'unchanged',
+                          'entry': {'subject_kind': 'organization', 'subject': None, 'role': entry['role']}}
+            else:
+                result = dict(self.set_entry(ctx, dict(target, role='reader')),
+                              items_now_visible_to_org=int(exposed), notice=ORG_NOTICE)
+        elif entry:
+            result = self.remove_entry(ctx, target)
+        else:
+            with self.open() as state:
+                self._manage_workspace(state.db, ctx, value['workspace'])
+            result = {'workspace': row['id'] if row else value['workspace'], 'operation': 'unchanged'}
+        return dict(result, visibility=value['visibility'])
 
     @staticmethod
     def _suspended(widest, kind, role):
@@ -1327,7 +1393,9 @@ class WorkspaceAccessMixin:
         person = db.execute('SELECT contributions_default FROM enterprise_principals WHERE tenant=? AND id=?',
                             (ctx['tenant'], ctx['actor'])).fetchone()
         requested = label.get('sharing')
-        private = bool(label.get('private') or requested == 'private'
+        # A read-only chat writes nothing, so it cannot leak what it recalls: it gets the
+        # person's full readable set, like a private session.
+        private = bool(label.get('private') or label.get('read_only') or requested == 'private'
                        or not person or person['contributions_default'] == 'private'
                        or workspace['item_default'] == 'private'
                        or (requested == 'team' and workspace['org_role'] > 0))
@@ -1504,6 +1572,7 @@ class WorkspaceAccessMixin:
         listed = lambda ids: [{'id': ident, 'name': names.get(ident, ident)} for ident in ids]
         return {'workspace': {'id': workspace['id'], 'name': workspace['name']}, 'epoch': int(epoch),
                 'role': role_name(roles.get(workspace['id'], (0, 0))[0]), 'item_default': workspace['item_default'],
+                'visibility': 'org' if workspace['org_role'] else 'private',
                 'contributions_default': person['contributions_default'] if person else 'private',
                 'session': {'workspace': workspace['id'], 'narrowed': session['narrowed'],
                             'private': session['private']},
@@ -1542,7 +1611,7 @@ MISSING_NAMES = 3
 MISSING_WORKSPACES = 64
 # `newly_unreadable` is computed when the caller reads at most this many workspaces.
 CONTAINMENT_SCOPE = 200
-SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing'}
+SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing', 'read_only'}
 MAX_NARROWED = 16
 
 
@@ -1557,5 +1626,8 @@ def validate_session_label(label):
         raise ValueError('invalid_session_label')
     if type(label.get('private', False)) is not bool or label.get('sharing', 'organization') not in SHARING:
         raise ValueError('invalid_session_label')
+    if type(label.get('read_only', False)) is not bool:
+        raise ValueError('invalid_session_label')
     return {'workspace': label['workspace'], 'narrowed': list(dict.fromkeys(narrowed)),
-            'private': label.get('private', False), 'sharing': label.get('sharing', 'organization')}
+            'private': label.get('private', False), 'sharing': label.get('sharing', 'organization'),
+            'read_only': label.get('read_only', False)}

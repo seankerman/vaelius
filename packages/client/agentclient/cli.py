@@ -32,8 +32,14 @@ def _add_workspace_commands(sub):
     inner.add_parser('list', help='workspaces you can see')
     create = inner.add_parser('create', help='create a workspace you administer')
     create.add_argument('name')
+    create.add_argument('--private', action='store_true',
+                        help='only you (admin) and whoever an admin adds; the default is org: everyone '
+                             'signed in to your organization can read it (when the tenant allows it)')
     create.add_argument('--item-default', choices=('shared', 'private'), default='shared',
                         help='whether new items are workspace-audience (shared) or owner-only (private)')
+    visibility = inner.add_parser('set-visibility', help='admins: make a workspace private or org-readable')
+    visibility.add_argument('workspace')
+    visibility.add_argument('visibility', choices=('private', 'org'))
     show = inner.add_parser('show', help='access list, repositories and audience size')
     show.add_argument('workspace')
     settings = inner.add_parser('settings', help='rename, change item default, archive or unarchive')
@@ -442,6 +448,9 @@ def _add_session_commands(sub):
         parser.add_argument('--session', help='host session ID (default: the session active in this folder)')
     status = inner.add_parser('status', help='the label of the session active in this folder')
     status.add_argument('--session', help='host session ID (default: the session active in this folder)')
+    readonly = inner.add_parser('read-only', help='save nothing more from this chat (one-way until /clear or a '
+                                'new chat); reads keep working')
+    readonly.add_argument('--session', help='host session ID (default: the session active in this folder)')
 
 
 def _session_command(home, config, args):
@@ -452,6 +461,8 @@ def _session_command(home, config, args):
     try:
         if command == 'use':
             return session_label.use(home, config, args.target, session=args.session)
+        if command == 'read-only':
+            return session_label.read_only(home, config, session=args.session)
         _, entry = session_label.resolve_session(home, os.getcwd(), args.session, scope_names(config))
     except session_label.UseRefused as refused:
         raise SystemExit(json.dumps({'error': 'session_use_refused', 'reason': str(refused)})) from None
@@ -474,8 +485,11 @@ def _workspace_payload(args):
     if command == 'list': return '/enterprise/v3/workspaces', {}
     if command == 'create':
         body = {'name': args.name}
+        if args.private: body['visibility'] = 'private'
         if args.item_default: body['item_default'] = args.item_default
         return '/enterprise/v3/workspaces/create', body
+    if command == 'set-visibility':
+        return '/enterprise/v3/workspaces/visibility', {'workspace': args.workspace, 'visibility': args.visibility}
     if command == 'show':
         return '/enterprise/v3/workspaces/show', {'workspace': args.workspace}
     if command == 'settings':
@@ -517,7 +531,11 @@ def _workspace_payload(args):
 def _workspace_command(config, args):
     from agentclient.transport import enterprise_client
     path, body = _workspace_payload(args)
-    return enterprise_client(config, timeout=15).request(path, body)
+    result = enterprise_client(config, timeout=15).request(path, body)
+    if args.workspace_command in ('create', 'set-visibility') and isinstance(result, dict) and result.get('notice'):
+        name = args.name if args.workspace_command == 'create' else args.workspace
+        sys.stderr.write('vaelius: ' + name + ' ' + result['notice'] + '\n')
+    return result
 
 
 def _group_payload(args):

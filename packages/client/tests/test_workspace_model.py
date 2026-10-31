@@ -256,6 +256,26 @@ class OutboxRepoNotLinkedTests(unittest.TestCase):
         finally:
             outbox.close()
 
+    def test_403_read_only_session_drops_the_event_and_keeps_draining(self):
+        from agentclient.capture_outbox import Outbox
+
+        class Service:
+            calls = 0
+
+            def request(self, path, value=None):
+                Service.calls += 1
+                raise HTTPError('https://service.example.invalid' + path, 403, 'Forbidden', {},
+                                io.BytesIO(json.dumps({'error': 'read_only_session', 'message': 'x'}).encode()))
+
+        outbox = Outbox(self.home)
+        try:
+            outbox.put(self._event())
+            result = outbox.drain(Service(), max_events=4, max_seconds=2)
+            self.assertEqual((result['pending_events'], result['blocked']), (0, False), 'never accepted: dropped')
+            self.assertEqual(result['gaps'].get('read_only_session_refused'), 1)
+        finally:
+            outbox.close()
+
     def test_parts_notice_from_receipt_becomes_a_status_line_notice(self):
         from agentclient.capture_outbox import Outbox
 
@@ -331,10 +351,18 @@ class WorkspaceCliTests(unittest.TestCase):
     def test_workspace_create_show_settings(self):
         response = {'workspace': {'id': 'maple', 'name': 'maple', 'item_default': 'shared', 'active': True},
                     'role': 'admin'}
-        calls, _ = self._run('workspace', 'create', 'maple', '--item-default', 'private',
+        notice = 'visible to everyone in the org (use --private to restrict)'
+        with mock.patch('sys.stderr', new=io.StringIO()) as err:
+            calls, _ = self._run('workspace', 'create', 'maple', response=dict(response, notice=notice))
+        self.assertEqual(calls[0], ('/enterprise/v3/workspaces/create', {'name': 'maple', 'item_default': 'shared'}),
+                         'org is the default: no visibility is sent')
+        self.assertEqual(err.getvalue(), 'vaelius: maple ' + notice + '\n')
+        calls, _ = self._run('workspace', 'create', 'maple', '--private', '--item-default', 'private',
                              response=dict(response, workspace=dict(response['workspace'], item_default='private')))
         self.assertEqual(calls[0], ('/enterprise/v3/workspaces/create',
-                                    {'name': 'maple', 'item_default': 'private'}))
+                                    {'name': 'maple', 'visibility': 'private', 'item_default': 'private'}))
+        calls, _ = self._run('workspace', 'set-visibility', 'maple', 'org', response={'visibility': 'org'})
+        self.assertEqual(calls[0], ('/enterprise/v3/workspaces/visibility', {'workspace': 'maple', 'visibility': 'org'}))
         show_response = {'workspace': response['workspace'], 'role': 'writer', 'entries': [
             {'subject_kind': 'principal', 'subject': 'alice', 'role': 'admin',
              'suspended': False, 'granted_by': 'migration', 'created': 1}], 'repos': [], 'audience_size': 2}

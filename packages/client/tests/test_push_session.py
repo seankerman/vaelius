@@ -157,6 +157,15 @@ class PushSessionTests(PushFixture):
         # Live taint state is untouched: the replay used its own.
         self.assertFalse((self.profile / 'origin-sessions.json').exists())
 
+    def test_a_chat_that_ran_read_only_is_refused(self):
+        from agentclient import session_label
+        from agentclient.push_session import PushRefused
+        self.write_claude(self.session_rows())
+        session_label._remember_read_only(self.profile, [session_label._key(SESSION)])
+        with self.assertRaisesRegex(PushRefused, 'session_ran_read_only'):
+            self.push(apply=True)
+        self.assertEqual(self.queued(), [])
+
     def test_rerun_is_idempotent(self):
         self.write_claude(self.session_rows())
         first = self.push(apply=True)

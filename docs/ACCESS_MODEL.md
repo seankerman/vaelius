@@ -4,7 +4,10 @@
 linking and the single read predicate), PR B (migration 049: fixed session
 labels, the read rule in the guardrail hook and the recall filter) and PR C
 (migration 050: GitHub App team sync and the device-flow identity link) are
-implemented. The repository-read check of section 4 is deferred (decision, PR C).** Three pull requests implement the
+implemented. The repository-read check of section 4 is deferred (decision, PR C).
+Since migration 053: reads of folders without a scope file are denied in a labelled
+session, workspace visibility is chosen on the server at creation (default org), and
+chats can be made read-only (sections 2 and 7).** Three pull requests implement the
 design in order (PR A, PR B, PR C; see [the plan](#12-implementation-plan)). The
 [privacy model](PRIVACY_MODEL.md) describes what the service enforces today; where
 PR A or PR B resolved a point left open here, the text below says so and the
@@ -92,7 +95,27 @@ The common modes are combinations, not separate settings:
 ### Self-service and tenant policy
 
 - Any principal whose credential holds `manage` (section 8) can create a workspace
-  and becomes its first `admin` through a `principal` entry.
+  and becomes its first `admin` through a `principal` entry. Admins are the creator
+  plus whoever an admin adds with the `admin` role.
+- **Visibility is chosen at creation, on the server only (migration 053).**
+  `vaelius-client workspace create <name>` (route `POST
+  /enterprise/v3/workspaces/create`) defaults to **org**: an `organization → reader`
+  entry, so everyone signed in to the tenant can read it (there is no
+  internet-public tier). The command prints `visible to everyone in the org (use
+  --private to restrict)`. `--private` (`visibility: private`; no reason needed) is
+  only the creator as admin plus whoever the admins add. `widest_entry` still caps
+  org: an explicit org is refused (`entry_wider_than_tenant_allows`) and the default
+  falls back to private, saying so. Changing it later is an admin operation:
+  `vaelius-client workspace set-visibility <name> private|org` (`POST
+  /enterprise/v3/workspaces/visibility`), or the entry commands below. Private to org
+  reports `items_now_visible_to_org` (the workspace's active shared items with no
+  narrower origin); org to private needs no confirmation. Both return
+  `newly_unreadable` (section 7). The first session in a folder whose workspace is
+  org-visible (including a newly linked repository) shows the person, once, that it
+  is visible to everyone in the org. There is no visibility key in the scope file: a
+  `visibility` there is ignored with a one-time warning for the person. `workspace
+  show`, `workspace list` and the descriptor report `visibility` (`org` while an
+  organization entry exists).
 - Two tenant settings on `enterprise_organizations` restrict this:
   - `workspace_creation`: `anyone` (default) or `admins` (only principals with the
     tenant `settings_admin` flag);
@@ -249,6 +272,12 @@ unreachable. Access can therefore outlive the window by at most about a minute.
 
 ## 4. Repository linking
 
+A workspace does not need a repository. Any folder whose scope file names the
+workspace captures into it when the person is a writer there; linking is an extra
+safeguard for folders that are Git repositories. It is internal to Vaelius: it
+compares normalized remotes and never calls GitHub's API, and nothing about who can
+read a workspace is derived from GitHub (owner decision).
+
 - A workspace lists linked repositories by **normalized remote**: `host/path`, all
   lower case, with the scheme, user, port and a trailing `.git` or `/` removed.
   `https://example.com/Example-Org/Maple.git`, `ssh://git@example.com:22/example-org/maple`
@@ -352,6 +381,9 @@ out (section 7, "Why can't this session read X?").
   whenever an access list does, and anyone who can edit the repository can edit the
   scope file. An allow decision must not rest on repository-writable content. The
   scope file carries only `workspace` and `capture`.
+- **`visibility`** is not a scope-file key: it is ignored with a one-time warning,
+  because who can read a workspace is set on the server (section 2). A `read` key
+  (a recall list from an earlier draft, never shipped) is ignored the same way.
 - **Refresh.** At SessionStart, then at the next prompt once `refresh_after`
   (15 minutes) has passed, and immediately when a labelled search response reports
   a newer `session_epoch`. **(decision, PR B)** The epoch is the sum of the tenant's
@@ -517,16 +549,28 @@ can read what this session captures could already read the source.
 | `claude_state` | As the folder it belongs to |
 | `claude_memory` (`~/.claude/projects/<name>/memory/`, Claude Code auto memory) | Allow; the session becomes **private** (backstop). Any earlier session, whatever it read, may have written it |
 | `claude_config`, `tooling`, `temp`, `system`, `allowed_path` | Allow, nothing carried |
-| `unscoped_repo`, `unknown` (an existing path outside every scoped folder) | Allow; the session becomes **private** (backstop) |
+| `unscoped_repo`, `unknown` (an existing path outside every scoped folder), and Claude Code state of a folder that maps to no scoped folder | **Deny** (one line), unless the session is already private (since migration 053) |
 | `missing` | Allow (no content) |
-| Recursive search rooted outside a single scoped folder | As `unknown`, unless it contains a personal folder (deny) |
+| Recursive search rooted outside a single scoped folder | As `unknown` (deny), unless it contains a personal folder (deny) |
 | Recalled memory | Server-filtered (below) |
 
-**Unscoped, unknown paths (decision, as the owner recommended).** They cannot be
-classified, so denying them would block ordinary work (a dotfile, a sibling
-checkout without a scope file). They are allowed, and the backstop makes the rest
-of the session private, with the #32 status line. A person who wants such a folder
-shared adds a scope file to it.
+**Unscoped, unknown paths (owner decision, migration 053).** In a labelled session
+they are **denied** instead of narrowing the session: allowing them made one stray
+read turn the whole rest of a session private, silently for everyone else. The
+hook answers with one line and never `ask`:
+
+```text
+vaelius: ~/src/sibling isn't in a Vaelius folder (no .vaelius). Add one, or run
+'vaelius-client session use private' to read it in a private session.
+```
+
+A session that is already private (`use private`, a private workspace or setting,
+or the backstop) may read them. Unchanged: credentials and personal folders are
+denied; scoped folders the session may read, Claude Code configuration and state
+allowed by #40/#47, tooling, caches, system paths and temporary folders are allowed
+with no restriction; read-only, off and unlabelled sessions get no label rule. The
+#32 taint stays only as the backstop for reads the hook cannot see (below).
+(Before migration 053 such reads were allowed and made the session private.)
 
 ### Enforcement
 
@@ -578,8 +622,13 @@ shared adds a scope file to it.
   all three layers (`_session_admits`, `search_permissions.SESSION`,
   `search_session_admits`), computed on every request; nothing is cached on the
   server. The label replaces the cross-project `scope = "all"` search option of #28:
-  with a label, recall reaches every workspace in the superset list, the current one
-  first; the MCP tool no longer offers `scope`, and unlabelled HTTP requests keep it.
+  with a label, recall reaches every workspace in the superset list: the current
+  workspace's results ranked first, then org workspaces the session may read, and the
+  person's own private items only in a private session (private-team memory stays out
+  of org sessions by the same rule). The MCP tool no longer offers `scope`, and
+  unlabelled HTTP requests keep it. A read-only chat's label (`read_only`) is treated
+  as private for recall: it writes nothing, so it may recall everything the person
+  can read.
 - **Backstop.** The #32 floating taint stays, demoted to the cases the hook cannot
   see: programs that open files without naming them (`make`, test runners,
   scripts), MCP servers other than Vaelius, non-public web addresses and unknown
@@ -605,6 +654,35 @@ shared adds a scope file to it.
   intentional: the denial says what the person can run, and the tool's description
   lets the agent offer it and forbids calling it unless the person asks or agrees.
 
+### Read-only chats (migration 053)
+
+- `vaelius-client session read-only` makes the rest of the current chat
+  read-only: nothing from it is written any more, not even private items. The agent
+  may switch a chat **to** read-only with the MCP tool `read_only_session` when the
+  person asks; there is no tool or command to switch back. Only `/clear` or a new
+  chat resets it. The status line says `vaelius: read-only — nothing from this chat
+  is saved`, and when switched mid-chat adds that earlier captures stay until the
+  person runs `vaelius-client forget --session current` (the existing "forget this
+  session").
+- **Enforced by the service.** The client stops capturing and tells the service the
+  chat's session id and the folder's recent MCP connection ids (`POST
+  /enterprise/v3/sessions/read-only`, kept as digests in `read_only_sessions`,
+  migration 053; one-way). The MCP connection carries it through the per-folder
+  label record (`read_only`, which, like every record field, can only narrow) and
+  the `X-Vaelius-Read-Only: 1` header. The service refuses **every** write route and
+  tool (capture parts and sources, boundaries, receipts, remember, feedback,
+  corrections, withdrawals, shares, owner changes, workspace administration) with
+  `403 read_only_session` and one clear message when the request carries the header
+  or a `read_only` label, or names a registered session (the MCP connection, a
+  capture's conversation, a boundary or a receipt). Reads keep working.
+- Folders with `capture = "read-only"` get the same refusal: the header helper sends
+  the header for them and the hooks register the chat at session start.
+- `push-session` refuses a chat that ran read-only (recorded in the profile's
+  `read-only-sessions.json`, which outlives `/clear`).
+- A read-only chat captures nothing, so the label read rule does not apply to it
+  (as for `capture = "read-only"` folders), and recall treats it as private: it may
+  recall everything the person can read.
+
 ### Why can't this session read X?
 
 Repo1's workspace is read by Team A; repo2's by Team A plus Carol. A repo2 session's
@@ -628,8 +706,8 @@ it instead of only refusing:
   deny, never `ask`, and uses only the cached descriptor (no network call per read).
 - **Recall.** `hidden_items` counts the workspace's active, non-private sources
   (a partial index, migration 052). The first prompt of a session whose descriptor
-  lists any shows a status line for the person only (`systemMessage`, never
-  `additionalContext`), once per session:
+  lists any shows a status line for the
+  person only (`systemMessage`, never `additionalContext`), once per session:
   `vaelius: 12 memories from repo1 hidden (not visible to carol); 'vaelius-client
   session use repo1' to include them`.
 - **Access-list changes.** Adding or removing an entry and adding or removing a
@@ -644,6 +722,10 @@ it instead of only refusing:
 The ways forward: add the missing people as readers of repo1; `session use repo1`
 for one session (capture is then limited to people in both); or keep the work
 separate and start a session in repo1.
+
+A folder with no scope file at all is denied for a different reason: Vaelius cannot
+tell who may read it. Add a scope file that names a workspace, or run `session use
+private` for a session whose capture stays with the person.
 
 ### On the wire
 
@@ -951,7 +1033,8 @@ Acceptance tests:
    its folder; temp, tooling, system and `allowed_paths` are allowed without
    carrying.
 3. An unscoped existing path is allowed and makes the session private, with the
-   status line.
+   status line. (Superseded by migration 053: it is denied unless the session is
+   already private.)
 4. `use B` makes the session `A ∩ B`; B's folders become readable; later captures
    carry B; a person who cannot read B is refused; `use` is refused in an unscoped
    session; `/clear` resets; compaction does not.
@@ -1050,7 +1133,7 @@ Points the owner's brief left open, decided in this document:
 | Read-only, off and unscoped sessions | No label rule; nothing is captured | 7 |
 | Superset semantics | Extensional, on current materialized membership, computed server-side | 7 |
 | Unknown workspace named by a scope file | Deny | 7 |
-| Unscoped, unknown paths | Allow; backstop makes the session private | 7 |
+| Unscoped, unknown paths | Deny with one line unless the session is private (migration 053; earlier: allow and make the session private) | 7 |
 | Ownership after demotion | Owner rights survive; widening needs `writer` | 8 |
 | New action | `manage`, default, legacy bit 4 from `share` | 8 |
 | Admins after migration | None; tenant administrators manage migrated workspaces | 11 |
@@ -1081,3 +1164,6 @@ Points the owner's brief left open, decided in this document:
 | Reconcile (PR C) | `reconcile_seconds` in `runtime.json` (default 6 h); background thread per API process, claimed through the database | 3 |
 | Group naming (PR C) | `gh-<team id>`, named `gh_<org>_<slug>`; the prefixes are reserved | 3 |
 | Repository-read check (PR C) | Deferred; not on the capture path yet | 4 |
+| Workspace visibility (migration 053, by the owner) | Chosen at creation, default org (everyone signed in to the tenant; capped by `widest_entry`), `--private` to restrict; changed only on the server by admins; never derived from GitHub; a scope-file `visibility` (or `read`) is ignored | 2 |
+| Recall of a read-only chat (by the owner) | Treated as a private session: the person's full readable set, since it writes nothing | 7 |
+| Read-only chats (migration 053) | One-way per chat; the service refuses every write for the header, a `read_only` label or a registered session id | 7 |

@@ -358,7 +358,12 @@ def _session_label(home, config, scope, event, notices):
             entry=session_label.refresh(home,config,session,entry) or entry
         elif kind in TOOL_EVENTS:
             from agentclient.enterprise_capture import self_tool
-            if self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
+            if (self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('read_only_session')
+                    and session_label.read_only_result(event.get('tool_response'))):
+                # The person asked the agent to make this chat read-only: one-way.
+                session_label.apply_read_only(home,config,session,entry)
+                entry=labels.get(session) or entry
+            elif self_tool(event.get('tool_name','')) and str(event.get('tool_name','')).endswith('use_workspace'):
                 record=session_label.use_result(event.get('tool_response'))
                 if record:
                     label=session_label.request_label(entry)
@@ -374,6 +379,10 @@ def _session_label(home, config, scope, event, notices):
         # A narrowing or role change is announced once; a session start always shows the label.
         line=labels.take_announcement(session)
         if kind=='SessionStart':line=line or session_label.status_line(entry)
+        if line:notices.append(line)
+    if kind=='SessionStart':
+        # Once per folder and workspace, for the person only: this workspace is org-visible.
+        line=session_label.org_visible_line(home,entry)
         if line:notices.append(line)
     if kind=='UserPromptSubmit' and not entry.get('hidden_noted'):
         # Once per session, for the person only: what recall leaves out and how to include it.
@@ -438,6 +447,7 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         except Exception:pass
         return {}
     if event['kind']=='PostCompact':
+        if event.get('capture','on')!='on':return {}  # read-only: the service records nothing for it
         try:
             backend=enterprise_client(config,timeout=0.5)
             backend.request('/enterprise/v1/boundary',{'version':VERSION,'event':{
@@ -501,11 +511,13 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
         notice=_record_origin(home,event,origin_labels.recalled(cards,event['project'],cards=True,
             sharing=event.get('sharing'),labelled=bool(event.get('session_label'))))
         try:
+            if event.get('capture','on')!='on':raise _ReadOnly()  # read-only: no delivery ledger write
             backend.request('/enterprise/v1/receipts',{'version':VERSION,
                 'session':event['session'] or 'unknown-session',
                 'request_id':event['turn'] or 'unknown-turn',
                 'cards':[{'id':card['id'],'revision':card['revision']} for card in cards],
                 'serialized_chars':len(context)})
+        except _ReadOnly:pass
         except Exception:
             _enterprise_gap(home,event,'receipt_unconfirmed')
         result={'hookSpecificOutput':{'hookEventName':event['kind'],'additionalContext':context}}
@@ -517,6 +529,10 @@ def _enterprise_hook_impl(home, config, event, original, notices, *, host='codex
             return {'systemMessage':service_status(config,service_problem(error),_pending(home))}
         return {}
 
+
+
+class _ReadOnly(Exception):
+    """A read-only chat or folder writes no receipt."""
 
 
 def capture_state(config, event):
@@ -554,7 +570,8 @@ def _scope_warnings(home, scope):
     """Format a one-time status line for warnings from the scope file (shown once per root)."""
     if not scope or not scope.get('warnings') or not scope.get('root'):
         return None
-    from agentclient.scope_file import record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED
+    from agentclient.scope_file import (record_warning_once, WARN_ORIGINALS_IGNORED, WARN_SHARING_IGNORED,
+                                        WARN_VISIBILITY_IGNORED, WARN_READ_IGNORED)
     file_path=scope.get('scope_file') or scope['root']
     lines=[]
     for warning in scope['warnings']:
@@ -564,6 +581,12 @@ def _scope_warnings(home, scope):
             lines.append('vaelius: `sharing` in '+file_path+' is ignored because the file names a '
                          '`workspace` -- the workspace access list decides who can read captures; '
                          'add `sharing = "private"` to opt out entirely.')
+        elif warning == WARN_VISIBILITY_IGNORED:
+            lines.append('vaelius: `visibility` in '+file_path+' is ignored -- visibility is set on the server '
+                         '(`vaelius-client workspace set-visibility`).')
+        elif warning == WARN_READ_IGNORED:
+            lines.append('vaelius: `read` in '+file_path+' is ignored -- recall covers what this session may '
+                         'read, the current workspace first.')
         elif warning == WARN_ORIGINALS_IGNORED:
             lines.append('vaelius: `originals` in '+file_path+' is ignored and is no longer sent to the '
                          "service; sharing an original is now an explicit `vaelius-client share --originals` grant.")
@@ -688,6 +711,16 @@ def handle(home, event, *, host='codex', via='settings'):
             if scope['capture']=='on' and not session_label.captures(entry):
                 # The service says the person is no longer a writer here (the status line says so).
                 scope=dict(scope,capture='read-only')
+            if entry.get('read_only'):
+                # A read-only chat: nothing from it is captured from now on (one-way).
+                scope=dict(scope,capture='read-only')
+        elif kind=='SessionStart' and scope['capture']=='read-only' and event.get('session_id'):
+            # A `capture = "read-only"` folder: the service refuses writes naming this chat too.
+            try:
+                from agentclient.transport import enterprise_client
+                enterprise_client(config,timeout=0.5).request('/enterprise/v3/sessions/read-only',
+                                                              {'sessions':[str(event['session_id'])]})
+            except Exception:pass
     metadata={'project':project,'kind':kind,'capture':scope['capture'],'sharing':scope['sharing'],
               'originals':scope.get('originals','private'),
               'workspace_key':bool(scope.get('workspace_key')),

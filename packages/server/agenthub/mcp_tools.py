@@ -104,6 +104,12 @@ TOOLS.append(tool('use_workspace','Narrow this session to also use another works
     'except by /clear.',
     {'workspace':{'type':'string','minLength':1,'maxLength':200,
                   'description':'A workspace name, a linked repository remote, or "private".'}},['workspace']))
+# Read-only chats (agenthub.read_only): one-way; there is deliberately no tool to switch back.
+TOOLS.append(tool('read_only_session','Make this chat read-only: from now on nothing from it is saved to Vaelius, not '
+    'even private items, and Vaelius refuses every write from it; search and reads keep working. Call it only when '
+    'the person asks for a read-only (or off-the-record) chat. It cannot be undone: only a new chat or /clear saves '
+    'again. What was saved before the switch stays until the person deletes it (`vaelius-client forget --session '
+    'current`).',{},[],write=True))
 TOOLS.append(tool('report_memory_outcome','Report whether this exact memory revision helped the task. This is your self-report, not independently verified success; it never edits the memory or establishes that it is true.',
     {'id':{'type':'string','maxLength':128},'revision':{'type':'string','maxLength':128},
      'request_key':{'type':'string','maxLength':128},
@@ -352,6 +358,13 @@ class MemoryTools:
             return backend.request('/enterprise/v1/lifecycle', {'version': VERSION, 'target_id': source_id, 'expected_revision': expected, 'idempotency_key': args['request_key'], 'reason': 'explicit owner MCP correction', 'operation': 'correct', 'replacement': replacement})
         if name == 'use_workspace':
             return self.use_workspace(args['workspace'])
+        if name == 'read_only_session':
+            # This connection is refused every write from now on; the client's hook
+            # applies it to the chat (and its later connections).
+            backend.request('/enterprise/v3/sessions/read-only', {'sessions': [self.session]})
+            from agenthub.read_only import STATUS
+            return {'vaelius_session_read_only': True, 'status': STATUS,
+                    'note': 'Nothing from this chat is saved from now on. It lasts until /clear or a new chat.'}
         if name in OWNER_TOOLS:
             return self.owner_call(name, args)
         raise ValueError('unknown_enterprise_tool')

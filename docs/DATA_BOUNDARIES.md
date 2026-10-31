@@ -158,7 +158,11 @@ capture = "on"               # on | read-only | off
 
 The file is a **request, never a grant**: anyone who can edit the repository
 can edit it, and `workspace =` only works when the person already holds a role
-in that workspace. Legacy keys (`project`, `sharing`, `originals`) are read as
+in that workspace. Its keys are `workspace` and `capture`. Who can read a
+workspace (its **visibility**) is chosen on the server when the workspace is
+created (org by default, `--private` to restrict) and changed there by its admins;
+a `visibility` (or `read`) key in the file is ignored with a one-time warning. A workspace needs no repository: any folder whose scope file names it
+captures into it for a writer. Legacy keys (`project`, `sharing`, `originals`) are read as
 an upper bound and are mapped as described in
 [the client guide](CLIENT.md#repository-scope-files) and
 [the access model](ACCESS_MODEL.md#5-the-scope-file).
@@ -262,14 +266,39 @@ for what the hook cannot see or classify:
 | Another workspace whose audience contains the session's | Allow | Carries that workspace; never narrows the session |
 | A narrower, unreadable or unknown workspace, or an unreadable scope file | **Deny** (one plain line, never `ask`) | — (the tool does not run) |
 | Personal folders, credential files | Deny (guardrail profile, unchanged) | `private` |
-| Unscoped repositories and unknown paths | Allow | `private` (the session becomes private) |
+| Unscoped repositories and unknown paths (no scope file) | **Deny** (one line, never `ask`), unless the session is already private (migration 053) | — (the tool does not run); in a private session, `private` |
 | Programs that open files without naming them, MCP servers other than Vaelius, non-public web addresses, unknown tools | Not visible to the hook | `private`, exactly as before |
 | Recalled memory | Filtered by the service to the session's superset list | Carries its workspaces; never narrows |
 
 A read the hook allowed therefore never also narrows the session; it only adds the
 workspace to the carried set, so captured items are still limited to people who can
-read both. Sessions without a label (read-only, off, outside every workspace, other
-hosts, older clients) keep the #32 behavior described below unchanged.
+read both. Since migration 053 a read of a folder without a scope file is denied
+rather than making the rest of the session private:
+
+```text
+vaelius: ~/src/sibling isn't in a Vaelius folder (no .vaelius). Add one, or run
+'vaelius-client session use private' to read it in a private session.
+```
+
+Sessions without a label (read-only, off, outside every workspace, other hosts,
+older clients) keep the #32 behavior described below unchanged, and a chat switched
+to read-only captures nothing, so no label rule applies to it.
+
+### Read-only chats
+
+`vaelius-client session read-only` (or the MCP tool `read_only_session`, when the
+person asks) stops every write from the current chat, one-way until `/clear` or a
+new chat. The service enforces it: the client registers the chat's session id and
+the folder's recent MCP connection ids (`read_only_sessions`, digests only,
+migration 053), and the MCP connection sends `X-Vaelius-Read-Only: 1` and a
+`read_only` label. Every write route and tool is then refused with `403
+read_only_session` (captures, boundaries, receipts, remember, feedback,
+corrections, withdrawals, shares, workspace administration); reads keep working.
+`capture = "read-only"` folders get the same refusal. A read-only chat recalls
+everything the person can read (its label counts as private), since it saves
+nothing. Anything captured before the
+switch stays until the person deletes it (`vaelius-client forget --session
+current`); `push-session` refuses a chat that ran read-only.
 
 ### What an event touched
 
@@ -360,7 +389,7 @@ scope; a folder that matches no existing scoped directory is `private`.
 one informational line, shown to the person and given to the agent as context:
 
 ```text
-vaelius: in-scope folders: ~/src/repo, ../docs-site (reads elsewhere make this session private)
+vaelius: in-scope folders: ~/src/repo, ../docs-site (narrower workspaces and folders without a .vaelius are denied)
 ```
 
 It lists the current root and scoped sibling folders next to it, stays under 200
@@ -569,8 +598,8 @@ person before the agent changes its own configuration (`~/.claude/CLAUDE.md`,
 settings, skills, hooks, Codex `config.toml`, ...), which would otherwise carry into
 every later session; Bash writes there are covered only by the guardrail hook. Both
 profiles also apply the fixed session-label read
-rule to labelled sessions: folders of narrower, unreadable or unknown workspaces are
-denied. The exact coverage and gaps are in
+rule to labelled sessions: folders of narrower, unreadable or unknown workspaces,
+and folders with no scope file at all, are denied. The exact coverage and gaps are in
 [least privilege for agents](CLIENT.md#least-privilege-for-agents).
 
 ## Trust boundaries

@@ -653,8 +653,8 @@ class HookTaintTest(unittest.TestCase):
         result = self.hook('SessionStart', source='startup')
         # A session started here has a fixed label (PR B). This stub service returns no
         # descriptor, so only the session's own workspace is readable and listed.
-        line = ('vaelius: in-scope folders: ~/src/repo, ../repo-copy (narrower workspaces are '
-                'denied; unscoped reads make this session private)')
+        line = ('vaelius: in-scope folders: ~/src/repo, ../repo-copy (narrower workspaces and folders '
+                'without a .vaelius are denied)')
         self.assertIn(line, result['hookSpecificOutput']['additionalContext'])
         self.assertIn(line, result['systemMessage'])
         self.assertNotIn('../off', line)  # capture off

@@ -8,6 +8,24 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Security
 
+- **Unscoped reads are denied, not narrowed.** In a labelled Claude Code session
+  the guardrail hook now denies reads of existing paths outside every scoped
+  folder (a repository or folder without `.vaelius`, a dotfile, another volume)
+  with one line: add a `.vaelius`, or run `vaelius-client session use private`.
+  A private session may still read them. Before, such a read was allowed and
+  silently made the rest of the session private. Tooling, caches, system paths,
+  temp and Claude Code configuration are unchanged; read-only, off and unlabelled
+  sessions are unaffected; the taint stays as the backstop for reads the hook
+  cannot see.
+- **Read-only chats, enforced by the service** (migration 053,
+  `read_only_sessions`). `vaelius-client session read-only`, or the new MCP tool
+  `read_only_session` when the person asks, makes the rest of a chat write nothing,
+  one-way until `/clear` or a new chat. The service refuses every write route and
+  tool with `403 read_only_session` for a connection carrying
+  `X-Vaelius-Read-Only: 1` or a `read_only` session label, and for any request that
+  names a registered chat or MCP connection id. `capture = "read-only"` folders
+  get the same refusal. `push-session` refuses chats that ran read-only.
+
 - Guardrails: both profiles and both managed-settings templates ask before the agent
   changes its own configuration (`~/.claude/CLAUDE.md`, settings, skills, agents,
   commands, hooks, output styles, reference, `~/.claude.json`, Codex `config.toml`,
@@ -18,6 +36,10 @@ The release workflow publishes the section whose heading matches the tag.
   never read: deny rules plus the hook, Bash included. Re-run
   `install --claude-code` to add the rules. Reading `~/.claude/skills`, `agents`,
   `commands`, `hooks` and `output-styles` no longer makes a session private.
+- `pypdf` 6.21.4 (GHSA-42gh-23hr-vphw, GHSA-4vqv-7265-gm2w, GHSA-5849-834g-hvw5,
+  GHSA-62m5-6wh8-28x7, GHSA-cggf-277g-3q54, GHSA-mfr5-77xh-9j7h,
+  GHSA-x3rh-gjgm-fmqc) and, for development only, `graphql-core` 3.3.1
+  (GHSA-mpqx-q82w-9x46).
 - Runtime base image updated to Python 3.12.16 (`python:3.12.16-slim-trixie`,
   CVE-2026-115557), and `joserfc` to 1.7.6 (GHSA-9pg5-8c7x-5hfx).
 - Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is
@@ -191,6 +213,20 @@ The release workflow publishes the section whose heading matches the tag.
   the same number of SQL statements as the owner's.
 
 ### Changed
+
+- **Workspace visibility is chosen on the server at creation, default org.**
+  `vaelius-client workspace create NAME` now adds an organization reader entry
+  (everyone signed in to the tenant; capped by `widest_entry`, where the default
+  falls back to private) and prints `visible to everyone in the org (use --private
+  to restrict)`; `--private` keeps it to its admins and whoever they add. Before,
+  a new workspace had only its creator. Admins change it with `workspace
+  set-visibility NAME private|org` (`POST /enterprise/v3/workspaces/visibility`):
+  private to org reports `items_now_visible_to_org`, both report
+  `newly_unreadable`. The first session in a folder of an org workspace says so
+  once. `visibility` and `read` keys in `.vaelius` are ignored with a one-time
+  warning.
+- A read-only chat recalls everything the person can read (its label counts as
+  private), since it saves nothing.
 
 - **Role-bound credential actions.** A credential's effective actions in a
   workspace are its credential actions ∩ the actions the role implies

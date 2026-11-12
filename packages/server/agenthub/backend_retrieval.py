@@ -65,9 +65,15 @@ class RetrievalMixin:
             self._audit(db,ctx,'reviewed_release','accepted',result['document_id'],1)
             return {'document_id':result['document_id'],'revision':result['revision_id'],'disposition':'accepted'}
 
-    def _temporal_policy(self,db,ctx,scopes,*,known_at=False,candidate_ids=None):
+    def _temporal_policy(self,db,ctx,scopes,*,known_at=False,candidate_ids=None,workspaces=None):
         bounded=' AND a.document_id=ANY(?::text[])' if candidate_ids is not None else ''
         args=(ctx['tenant'],candidate_ids) if candidate_ids is not None else (ctx['tenant'],)
+        if workspaces is not None:
+            # The `read` recall filter (WorkspaceAccessMixin._recall_workspaces): only
+            # documents with a source in a kept workspace are considered at all. It
+            # narrows the selection; every one of them is still authorized below.
+            from agenthub.workspace_access import RECALL_FILTER_SQL
+            bounded+=' AND '+RECALL_FILTER_SQL.format(document='a.document_id');args+=(list(workspaces),)
         permitted=[r[0] for r in db.execute('''SELECT DISTINCT a.document_id FROM knowledge_temporal_assertions a
             JOIN enterprise_documents e ON e.id=a.document_id WHERE e.tenant=?'''+bounded,args)
             if self._temporal_document_allowed(db,ctx,r[0],known_at=known_at)]
@@ -127,7 +133,7 @@ class RetrievalMixin:
         if not sources or any(not self._retained_native_source_allowed(db,ctx,row[0]) for row in sources):return None
         return doc
 
-    def temporal_search(self,state,ctx,value,scopes,*,candidate_ids=None):
+    def temporal_search(self,state,ctx,value,scopes,*,candidate_ids=None,workspaces=None):
         from agenthub.processing.temporal_retrieval import historical_cards
         if not scopes:return {'results':[],'answerable':False,'coverage_gaps':['no_authorized_temporal_evidence']}
         query=value['query']
@@ -141,7 +147,8 @@ class RetrievalMixin:
         elif value.get('time_mode')=='current' and not re.search(r'\b(now|current|currently|latest)\b',query,re.I):
             query+=' currently'
         known_mode=value.get('time_mode')=='known_at'
-        permitted,source_allowed=self._temporal_policy(state.db,ctx,scopes,known_at=known_mode,candidate_ids=candidate_ids)
+        permitted,source_allowed=self._temporal_policy(state.db,ctx,scopes,known_at=known_mode,
+            candidate_ids=candidate_ids,workspaces=workspaces)
         entries=historical_cards(state,query,scopes[0],read_projects=scopes,
             timezone_name='UTC',authorized_document_ids=permitted,
             source_authorizer=source_allowed,time_mode=value.get('time_mode'))

@@ -817,21 +817,16 @@ class HybridRetrievalMixin:
         self._label(state.db, ctx)
         self._need(ctx, 'read')
         scopes = self._readable_scopes(state.db, ctx, project)
-        sql = "ed.tenant=? AND ed.active=1 AND d.lifecycle='active'\n            AND (ed.internal_project=ANY(?::text[]) OR EXISTS(SELECT 1 FROM cloud_preferences pf\n                WHERE pf.document_id=d.document_id AND pf.tenant=? AND pf.owner=? AND pf.valid_until IS NULL\n                AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=?)))\n                OR <GRANTED>)\n            AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM knowledge_generation_documents gd JOIN knowledge_generations g\n                    ON g.generation_id=gd.generation_id WHERE gd.document_id=d.document_id AND g.status='active'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preference_candidates pc WHERE pc.document_id=d.document_id AND pc.status IN ('pending','held'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                AND (pf.owner!=? OR pf.tenant!=?))\n            AND (NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                    AND pf.valid_until IS NULL AND pf.revision_id=d.active_revision_id))\n            "
-        from agenthub.search_permissions import predicate, document_granted_condition
-        # A passage explicitly granted to the reader (agenthub.owner_controls) is
-        # readable outside the reader's own scopes; every other rule still applies.
-        granted, granted_args = document_granted_condition(ctx)
-        sql = sql.replace('<GRANTED>', granted)
+        sql = "ed.tenant=? AND ed.active=1 AND d.lifecycle='active'\n            AND (ed.internal_project=ANY(?::text[]) OR EXISTS(SELECT 1 FROM cloud_preferences pf\n                WHERE pf.document_id=d.document_id AND pf.tenant=? AND pf.owner=? AND pf.valid_until IS NULL\n                AND pf.revision_id=d.active_revision_id AND (pf.scope='user' OR (pf.scope='project' AND pf.project=?))))\n            AND (NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd WHERE gd.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM knowledge_generation_documents gd JOIN knowledge_generations g\n                    ON g.generation_id=gd.generation_id WHERE gd.document_id=d.document_id AND g.status='active'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preference_candidates pc WHERE pc.document_id=d.document_id AND pc.status IN ('pending','held'))\n            AND NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                AND (pf.owner!=? OR pf.tenant!=?))\n            AND (NOT EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id)\n                OR EXISTS(SELECT 1 FROM cloud_preferences pf WHERE pf.document_id=d.document_id\n                    AND pf.valid_until IS NULL AND pf.revision_id=d.active_revision_id))\n            "
+        from agenthub.search_permissions import predicate
         compact, policy_args = predicate(ctx, self._reader_workspaces(state.db, ctx))
         sql += compact
-        args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, *granted_args, ctx['actor'], ctx['tenant'], *policy_args)
+        args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, ctx['actor'], ctx['tenant'], *policy_args)
         from agenthub.draft_review import selected_documents
         review = selected_documents(self, ctx)
         if review is not None:
             sql = sql.replace("g.status='active'))", "g.status='active') OR d.document_id=ANY(?::text[]))")
-            head = 5 + len(granted_args)
-            args = (*args[:head], review, *args[head:], review)
+            args = (*args[:5], review, *args[5:], review)
             sql += ' AND d.document_id=ANY(?::text[])'
         return (sql, args)
 
@@ -857,8 +852,9 @@ class HybridRetrievalMixin:
         project's documents and documents from other projects shared with the whole
         organization; 'all' adds every other project the reader may read. Without a
         project nothing is narrowed. `filters['workspaces']` (the `read` filter of a
-        session label, or a one-off list) keeps only items of those workspaces,
-        after `_recall_workspaces` capped it by what the request may read.
+        session label, or a one-off list) keeps only items with a source in one of
+        those workspaces, after `_recall_workspaces` capped it by what the request
+        may read.
         """
         self._need(ctx, 'read')
         if scope not in ('project', 'all'):
@@ -880,16 +876,17 @@ class HybridRetrievalMixin:
                     return []
             from agenthub.search_reader import restrict
             # The `read` filter (a convenience, capped by what the request may read):
-            # resolved before the restricted reader role is set, applied below as one
-            # more predicate over the already authorized candidate query. Without a
-            # filter this runs no statement; `restrict` then checks current identity
-            # before anything is read.
+            # resolved before the restricted reader role is set and applied on top of
+            # the already authorized candidate query, by row-level security
+            # (`recall_filter`) and by the indexed prefilter below. Without a filter
+            # this runs no statement; `restrict` then checks current identity before
+            # anything is read.
             keep = self._recall_workspaces(state.db, ctx, filters.get('workspaces'), project)
             # A session label decides which workspaces recall reaches (its superset
             # list), so it replaces the cross-project `scope` option of #28.
             labelled = ctx.get('session_label') or ctx.get('session_label_request')
             reach = None if project is None else ('all' if labelled else scope)
-            reader = restrict(self, state, ctx, project, reach=reach)
+            reader = restrict(self, state, ctx, project, reach=reach, recall_filter=keep)
             with reader:
                 predicates = ['TRUE', "d.lifecycle='active'"]
                 args = []
@@ -909,7 +906,9 @@ class HybridRetrievalMixin:
                     predicates.append('d.document_id=ANY(?::text[])')
                     args.append(entity_ids)
                 if keep is not None:
-                    predicates.append('ed.source_project=ANY(?::text[])')
+                    # source_project is NULL for a document whose sources span several
+                    # workspaces; row-level security keeps it when one of them is listed.
+                    predicates.append('(ed.source_project=ANY(?::text[]) OR ed.source_project IS NULL)')
                     args.append(keep)
                 for key in ('domain', 'knowledge_type'):
                     if filters.get(key):
@@ -1017,8 +1016,11 @@ class HybridRetrievalMixin:
         if temporal_requested:
             with self.open() as state:
                 scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') or ctx.get('session_label_request') else value.get('project'))
+                # The `read` filter narrows this path too (no statement without one).
+                keep=self._recall_workspaces(state.db,ctx,filters.get('workspaces'),value.get('project'))
                 temporal=self.temporal_search(state,ctx,value,scopes,
-                    candidate_ids=[c['document_id'] for c in candidates] if candidates is not None else None)
+                    candidate_ids=[c['document_id'] for c in candidates] if candidates is not None else None,
+                    workspaces=keep)
                 if temporal is not None:
                     if value.get('mode')=='automatic' and value.get('session'):
                         from agenthub.processing.context_delivery import current_epoch

@@ -172,7 +172,7 @@ class ConversationSegments:
             selected=[]
             for source_id in source_ids:
                 source=state.db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-                if (not self.store._visible_source(state.db,ctx,source,raw=True) or source['owner']!=ctx['actor']):raise Denied()
+                if (not self.store._visible_source(state.db,ctx,source) or source['owner']!=ctx['actor']):raise Denied()
                 row=state.db.execute('SELECT * FROM backend_source_revisions WHERE source_id=?',(source_id,)).fetchone()
                 if not row:raise ValueError('typed_conversation_source_required')
                 value=json.loads(row['payload']);validate_event(value)

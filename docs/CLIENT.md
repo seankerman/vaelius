@@ -815,7 +815,11 @@ workspaces plus the current one. The client sends it with every recall (in the
 label, so the MCP connection carries it too), and `search_memory` accepts
 `workspaces` for one narrower or different search. Either way the service
 intersects the list with what the session may read, so it is a filter, never a
-permission: naming a workspace you cannot read returns nothing from it. Clients and sessions without a label keep the earlier
+permission: naming a workspace you cannot read returns nothing from it. The list
+applies to every search, dated ones (`as_of`, `time_mode`) included. An item built
+from sources in several workspaces is kept when at least one of them is listed,
+and you still need to be able to read all of them. Opening an item by id is not a
+search and is not filtered. Clients and sessions without a label keep the earlier
 behavior (the current project, then organization-shared items; `"scope": "all"` in an
 HTTP search request still widens it).
 

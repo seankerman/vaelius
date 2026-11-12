@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import socket
@@ -32,7 +33,8 @@ def run(engine, *args):
     return result.stdout.strip()
 
 
-def start(state, engine, *, postgres_image='docker.io/pgvector/pgvector:0.8.6-pg17', moto_image='ghcr.io/getmoto/motoserver:5.2.3'):
+def start(state, engine, *, postgres_image='docker.io/pgvector/pgvector:0.8.6-pg17', moto_image='ghcr.io/getmoto/motoserver:5.2.3',
+          postgres_settings=(), host_network=False):
     from psycopg.conninfo import make_conninfo
     from agenthub.cloud_profile import setup_profile
     from agenthub.postgres import connect
@@ -65,13 +67,19 @@ def start(state, engine, *, postgres_image='docker.io/pgvector/pgvector:0.8.6-pg
     private_json(receipt, {'engine': engine, 'namespace': namespace, 'containers': []})
     names = []
     try:
-        for service, image, container_port, host_port, options in (
-            ('postgres', postgres_image, 5432, port, ['--env-file', str(envfile)]),
-            ('moto', moto_image, 5000, moto_port, []),
+        for service, image, container_port, host_port, options, command in (
+            ('postgres', postgres_image, 5432, port, ['--env-file', str(envfile)],
+             [part for setting in postgres_settings for part in ('-c', setting)]),
+            ('moto', moto_image, 5000, moto_port, [], []),
         ):
             name = namespace + '-' + service
+            network = ['-p', '127.0.0.1:' + str(host_port) + ':' + str(container_port)]
+            if service == 'postgres' and host_network:
+                # The server listens on the host loopback itself: no published-port proxy per round trip.
+                network = ['--network', 'host', '-e', 'PGPORT=' + str(host_port)]
+                command = command + ['-c', 'listen_addresses=127.0.0.1']
             run(engine, 'run', '-d', '--name', name, '--label', 'vaelius.disposable=' + namespace,
-                '-p', '127.0.0.1:' + str(host_port) + ':' + str(container_port), *options, image)
+                *network, *options, image, *command)
             names.append(name)
             private_json(receipt, {'engine': engine, 'namespace': namespace, 'containers': names})
         dsn = make_conninfo(host='127.0.0.1', port=port, dbname='postgres', user='postgres', password=password)
@@ -141,12 +149,20 @@ def main():
     parser.add_argument('--engine', default=shutil.which('podman') or shutil.which('docker'))
     parser.add_argument('--postgres-image', default='docker.io/pgvector/pgvector:0.8.6-pg17')
     parser.add_argument('--moto-image', default='ghcr.io/getmoto/motoserver:5.2.3')
+    parser.add_argument('--postgres-setting', action='append', default=[], metavar='NAME=VALUE',
+                        help='server setting for a database that is thrown away, e.g. fsync=off (repeatable)')
+    parser.add_argument('--postgres-host-network', action='store_true',
+                        help='Linux engines only: PostgreSQL on the host loopback instead of a published port')
     args = parser.parse_args()
+    for setting in args.postgres_setting:
+        if not re.fullmatch(r'[a-z_]+=[A-Za-z0-9_.-]+', setting):
+            raise ValueError('postgres_setting_must_be_name_value')
     if not args.engine:
         raise ValueError('docker_or_podman_required')
     os.umask(0o077)
     state = args.state.expanduser().resolve()
-    result = start(state, args.engine, postgres_image=args.postgres_image, moto_image=args.moto_image) if args.action == 'start' else stop(state, destroy=args.action == 'destroy')
+    result = start(state, args.engine, postgres_image=args.postgres_image, moto_image=args.moto_image,
+                   postgres_settings=args.postgres_setting, host_network=args.postgres_host_network) if args.action == 'start' else stop(state, destroy=args.action == 'destroy')
     print(json.dumps(result, indent=2))
 
 

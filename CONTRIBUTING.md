@@ -23,7 +23,10 @@ in `scripts/test_timings.json`; a new test file needs no entry there and lands i
 shard on its own. The `installed-postgres` job fails unless the shard reports add up
 to full discovery with every test in exactly one shard. To rebalance, download the
 `test-report-*` artifacts of a run on `main` and run
-`python scripts/test.py --record-timings <reports>/shard-*.json`.
+`python scripts/test.py --record-timings <reports>/shard-*.json`. The shard jobs
+start their PostgreSQL with `--postgres-host-network` and durability off
+(`--postgres-setting fsync=off` and two more): only for a database that is thrown
+away, never for one you keep.
 
 CI installs third-party packages only from hash-locked files
 (`python -m pip install --require-hashes -r requirements-dev.txt`, then

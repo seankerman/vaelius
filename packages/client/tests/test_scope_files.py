@@ -111,6 +111,11 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
         self.assertEqual((self.repo / '.git/info/exclude').read_text().splitlines().count('/pkg/.vaelius.local'), 1)
         self.assertFalse((self.repo / '.gitignore').exists())
         self.assertEqual(discover(self.repo / 'pkg')['capture'], 'private')
+        self.assertEqual(discover(self.repo / 'pkg')['read'], ['maple'], 'a key that is not given is kept')
+        scope_file.write_local(self.repo / 'pkg/.vaelius', read=['birch'])
+        found = discover(self.repo / 'pkg')
+        self.assertEqual((found['capture'], found['read']), ('private', ['birch']),
+                         'setting the filter never drops the narrower capture mode')
         loose = self.tmp / 'loose'
         loose.mkdir()
         self.write(loose / '.vaelius', 'workspace = "maple"\n')

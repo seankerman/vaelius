@@ -381,10 +381,19 @@ def write_local(scope_path, *, capture=None, read=None):
     """Write the `.vaelius.local` beside a scope file and keep it out of Git.
 
     In a Git repository the file name is added to `.git/info/exclude` (this clone
-    only), never to `.gitignore`. Returns {'path', 'excluded'}."""
+    only), never to `.gitignore`. A key that is not given keeps the value the file
+    already has, so setting `read` never drops an existing narrower `capture`.
+    Returns {'path', 'excluded'}."""
     scope_path = Path(scope_path)
     if capture is not None and capture not in CAPTURE_MODES:
         raise ScopeFileError('scope_local_invalid_capture')
+    if _regular_file(local_file(scope_path)):
+        try:
+            kept_capture, kept_read, _, _ = _parse_local(local_file(scope_path))
+        except ScopeFileError:
+            kept_capture = kept_read = None  # an unreadable override is replaced
+        capture = kept_capture if capture is None else capture
+        read = kept_read if read is None else read
     lines = ['# Your own Vaelius override for this folder. Not committed.']
     if capture is not None:
         lines.append('capture = "' + capture + '"')

@@ -602,7 +602,7 @@ class CloudIdentityMixin:
         return self.enroll_with_refresh(self.tenant_id,binding['principal'],enrollment,actions,
             external_identity=identity)
 
-    def _visible_source(self, db, ctx, source, *, raw=False):
+    def _visible_source(self, db, ctx, source):
         from agenthub.enterprise import Denied
         try: self.current_identity(db,ctx)
         except Denied: return False
@@ -610,7 +610,7 @@ class CloudIdentityMixin:
             (source['id'],)).fetchone() if source else None
         if freshness and (freshness['state']!='current' or freshness['valid_until']<=time.time()):
             return False
-        return super()._visible_source(db,ctx,source,raw=raw)
+        return super()._visible_source(db,ctx,source)
 
     def set_source_acl_freshness(self, ctx, source_id, *, valid_seconds=300, state='current'):
         self._need(ctx,'policy')

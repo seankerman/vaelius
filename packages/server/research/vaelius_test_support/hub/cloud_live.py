@@ -204,7 +204,7 @@ def _retry_current_state(store,alice,bob,failed,data):
             if (row['active'],row['source_policy'],row['source_version'],row['policy_version'],row['visibility'])!=(1,1,1,1,'team'):
                 raise ValueError('receiver_retry_source_policy_changed')
             source=db.execute('SELECT * FROM enterprise_sources WHERE id=?',(row['source_id'],)).fetchone()
-            if not store._visible_source(db,bob,source,raw=False):raise ValueError('receiver_retry_source_denied')
+            if not store._visible_source(db,bob,source):raise ValueError('receiver_retry_source_denied')
             store.conversation_segments.verify_source(db,row['source_id']);source_ids.append(row['source_id'])
         episodes=[dict(r) for r in db.execute('''SELECT b.id,b.status,e.status episode_status,e.disposition,e.turn
             FROM backend_jobs b JOIN curation_episode_jobs e ON e.id=b.episode_job WHERE e.generation_id=? ORDER BY e.created''',(run,))]

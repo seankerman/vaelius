@@ -94,7 +94,9 @@ def refresh_grant_flags(db, source_ids=None, *, scope=None):
     """Recompute `enterprise_documents.raw_granted` for the passages of some sources.
 
     `source_ids` is a list, or `scope` a (tenant, owner, scope_kind, scope_id)
-    grant scope whose sources are selected in SQL. The flag is only a prefilter.
+    grant scope whose sources are selected in SQL. The flag was the prefilter of
+    the passage-share term. No predicate reads it since migration 057, and the 055
+    constraint keeps it 0; only the originals-grant revoke still calls this.
     """
     if scope is not None:
         tenant, owner, kind, ident = scope

@@ -9,17 +9,22 @@ wider than the tenant's `widest_entry` are suspended at query time.
 
 The audience of an item (a captured source and everything derived from it) is:
 
-    {owner} ∪ ( ( (workspace audience  if not private) ∪ share grantees )
+    {owner} ∪ ( (workspace audience  if not private)
                 ∩ ⋂ carried workspace audiences )
     — and nobody but the owner when origin_private
 
 implemented three times and kept in agreement by parity tests:
 
-1. this module (`WorkspaceAccessMixin._in_audience`, `_shared_with`), used by
+1. this module (`WorkspaceAccessMixin._in_audience`), used by
    `EnterpriseStore._visible_source` and `_document_allowed`;
 2. `agenthub.search_permissions` (the indexed SQL filter);
 3. `search_reader_in_audience` and `search_document_allowed` (row-level
-   security, migration 048).
+   security, migration 057).
+
+There is no per-item share term in any of them (migrations 055 and 057). The
+operator-issued originals grant (`agenthub.raw_access`) is a separate check on
+retained originals; `_share_rows` and the `via_share` form of `_origin_admits`
+below serve only that.
 
 Effective actions in a workspace are the credential's actions intersected with
 those implied by the caller's role there (`ROLE_ACTIONS`). Owners keep every
@@ -186,7 +191,9 @@ class WorkspaceAccessMixin:
 
     def _origin_admits(self, db, ctx, source, roles=None, *, via_share=False):
         """The carried-workspace and origin terms (and, unless via_share, the workspace
-        term) of the audience, for a reader who is not the owner."""
+        term) of the audience, for a reader who is not the owner. `via_share` is the
+        operator originals grant's form (agenthub.raw_access); the read predicate
+        never uses it."""
         ceiling, _, carried = _origin(source)
         if ceiling == 'private' or (ceiling not in SHARING):
             return False
@@ -207,24 +214,13 @@ class WorkspaceAccessMixin:
 
     def _in_audience(self, db, ctx, source, roles=None):
         """Owner, or the inherited workspace audience (not private) with every carried
-        workspace and origin rule. Mirrors search_reader_in_audience(..., false)."""
+        workspace and origin rule. Mirrors search_reader_in_audience (migration 057)
+        and search_permissions.AUDIENCE."""
         if source['owner'] == ctx['actor']:
             return True
         if int(source.get('private') or 0):
             return False
         return self._origin_admits(db, ctx, source, roles)
-
-    def _shared_with(self, db, ctx, source, roles=None):
-        """An explicit share of this source's passages to the reader or a group of
-        theirs, plus the carried-workspace and origin rules. Mirrors
-        search_permissions.SOURCE_GRANTED with search_reader_in_audience(..., true).
-        The ordinary source rules are the caller's."""
-        if (not source or source['tenant'] != ctx['tenant'] or not source['active']
-                or source['owner'] == ctx['actor']):
-            return False
-        if not self._share_rows(db, ctx, source, 'passages'):
-            return False
-        return self._origin_admits(db, ctx, source, roles, via_share=True)
 
     def _share_rows(self, db, ctx, source, tier):
         """Active grants of `tier` ('passages'/'originals') from the owner that cover this
@@ -267,7 +263,7 @@ class WorkspaceAccessMixin:
 
         A policy report for `explain`, not a credential check: the owner plus every
         active principal in the inherited audience whom the ordinary source rules
-        (quarantine, connection readers) admit. Explicit shares are listed separately.
+        (quarantine, connection readers) admit.
         """
         if not source or not source['active']:
             return []
@@ -278,7 +274,7 @@ class WorkspaceAccessMixin:
             if definition:
                 readers |= {row['id'] for row in db.execute('''SELECT who.id FROM enterprise_principals who
                     WHERE who.tenant=? AND who.active=1
-                    AND search_reader_in_audience(?::jsonb,who.tenant,who.id,NULL,false)''',
+                    AND search_reader_in_audience(?::jsonb,who.tenant,who.id,NULL)''',
                     (source['tenant'], json.dumps(definition['definition']))).fetchall()}
             link = db.execute('''SELECT c.owner,c.reader_ids FROM backend_source_revisions r
                 JOIN backend_connections c ON c.id=r.connection WHERE r.source_id=?''', (source['id'],)).fetchone()
@@ -512,8 +508,7 @@ class WorkspaceAccessMixin:
             if not candidates:
                 continue
             rows = db.execute(self._SUPERSET_SQL.format(audience=self._AUDIENCE_SQL), (
-                tenant, source, source, tenant, tenant, tenant, candidates, tenant, [], tenant, candidates,
-                tenant, [], '')).fetchall()
+                tenant, source, source, tenant, tenant, tenant, candidates, tenant, candidates, '')).fetchall()
             if not any(r['kind'] == 'self' and r['total'] for r in rows):
                 continue  # nobody can start a session in a workspace with an empty audience
             pairs |= {(source, r['id']) for r in rows if r['kind'] == 'workspace' and r['contains']}
@@ -1352,7 +1347,7 @@ class WorkspaceAccessMixin:
             WHERE who.tenant=? AND who.active=1 AND NOT EXISTS(SELECT 1 FROM enterprise_principal_quarantine held
                 WHERE held.tenant=who.tenant AND held.principal=who.id)'''
 
-    # Which candidate workspaces (and groups) contain the session audience `sa`
+    # Which candidate workspaces contain the session audience `sa`
     # (extensional: current materialized membership, never entry lists). For each
     # workspace: an open one (an organization entry not suspended by widest_entry)
     # reaches every non-quarantined principal, so it only needs the quarantined members
@@ -1368,9 +1363,7 @@ class WorkspaceAccessMixin:
             JOIN enterprise_organizations o ON o.id=a.tenant
             WHERE CASE o.widest_entry WHEN 'none' THEN a.principal_role=3
                 ELSE greatest(a.principal_role,a.group_role)>=1 END
-            GROUP BY a.workspace),
-        grouped AS (SELECT c.group_id,count(*) n FROM member JOIN group_closure c ON c.tenant=? AND c.principal=member.principal
-            AND c.group_id=ANY(?::text[]) GROUP BY c.group_id)
+            GROUP BY a.workspace)
         SELECT 'workspace' kind,p.id,
             CASE WHEN p.org_role>0 AND o.widest_entry='organization' THEN coalesce(c.nq,0)=t.nq
                 ELSE coalesce(c.n,0)=t.n END AS contains,
@@ -1380,9 +1373,6 @@ class WorkspaceAccessMixin:
         FROM enterprise_projects p JOIN enterprise_organizations o ON o.id=p.tenant CROSS JOIN total t
         LEFT JOIN covered c ON c.workspace=p.id
         WHERE p.tenant=? AND p.id=ANY(?::text[]) AND p.active=1
-        UNION ALL
-        SELECT 'group',g.id,coalesce(x.n,0)=t.n,false,t.n,0 FROM groups g CROSS JOIN total t
-        LEFT JOIN grouped x ON x.group_id=g.id WHERE g.tenant=? AND g.id=ANY(?::text[])
         UNION ALL
         SELECT 'self',max(member.principal),count(*)=1 AND bool_and(member.principal=?),false,count(*),0 FROM member'''
 
@@ -1394,12 +1384,10 @@ class WorkspaceAccessMixin:
         narrowed one, or only the person (a private session: `contributions_default`
         or the workspace's `item_default` is private, the label or its legacy sharing
         request says so, or the intersection is the person alone). Returns
-        {'private': True, ...} or {'private': False, 'workspaces': S, 'direct': SD,
-        'groups': G, 'principals': P}: S the workspaces the reader can read whose
-        audience contains the session audience, SD those whose direct (non-organization)
-        audience does, G the reader's groups whose members contain it and P the
-        principal a share must name to contain it (only ever the reader alone, which
-        makes the session private). Decided on current state at every request."""
+        {'private': True, ...} or {'private': False, 'workspaces': S, 'direct': SD}:
+        S the workspaces the reader can read whose audience contains the session
+        audience, SD those whose direct (non-organization) audience does. Decided on
+        current state at every request."""
         from agenthub.enterprise import Denied
         workspace = self._resolve_workspace(db, ctx['tenant'], label['workspace'], active_only=True)
         if not workspace:
@@ -1430,23 +1418,18 @@ class WorkspaceAccessMixin:
         # `read` is the folder's recall filter, kept as sent: `_recall_workspaces` caps it
         # by this label's own lists at query time. It never enters the access decision.
         result = {'workspace': workspace['id'], 'narrowed': names[1:], 'readable': readable, 'epoch': int(epoch),
-                  'private': private, 'workspaces': readable, 'direct': readable, 'groups': [], 'principals': [],
-                  'read': label.get('read')}
+                  'private': private, 'workspaces': readable, 'direct': readable, 'read': label.get('read')}
         if private:
             return result
         audience = ' INTERSECT '.join('(' + self._AUDIENCE_SQL + ')' for _ in names)
         args = [value for name in names for value in (ctx['tenant'], name, name, ctx['tenant'])]
-        groups = [r[0] for r in db.execute('SELECT group_id FROM group_closure WHERE tenant=? AND principal=?',
-                                           (ctx['tenant'], ctx['actor'])).fetchall()]
         rows = db.execute(self._SUPERSET_SQL.format(audience=audience), (
-            *args, ctx['tenant'], ctx['tenant'], readable, ctx['tenant'], groups, ctx['tenant'], readable,
-            ctx['tenant'], groups, ctx['actor'])).fetchall()
+            *args, ctx['tenant'], ctx['tenant'], readable, ctx['tenant'], readable, ctx['actor'])).fetchall()
         alone = any(r['kind'] == 'self' and r['contains'] for r in rows)
         if alone:
             return dict(result, private=True)
         result.update(workspaces=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['contains']),
                       direct=sorted(r['id'] for r in rows if r['kind'] == 'workspace' and r['direct']),
-                      groups=sorted(r['id'] for r in rows if r['kind'] == 'group' and r['contains']),
                       missing={r['id']: int(r['missing']) for r in rows if r['kind'] == 'workspace' and not r['contains']})
         return result
 
@@ -1507,7 +1490,16 @@ class WorkspaceAccessMixin:
         person reads in a personal session or without a label), so a filter can
         only narrow recall. The session's own workspace always stays in. A name
         that does not resolve, or that the request may not read, is dropped
-        silently."""
+        silently.
+
+        Every search path applies the result on top of the unchanged read
+        predicate: the candidate query through row-level security
+        (`search_reader.restrict(recall_filter=...)`) and the curated temporal
+        path through RECALL_FILTER_SQL. A document is kept when at least one
+        source it depends on is in a kept workspace, so one derived from sources
+        in several workspaces is not dropped while one of them is listed. Fetches
+        by id, a named workspace's history and a person's own preferences are not
+        searches and are not filtered."""
         session = self._label(db, ctx)
         wanted = validate_read_filter(requested) if requested is not None else (session or {}).get('read')
         if wanted is None:
@@ -1549,15 +1541,14 @@ class WorkspaceAccessMixin:
                 self.current_identity(db, ctx)
             return dict(ctx, session_label=self._session_label(db, ctx, label))
 
-    def _session_admits(self, db, ctx, source, *, granted=False):
+    def _session_admits(self, db, ctx, source):
         """The session-label term of the recall filter for one source (Python oracle).
 
-        Mirrors search_permissions.SESSION and search_session_admits (migration 049):
-        never origin_private; the item's workspace in S when it is not private, or
-        `granted` (the document reaches the reader through shares whose subjects
-        contain the session audience); every carried workspace in S; a legacy 'team'
-        origin needs the workspace and every carried one in SD. A private session, or
-        a request without a label, admits everything the reader can read."""
+        Mirrors search_permissions.SESSION and search_session_admits (migration 057):
+        never origin_private; the item not private and its workspace in S; every
+        carried workspace in S; a legacy 'team' origin needs the workspace and every
+        carried one in SD. A private session, or a request without a label, admits
+        everything the reader can read."""
         session = ctx.get('session_label')
         if not session or session.get('private'):
             return True
@@ -1565,7 +1556,7 @@ class WorkspaceAccessMixin:
         if ceiling == 'private' or ceiling not in SHARING:
             return False
         inside = set(session['workspaces'])
-        if not ((not int(source.get('private') or 0) and source['external_project'] in inside) or granted):
+        if int(source.get('private') or 0) or source['external_project'] not in inside:
             return False
         if any(name not in inside for name in carried):
             return False
@@ -1574,14 +1565,6 @@ class WorkspaceAccessMixin:
             if source['external_project'] not in direct or any(name not in direct for name in carried):
                 return False
         return True
-
-    def _session_granted(self, db, ctx, source):
-        """A share of this source to the reader names a subject whose members contain the
-        session audience (a group in G, or a principal in P)."""
-        session = ctx.get('session_label') or {}
-        return any((row['grantee_kind'] == 'principal' and row['grantee'] in session.get('principals', ()))
-                   or (row['grantee_kind'] == 'group' and row['grantee'] in session.get('groups', ()))
-                   for row in self._share_rows(db, ctx, source, 'passages'))
 
     def session_descriptor(self, ctx, value):
         """The client's advisory audience descriptor for a session label (section 5).
@@ -1658,6 +1641,15 @@ class WorkspaceAccessMixin:
             raise Denied()
         return linked['workspace']
 
+
+# The `read` recall filter as one SQL condition for the service role (bound: the
+# kept workspace ids from `_recall_workspaces`): the document `{document}` depends
+# on at least one source in a kept workspace. Mirrors the `recall_filter` check of
+# search_document_allowed (migration 057). A filter, never a permission: it is only
+# ever ANDed onto a query whose results the read predicate still decides.
+RECALL_FILTER_SQL = '''EXISTS(SELECT 1 FROM enterprise_dependencies kept_dep
+    JOIN enterprise_sources kept ON kept.id=kept_dep.source_id
+    WHERE kept_dep.document_id={document} AND kept.external_project=ANY(?::text[]))'''
 
 # Recall routes that honor a session label (`session_label` in the body; the MCP
 # endpoint passes its connection's label the same way). The label only narrows.

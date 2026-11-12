@@ -129,10 +129,6 @@ class SourceIndex:
         db.execute('''UPDATE enterprise_documents SET representation='raw',raw_owner=?,source_time=?,
             source_captured=?,raw_shared=?,source_project=? WHERE id=?''',(row['owner'],occurred,row['created'],
             0 if int(row.get('private') or 0) else 1,row['external_project'],doc))
-        # raw_granted marks a passage an active owner grant covers (its source, its
-        # session or its connection): again a prefilter, never the decision.
-        from agenthub.owner_controls import refresh_grant_flags
-        refresh_grant_flags(db,[row['id']])
 
 
 def search(store,ctx,value,filters,*,candidate_pool=False):

@@ -25,8 +25,14 @@ The release workflow publishes the section whose heading matches the tag.
   with no key recall covers everything the session may read. The client sends it
   with recall and search (hook injection, and MCP through the header helper), and
   `search_memory` accepts `workspaces` for one search. It is a filter, never a
-  permission: the service intersects it with what the session label allows. A
-  `read` key is no longer ignored with a warning; needs the matching service.
+  permission: the service intersects it with what the session label allows. It
+  applies to every search path, dated (temporal) search over curated memory
+  included, and a document derived from sources in several workspaces is kept
+  when at least one of them is listed; the reader still needs every one of its
+  sources, exactly as without a filter. Opening an item by id, a named
+  workspace's history and a person's own preferences are not searches and are
+  not filtered. A `read` key is no longer ignored with a warning; needs the
+  matching service (migration 057).
 - **`.vaelius.local`**, a person's own uncommitted override beside a `.vaelius`. It
   may set `capture` and `read`, can only narrow capture along the ladder (a wider
   value is ignored with a one-time line), cannot change `workspace`, and does
@@ -73,6 +79,16 @@ The release workflow publishes the section whose heading matches the tag.
 
 ### Removed
 
+- **The share term of the read predicate** (migration 057). Migration 055 left the
+  per-item share path in the Python oracle, the indexed SQL filter and row-level
+  security, unreachable behind its CHECK constraint. It is now gone from all
+  three: the database functions `search_passage_granted` and
+  `search_passage_session_granted` are dropped, `search_reader_in_audience` and
+  `search_session_admits` lose their share arguments, and no layer reads
+  `raw_source_grants` or the `raw_granted` prefilter to decide who may read a
+  passage or a derived document. Nobody gains or loses access. The operator
+  originals grant (`agenthub.raw_access`) and its table are unchanged, and the
+  `raw_granted` column stays (always 0). Apply migration 057 with the upgrade.
 - **Per-item sharing** (migration 055). An item is read by its workspace's
   audience, or only by its owner when it is personal memory; nobody shares single
   items with chosen people or groups any more. Removed: the MCP tools

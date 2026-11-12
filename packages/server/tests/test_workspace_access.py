@@ -5,7 +5,9 @@ item's audience" is enforced three times: the Python oracle
 (agenthub.workspace_access through EnterpriseStore._document_allowed), the
 indexed SQL filter (agenthub.search_permissions) and row-level security
 (search_document_allowed / search_reader_in_audience). Every case asserts all
-three layers agree and match the expected reader set.
+three layers agree and match the expected reader set. None of the three has a
+per-item share term (migrations 055 and 057), and the `read` recall filter only
+ever narrows what they admit.
 """
 import json
 from pathlib import Path
@@ -16,6 +18,7 @@ from agentclient.enterprise_capture import normalize_capture
 from agentclient.general_contract import normalize_remote
 from agenthub.cloud_runtime import CloudStore
 from agenthub.enterprise import Conflict, Denied, EnterpriseStore
+from agenthub.postgres import PostgresConnection, connect
 from agenthub.workspace_access import RepoNotLinked
 from test_cloud_postgres import PostgresFixture, SERVICES
 
@@ -161,6 +164,64 @@ class PredicateParityTests(ParityItems, unittest.TestCase):
         self.assertLayers(self.erin, self.expect('o_shared'), 'org visibility only')
         self.assertLayers(self.quinn, self.expect('m_shared', 'm_team'),
                           'quarantined: direct entries stay, the organization path goes')
+
+    def test_a_planted_passage_share_admits_nobody_in_any_layer(self):
+        """The share term is gone from the predicate itself, not only made unreachable.
+
+        Migration 055's CHECK constraint keeps every active grant originals-only. With
+        that constraint dropped and passage shares planted exactly as they used to be
+        stored (to a principal and to a group, prefilter flag set), no layer admits the
+        grantees: a layer that grew the term back would admit them here and disagree
+        with the other two."""
+        private = self.items['m_private']
+        with connect(self.admin_dsn) as db:
+            db.execute('ALTER TABLE raw_source_grants DROP CONSTRAINT raw_source_grants_originals_only')
+            platform = db.execute("SELECT id FROM groups WHERE tenant='acme' AND name='platform'").fetchone()[0]
+            for kind, grantee in (('principal', 'erin'), ('principal', 'bob'), ('group', platform)):
+                db.execute("""INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,
+                    granted_by,created,passages,originals,issued_with)
+                    VALUES('acme','source',%s,%s,%s,'alice',0,1,0,'policy')""", (private, kind, grantee))
+            flagged = db.execute("""UPDATE enterprise_documents SET raw_granted=1 WHERE id IN (
+                SELECT document_id FROM enterprise_dependencies WHERE source_id=%s)""", (private,)).rowcount
+        self.assertGreater(flagged, 0)
+        self.assertLayers(self.erin, self.expect('o_shared'), 'a principal share')
+        self.assertLayers(self.bob, self.expect('m_shared', 'm_birch', 'm_team', 'o_shared', 'o_maple'),
+                          'a principal share to a member of the workspace')
+        self.assertLayers(self.carol, self.expect('m_shared', 'm_team', 'o_shared', 'o_maple'), 'a group share')
+        self.assertLayers(self.alice, set(self.items.values()), 'the owner')
+        # The same in a labelled session, whose share term named the session's subjects.
+        session = self.store.session_filter(self.bob, {'workspace': 'maple'})
+        self.assertLayers(session, self.expect('m_shared', 'm_team'), 'a shared maple session')
+        with self.store.open() as state:
+            source = dict(state.db.execute('SELECT * FROM enterprise_sources WHERE id=?', (private,)).fetchone())
+            self.assertFalse(self.store._visible_source(state.db, self.erin, source), 'passages, evidence, context')
+
+    def test_no_layer_keeps_a_share_path(self):
+        """The share forms are gone by name and by signature, so a caller cannot ask
+        for them: the Python helpers, the SQL filter text and the database functions."""
+        from agenthub import search_permissions
+        session = self.store.session_filter(self.bob, {'workspace': 'maple'})
+        access = (['maple'], ['maple'])
+        texts = [search_permissions.predicate(session, access)[0],
+                 search_permissions.policy_condition(session, access)[0]]
+        with patch.object(self.store, 'current_identity', lambda db, context: context):
+            with self.store.open() as state:
+                texts.append(self.store._authorization_predicate(state, session)[0])
+                functions = {(r[0], r[1]): r[2] for r in state.db.execute("""SELECT p.proname,p.pronargs,
+                    pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                    WHERE n.nspname=current_schema() AND p.proname LIKE 'search\\_%'""")}
+        self.assertEqual({key for key in functions if key[0] in ('search_reader_in_audience', 'search_session_admits',
+                                                                  'search_passage_granted',
+                                                                  'search_passage_session_granted')},
+                         {('search_reader_in_audience', 4), ('search_session_admits', 2)})
+        for text in texts + list(functions.values()):
+            for word in ('raw_source_grants', 'raw_granted', 'search_passage', 'via_share'):
+                self.assertNotIn(word, text)
+        for name in ('_shared_with', '_session_granted', '_granted_source'):
+            self.assertFalse(hasattr(self.store, name), name)
+        for name in ('SOURCE_GRANTED', 'DOCUMENT_GRANTED', 'RECEIVES_GRANTS', 'SESSION_GRANTEE',
+                     'source_granted_condition', 'document_granted_condition'):
+            self.assertFalse(hasattr(search_permissions, name), name)
 
     def test_delegated_credential_has_no_organization_role_and_stays_in_its_workspaces(self):
         self.store.set_delegation('acme', 'frank', 'bob', ['read', 'source_read'], ['maple'], True)
@@ -857,3 +918,229 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
             tools.call('search_memory', {'query': 'synthetic', 'workspaces': ['../etc']})
         with self.assertRaises(ValueError):
             tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})
+
+
+@unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
+class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
+    """The `read` filter on every search path, over the curated corpus as well.
+
+    The filter is a convenience: each path applies it on top of the unchanged read
+    predicate, and a document is kept when at least one of the sources it depends on
+    is in a kept workspace. Audiences as in SessionLabelTests (nobody is quarantined
+    here): maple {alice, bob, quinn, carol, dave}; birch {alice, bob}; oak: everyone."""
+
+    FILTERS = ([], ['maple'], ['birch'], ['oak'], ['maple', 'oak'], ['maple', 'birch', 'oak'], ['nowhere'])
+
+    def setUp(self):
+        self.workspace_setup()
+        # Derived documents and temporal assertions are only searched in the curated corpus.
+        self.store.retrieval_corpus = 'all'
+        self.store.retrieval_selection_policy = 'baseline'
+        self.items = {name: self.capture(name) for name in ('maple', 'birch', 'oak')}
+        self.drain()
+        self.notes = {name: self.derive([name], name.capitalize()) for name in ('maple', 'birch', 'oak')}
+        # One document over a maple source and an oak source: source_project is NULL.
+        self.notes['both'] = self.derive(['maple', 'oak'], 'Joint')
+        self.derived = {note['document_id']: name for name, note in self.notes.items()}
+
+    def tearDown(self):
+        self.postgres_teardown()
+
+    def capture(self, workspace):
+        """One of alice's shared sources in `workspace`, with a dated, ongoing location."""
+        text = ('The ' + workspace.capitalize() + ' ledger and the Joint ledger are saved under /synthetic/ledger/'
+                + workspace + ' effective 2026-09-01; ongoing.')
+        event = normalize_capture({'hook_event_name': 'UserPromptSubmit', 'event_id': 'ledger:' + workspace,
+            'session_id': 'ledger-' + workspace, 'turn_id': 'ledger', 'timestamp': '2026-09-01T10:00:00Z',
+            'prompt': text, 'revision': '1'}, workspace, 'a-' + workspace, sharing='organization')
+        return self.store.ingest_general(self.alice, event)['source_id']
+
+    def derive(self, names, subject):
+        """One curated document over several of alice's sources, registered by the
+        ordinary document refresh, with a dated location assertion for temporal recall."""
+        from agenthub.processing.knowledge import accept_local_candidate
+        from agenthub.processing.temporal import record_assertion
+        sources = [self.items[name] for name in names]
+        path = '/synthetic/ledger/' + subject.lower() + '.csv'
+        lesson = 'The ' + subject + ' ledger is saved at ' + path + ' effective 2026-09-01.'
+        with self.store.delivery_lock(), self.store.open() as state, state.db:
+            db = state.db
+            # The curated observation is its own memory (as a reviewed release is), in the
+            # partition its sources share; the document's sources are its support rows.
+            partition = db.execute('SELECT internal_project FROM enterprise_sources WHERE id=?',
+                                   (sources[0],)).fetchone()[0]
+            ident = 'ledger-note-' + subject.lower()
+            db.execute('INSERT INTO memories(id,session,project,body,kind,created,turn) VALUES(?,?,?,?,?,?,?)',
+                       (ident, 'ledger-notes', partition, lesson, 'Observation', 1788264000.0, ''))
+            note = accept_local_candidate(db, ident, partition, 'ledger-notes', subject + ' ledger location',
+                                          lesson, sources)
+            self.store.refresh_documents(db=db, document_id=note['document_id'])
+            note['assertion'] = record_assertion(
+                db, revision_id=note['revision_id'], subject=subject + ' ledger', predicate='location', value=path,
+                actor='alice', evidence_source_ids=sources, recorded_at=1788264000.0,
+                validity={'from': '2026-09-01', 'to_status': 'ongoing', 'precision': 'day', 'timezone': 'UTC',
+                          'basis': 'explicit_source'})['assertion_id']
+        self.store.refresh_documents()
+        return note
+
+    def label(self, ctx, workspace, **extra):
+        return self.store.session_filter(ctx, dict(workspace=workspace, **extra))
+
+    def found(self, ctx, project=None, workspaces=None):
+        """Names of the derived documents the candidate query returns."""
+        rows = self.store.candidates(ctx, 'ledger location', project=project, limit=50,
+                                     filters={'workspaces': workspaces} if workspaces is not None else None)
+        return {self.derived[row['document_id']] for row in rows if row['document_id'] in self.derived}
+
+    def dated(self, ctx, subject, project=None, **request):
+        """Names of the derived documents a dated (curated temporal) search answers from."""
+        query = dict({'version': 'enterprise-local-1', 'as_of': '2026-09-10', 'time_mode': 'effective_at',
+                      'query': 'Where was the ' + subject + ' ledger as of 2026-09-10?', 'project': project},
+                     **request)
+        query = {key: value for key, value in query.items() if value is not None}
+        assertions = {note['assertion']: name for name, note in self.notes.items()}
+        return {assertions[card['id']] for card in self.store.search(ctx, query)['results']}
+
+    def visible(self, ctx, keep=None):
+        """Document ids row-level security shows a request, with or without a recall filter."""
+        from agenthub.search_reader import restrict
+        with patch.object(self.store, 'current_identity', lambda db, context: context):
+            with self.store.open() as state, restrict(self.store, state, ctx, None, recall_filter=keep):
+                return {r[0] for r in state.db.execute('SELECT id FROM enterprise_documents')}
+
+    def statements(self, call):
+        """(result, number of SQL statements the service sent) for one call."""
+        sent = []
+        execute = PostgresConnection.execute
+        def counted(db, query, params=None):
+            sent.append(query)
+            return execute(db, query, params)
+        with patch.object(PostgresConnection, 'execute', counted):
+            result = call()
+        return result, len(sent)
+
+    def test_curated_temporal_recall_honours_the_filter(self):
+        personal = lambda **extra: self.label(self.alice, 'maple', private=True, **extra)
+        self.assertEqual(self.dated(personal(), 'Oak', 'maple'), {'oak'}, 'unfiltered: everything the session reads')
+        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple'), set(), 'oak is not searched')
+        self.assertEqual(self.dated(personal(read=['oak']), 'Oak', 'maple'), {'oak'})
+        self.assertEqual(self.dated(personal(read=['birch']), 'Maple', 'maple'), {'maple'},
+                         'the current workspace always stays in')
+        # A one-off list replaces the folder's; without a label it is capped by what the person reads.
+        self.assertEqual(self.dated(personal(read=['oak']), 'Oak', 'maple', workspaces=['birch']), set())
+        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple', workspaces=['oak']), {'oak'})
+        self.assertEqual(self.dated(self.alice, 'Oak', 'maple', workspaces=['birch']), set())
+        self.assertEqual(self.dated(self.alice, 'Oak', 'maple', workspaces=['oak']), {'oak'})
+        # The current-state form of the same path.
+        current = dict(as_of=None, time_mode='current', query='Where is the Oak ledger?')
+        self.assertEqual(self.dated(personal(), 'Oak', 'maple', **current), {'oak'})
+        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple', **current), set())
+        # A document over maple and oak sources is searched when either is listed.
+        birch = lambda **extra: self.label(self.alice, 'birch', **extra)
+        self.assertEqual(self.dated(birch(), 'Joint', 'birch'), {'both'})
+        self.assertEqual(self.dated(birch(read=['oak']), 'Joint', 'birch'), {'both'})
+        self.assertEqual(self.dated(birch(read=['maple']), 'Joint', 'birch'), {'both'})
+        self.assertEqual(self.dated(birch(read=[]), 'Joint', 'birch'), set(), 'neither source is in birch')
+        # Never a permission: erin reads oak only, whatever the list names.
+        self.assertEqual(self.dated(self.erin, 'Oak', workspaces=['maple', 'oak']), {'oak'})
+        self.assertEqual(self.dated(self.erin, 'Maple', workspaces=['maple', 'oak']), set())
+        self.assertEqual(self.dated(self.erin, 'Joint', workspaces=['oak']), set(), 'its maple source is not hers')
+        self.assertEqual(self.dated(self.erin, 'Oak', workspaces=['maple']), set())
+
+    def test_a_document_over_several_workspaces_is_kept_when_one_of_them_is_listed(self):
+        with self.store.open() as state:
+            rows = {self.derived[r[0]]: r[1] for r in state.db.execute(
+                'SELECT id,source_project FROM enterprise_documents WHERE id=ANY(?::text[])', (list(self.derived),))}
+        self.assertEqual(rows, {'maple': 'maple', 'birch': 'birch', 'oak': 'oak', 'both': None})
+        birch = self.label(self.alice, 'birch')  # its audience {alice, bob} may read birch, maple and oak
+        self.assertEqual(self.found(birch, 'birch'), {'maple', 'birch', 'oak', 'both'}, 'unfiltered')
+        self.assertEqual(self.found(birch, 'birch', ['oak']), {'birch', 'oak', 'both'}, 'one source is in oak')
+        self.assertEqual(self.found(birch, 'birch', ['maple']), {'birch', 'maple', 'both'}, 'the other is in maple')
+        self.assertEqual(self.found(birch, 'birch', []), {'birch'}, 'neither source is in birch')
+        self.assertEqual(self.found(self.label(self.alice, 'birch', read=['oak']), 'birch'), {'birch', 'oak', 'both'},
+                         'the folder filter, as the one-off list')
+        self.assertEqual(self.found(self.label(self.alice, 'maple'), 'maple', ['birch']), {'maple', 'both'},
+                         'the current workspace stays in, and one source is in it')
+        # The read predicate is untouched: every source's workspace must admit the reader.
+        self.assertEqual(self.found(self.carol, None, ['oak']), {'oak', 'both'}, 'carol reads maple and oak')
+        self.assertEqual(self.found(self.erin), {'oak'})
+        self.assertEqual(self.found(self.erin, None, ['oak']), {'oak'}, 'listing oak does not admit the maple source')
+        self.assertEqual(self.found(self.erin, None, ['maple', 'oak']), {'oak'})
+        self.assertEqual(self.found(self.erin, None, ['maple']), set())
+        # Delivered search results follow the candidates.
+        request = {'version': 'enterprise-local-1', 'query': 'Where is the Joint ledger saved?', 'project': 'birch'}
+        delivered = lambda **extra: {self.derived.get(card['id']) for card in
+                                     self.store.search(birch, dict(request, **extra))['results']}
+        self.assertIn('both', delivered(workspaces=['oak']))
+        self.assertNotIn('both', delivered(workspaces=['birch']))
+
+    def test_a_filter_never_widens_what_a_session_may_read(self):
+        """For every session and every list: what a filtered request sees is a subset of
+        what the same request sees unfiltered, which is exactly what the read predicate
+        admits in all three layers; and it is exactly the documents with a source in a
+        kept workspace."""
+        from agenthub.workspace_access import RECALL_FILTER_SQL
+        sessions = {
+            'alice, shared maple': (self.label(self.alice, 'maple'), 'maple'),
+            'alice, shared birch': (self.label(self.alice, 'birch'), 'birch'),
+            'alice, personal': (self.label(self.alice, 'maple', private=True), 'maple'),
+            'bob, no label': (self.bob, None),
+            'carol, maple': (self.label(self.carol, 'maple'), 'maple'),
+            'erin, oak': (self.label(self.erin, 'oak'), 'oak'),
+            'erin, no label': (self.erin, None),
+        }
+        with self.store.open() as state:
+            workspaces = {}
+            for row in state.db.execute('SELECT x.document_id,s.external_project FROM enterprise_dependencies x '
+                                        'JOIN enterprise_sources s ON s.id=x.source_id'):
+                workspaces.setdefault(row[0], set()).add(row[1])
+        self.assertEqual(workspaces[self.notes['both']['document_id']], {'maple', 'oak'})
+        narrowed = 0
+        for name, (ctx, project) in sessions.items():
+            with patch.object(self.store, 'current_identity', lambda db, context: context):
+                with self.store.open() as state:
+                    oracle = {d for d in workspaces if EnterpriseStore._document_allowed(self.store, state.db, ctx, d)}
+                    indexed = set(self.store._authorized_documents(state, ctx)) & set(workspaces)
+            unfiltered = self.visible(ctx)
+            self.assertEqual((oracle, indexed), (unfiltered, unfiltered), (name, 'the three layers agree'))
+            everything = {subject: self.dated(ctx, subject, project) for subject in ('Oak', 'Joint')}
+            for wanted in self.FILTERS:
+                with self.subTest(session=name, filter=wanted):
+                    with self.store.open() as state:
+                        keep = self.store._recall_workspaces(state.db, ctx, wanted, project)
+                        by_sql = {r[0] for r in state.db.execute(
+                            'SELECT ed.id FROM enterprise_documents ed WHERE ed.id=ANY(?::text[]) AND '
+                            + RECALL_FILTER_SQL.format(document='ed.id'), (sorted(unfiltered), keep))}
+                    filtered = self.visible(ctx, keep)
+                    self.assertLessEqual(filtered, unfiltered, 'row-level security: only ever a subset')
+                    self.assertEqual(filtered, {d for d in unfiltered if workspaces[d] & set(keep)},
+                                     'exactly the documents with a source in a kept workspace')
+                    self.assertEqual(by_sql, filtered, 'the temporal path applies the same rule')
+                    candidates = {row['document_id'] for row in self.store.candidates(
+                        ctx, 'ledger location', project=project, limit=50, filters={'workspaces': wanted})}
+                    self.assertLessEqual(candidates, filtered, 'candidates')
+                    for subject, answers in everything.items():
+                        self.assertLessEqual(self.dated(ctx, subject, project, workspaces=wanted), answers, subject)
+                    narrowed += filtered != unfiltered
+        self.assertGreater(narrowed, 10, 'the lists did narrow something')
+
+    def test_the_filter_costs_only_its_own_resolution(self):
+        """SQL-count regression: a filter adds the statements that resolve it and nothing
+        per document, on the candidate path and on the temporal path."""
+        ctx = self.label(self.alice, 'birch')
+        with self.store.open() as state:
+            keep, resolution = self.statements(
+                lambda: self.store._recall_workspaces(state.db, ctx, ['oak'], 'birch'))
+        self.assertEqual((keep, resolution), (['birch', 'oak'], 1), 'one lookup for the one name')
+        plain = self.statements(lambda: self.found(ctx, 'birch'))
+        listed = self.statements(lambda: self.found(ctx, 'birch', ['oak']))
+        self.assertEqual((plain[0], listed[0]), ({'maple', 'birch', 'oak', 'both'}, {'birch', 'oak', 'both'}))
+        self.assertEqual(listed[1], plain[1] + resolution, 'candidates: the multi-workspace rule runs inside the query')
+        plain = self.statements(lambda: self.dated(ctx, 'Joint', 'birch'))
+        listed = self.statements(lambda: self.dated(ctx, 'Joint', 'birch', workspaces=['oak']))
+        self.assertEqual((plain[0], listed[0]), ({'both'}, {'both'}))
+        self.assertLessEqual(listed[1], plain[1] + resolution,
+                             'temporal: one condition in the selection, and fewer documents to authorize')
+        skipped = self.statements(lambda: self.dated(ctx, 'Joint', 'birch', workspaces=[]))
+        self.assertEqual(skipped[0], set())
+        self.assertLess(skipped[1], plain[1], 'documents outside the filter are never authorized')

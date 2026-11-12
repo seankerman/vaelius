@@ -76,7 +76,7 @@ def document_evidence(store, ctx, document_id, *, revision, offset=0):
             source_id=ref['source_memory_id']
             if source_id not in cache:
                 policy=db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-                if not store._visible_source(db,ctx,policy,raw=True):raise Denied()
+                if not store._visible_source(db,ctx,policy):raise Denied()
                 source=db.execute('SELECT id,body,kind FROM memories WHERE id=? AND active=1',(source_id,)).fetchone()
                 if not source:raise Denied()
                 adapter=getattr(store,'conversation_segments',None)
@@ -111,5 +111,5 @@ def document_evidence(store, ctx, document_id, *, revision, offset=0):
         if not current or current['active_revision_id']!=revision:raise Denied()
         for source_id in cache:
             policy=db.execute('SELECT * FROM enterprise_sources WHERE id=?',(source_id,)).fetchone()
-            if not store._visible_source(db,ctx,policy,raw=True):raise Denied()
+            if not store._visible_source(db,ctx,policy):raise Denied()
         return result

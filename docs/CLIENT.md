@@ -194,8 +194,10 @@ vaelius-client remember remove <id>
 ```
 
 - **Where it is stored.** In this folder's workspace, or the one named by
-  `--workspace` (you need the writer role there). `--personal` delivers it in every
-  workspace, not only that one.
+  `--workspace`. It is personal memory, private to you, so you do not need the
+  writer role there: a reader, a non-member and anyone in a private chat or folder
+  can remember in the folder they work in. A read-only chat cannot. `--personal`
+  delivers it in every workspace, not only that one.
 - **Always load.** `--always-load` items are delivered with your preferences at
   session start and with recall, in sessions whose audience admits them. A
   remembered item is personal memory, so that is your personal sessions (where you
@@ -494,14 +496,21 @@ A repository can declare how Vaelius treats it with a checked-in TOML file named
 
 ```toml
 workspace = "example-repo"   # the Vaelius workspace name (access-model)
-capture = "on"               # on | read-only | off
-# sharing = "private"        # optional: owner-only; omit to inherit the workspace audience
+capture = "on"               # on | private | read-only | off
+# read = ["example-repo", "shared-docs"]   # optional: recall only these workspaces
 ```
 
-The keys are `workspace` and `capture`:
+The keys are `workspace`, `capture` and `read`:
 
-- There is no `visibility` key, and no `read` key (both are ignored with a one-time
-  line for you). Who can read a workspace is set on the server when
+- `capture = "private"` captures every chat started in the folder to that person's
+  personal memory only, and makes those chats personal sessions. It only narrows,
+  so it is safe in a committed file.
+- `read` restricts which workspaces recall searches. It is a convenience filter,
+  never a permission: the service intersects it with what the session may read, and
+  the current workspace is always included even if not listed. With no `read` key
+  recall covers everything the session may read. A list that is not workspace names
+  applies no filter, with a one-time line for you.
+- There is no `visibility` key. Who can read a workspace is set on the server when
   it is created and changed there (see [workspaces and groups](#workspaces-and-groups));
   a `visibility` in the file is ignored with a one-time line for you.
 - A workspace does not need a repository: any folder whose scope file names the
@@ -527,16 +536,69 @@ Legacy keys are still read so existing repositories keep working:
 
 | `capture` | Capture | Automatic recall |
 | --- | --- | --- |
-| `on` (default) | yes | yes |
+| `on` (default) | yes: the workspace for a writer, personal memory for anyone else | yes |
+| `private` | yes: your personal memory only | yes, as a personal session |
 | `read-only` | no | yes |
 | `off` | no | no |
+
+The ladder runs from wide to narrow, `on` > `private` > `read-only` > `off`, and
+everything layered on top of the committed file can only move down it.
 
 The hook finds the file by walking up from the session's working directory and
 stops at the Git root (a directory holding `.git`) or the filesystem root. A linked
 worktree whose checkout lacks the file uses the same place in the main worktree, so
-every worktree of a repository resolves to the same request. Without a scope file
-nothing changes: an explicitly enrolled project captures privately, and any other
-folder is neither captured nor recalled.
+every worktree of a repository resolves to the same request. File reads use the
+same rule: a path inside a Git repository is governed only by a scope file at or
+below that repository's root, so a parent folder's `.vaelius` neither captures nor
+makes readable a repository nested in it. A folder in no repository takes the
+nearest scope file upwards. Without a scope file nothing changes: an explicitly
+enrolled project captures privately, and any other folder is neither captured nor
+recalled (unless you set the default below).
+
+### Your own override: `.vaelius.local`
+
+A `.vaelius.local` beside a `.vaelius` is yours alone. Keep it out of Git:
+
+```sh
+vaelius-client --home /absolute/private/client-profile scope-local --capture private
+vaelius-client --home /absolute/private/client-profile scope-local --read example-repo --read shared-docs
+```
+
+The command writes the file next to the folder's `.vaelius` and adds it to
+`.git/info/exclude` (this clone only), never to `.gitignore`. Written by hand, add
+it to your ignore rules yourself.
+
+```toml
+capture = "read-only"        # only narrower than the committed file
+read = ["example-repo"]
+```
+
+- It may set `capture` and `read`, nothing else. It cannot change `workspace`.
+- `capture` can only narrow what the committed file asks for. A wider value (the
+  committed file says `read-only`, yours says `on`) is ignored with a one-time line
+  for you.
+- A `.vaelius.local` with no `.vaelius` beside it does nothing.
+- One that cannot be read fails closed, like any invalid scope file.
+
+### Folders with no scope file: `default_capture`
+
+```sh
+vaelius-client --home /absolute/private/client-profile config default-capture read-only
+vaelius-client --home /absolute/private/client-profile config default-capture off      # the default
+```
+
+With `read-only`, a chat in a folder that no scope file governs can recall (as a
+read-only chat: everything you can read) and saves nothing; the service refuses
+writes from it as for any read-only chat. **Your prompts in those folders are then
+sent to the Vaelius service as recall queries**, which is why the default is `off`.
+The setting has exactly these two values. It can never be `on` or `private`:
+capture is only ever turned on by a scope file in the folder, and any other value
+in the profile is rejected when the profile is loaded. `status` and `scope-status`
+show it.
+
+Precedence, lowest to highest: `default_capture` (only when no scope file applies)
+< the committed `.vaelius` < `.vaelius.local` (narrow only) < the per-chat
+`session private` / `session read-only` (narrow only).
 
 A scope file at the home folder, at any folder above it (including `/`), directly in
 a top-level personal folder (`~/Documents`, `~/Desktop`, `~/Downloads`,
@@ -740,12 +802,20 @@ A Claude Code session that starts in a workspace folder sends its **session labe
 with every recall (automatic context, and through the MCP connection's
 `X-Vaelius-Session-Label` header, `search_memory` and the evidence, context and
 history tools). The service then returns only items whose audience contains the
-session's: the current workspace first, then every other workspace at least as wide
-(an organization workspace, a workspace the same team can read), each marked
-`"from": "<workspace> · <author> · <date>"`, current-workspace results ranked first.
+session's: the current workspace and every other workspace at least as wide (an
+organization workspace, a workspace the same team can read). Results are ordered by
+relevance across all of them, with no workspace ranked ahead of another; results
+from other workspaces are marked `"from": "<workspace> · <author> · <date>"`.
 Your own private items are recalled only in a private session, and a read-only chat
 recalls everything you can read (it saves nothing). The MCP tool has no `scope`
-option: the label decides. Clients and sessions without a label keep the earlier
+option: the label decides.
+
+A `read` list in `.vaelius` (or your `.vaelius.local`) narrows that to the listed
+workspaces plus the current one. The client sends it with every recall (in the
+label, so the MCP connection carries it too), and `search_memory` accepts
+`workspaces` for one narrower or different search. Either way the service
+intersects the list with what the session may read, so it is a filter, never a
+permission: naming a workspace you cannot read returns nothing from it. Clients and sessions without a label keep the earlier
 behavior (the current project, then organization-shared items; `"scope": "all"` in an
 HTTP search request still widens it).
 
@@ -800,6 +870,30 @@ Sessions that start read-only, off or outside every workspace have no label.
 ```sh
 vaelius-client --home /absolute/private/client-profile scope-status --cwd /absolute/project/sub/dir
 ```
+
+### Private chats
+
+```sh
+vaelius-client --home /absolute/private/client-profile session private
+```
+
+The rest of the current chat is saved to your personal memory only, and the session
+counts as personal: recall and file reads follow the personal-session rules above.
+It is one-way until `/clear` or a new chat, exactly like `session read-only`; there
+is no command or tool to switch back. You can also ask the agent ("make this chat
+private"); it calls the MCP tool `private_session`. The status line says `vaelius:
+private — this chat is saved to your personal memory only`; switched mid-chat, it
+adds that what was saved before stays where it was until you run `vaelius-client
+forget --session current`.
+
+The service enforces it: the client registers the chat's session id and this
+folder's recent MCP connections, and the service stores every later capture from
+them owner-private whatever the client sends. `capture = "private"` in `.vaelius`
+does the same for every chat started in that folder.
+
+For a private space of your own that is not tied to one chat or folder, create a
+workspace of one: `vaelius-client workspace create <name> --private` with no other
+entries.
 
 ### Read-only chats
 

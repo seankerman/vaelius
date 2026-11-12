@@ -225,7 +225,6 @@ class DocumentStore:
             if retained:
                 verify(self.objects.head(key), length, sha)
                 self._metrics(identity,retained['source_id'])
-                self.project_temporal(ctx,retained['source_id'])
                 return self.describe(ctx, retained['source_id']) | {'disposition':'duplicate'}
             info = self.objects.put(key, spool, expected_sha256=sha)
             verify(info, length, sha)
@@ -262,30 +261,8 @@ class DocumentStore:
                  filename,title or filename,prepared.media_type,prepared.status,
                  json.dumps([asdict(x) for x in prepared.locations]),time.time()))
             state.db.execute("UPDATE backend_object_uploads SET status='accepted',source_id=%s,updated=%s WHERE id=%s", (source_id,time.time(),identity))
-            self._temporal_passages(state.db,source_id,title or filename)
         self._metrics(identity,source_id)
         return self.describe(ctx,source_id) | {'disposition':result['disposition'],'passages':indexed,'model_calls':0}
-
-    @staticmethod
-    def _temporal_passages(db,source_id,title,retained_source_authorizer=None):
-        from agenthub.processing.temporal import admit_native_assertion
-        rows=db.execute('''SELECT d.active_revision_id FROM backend_native_artifacts n
-            JOIN knowledge_documents d ON d.document_id=n.document_id
-            WHERE n.source_id=%s AND n.artifact_kind='native_document' AND d.lifecycle='active' ''',(source_id,)).fetchall()
-        for row in rows:admit_native_assertion(db,row['active_revision_id'],source_id,subject=title,
-            retained_source_authorizer=retained_source_authorizer)
-        return len(rows)
-
-    def project_temporal(self,ctx,source_id):
-        """Authorized idempotent derivative repair, preserving originals/heads."""
-        with self.store.delivery_lock(),self.store.open() as state,state.db:
-            item=self._authorize(state.db,ctx,source_id)
-            def authorized(ident):
-                self._authorize(state.db,ctx,ident)
-                return True
-            count=self._temporal_passages(state.db,item['source_id'],item['title'],authorized)
-            self._authorize(state.db,ctx,item['source_id'])
-        return {'source_id':item['source_id'],'version':item['version'],'passages_checked':count,'model_calls':0}
 
     def _authorize(self, db, ctx, source_id, version=None, *, original=False):
         """Metadata needs current read access; original bytes are least-privilege.

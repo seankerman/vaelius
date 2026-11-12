@@ -1492,10 +1492,9 @@ class WorkspaceAccessMixin:
         that does not resolve, or that the request may not read, is dropped
         silently.
 
-        Every search path applies the result on top of the unchanged read
-        predicate: the candidate query through row-level security
-        (`search_reader.restrict(recall_filter=...)`) and the curated temporal
-        path through RECALL_FILTER_SQL. A document is kept when at least one
+        The candidate query, the one search path, applies the result on top of
+        the unchanged read predicate through row-level security
+        (`search_reader.restrict(recall_filter=...)`). A document is kept when at least one
         source it depends on is in a kept workspace, so one derived from sources
         in several workspaces is not dropped while one of them is listed. Fetches
         by id, a named workspace's history and a person's own preferences are not
@@ -1642,19 +1641,9 @@ class WorkspaceAccessMixin:
         return linked['workspace']
 
 
-# The `read` recall filter as one SQL condition for the service role (bound: the
-# kept workspace ids from `_recall_workspaces`): the document `{document}` depends
-# on at least one source in a kept workspace. Mirrors the `recall_filter` check of
-# search_document_allowed (migration 057). A filter, never a permission: it is only
-# ever ANDed onto a query whose results the read predicate still decides.
-RECALL_FILTER_SQL = '''EXISTS(SELECT 1 FROM enterprise_dependencies kept_dep
-    JOIN enterprise_sources kept ON kept.id=kept_dep.source_id
-    WHERE kept_dep.document_id={document} AND kept.external_project=ANY(?::text[]))'''
-
 # Recall routes that honor a session label (`session_label` in the body; the MCP
 # endpoint passes its connection's label the same way). The label only narrows.
 LABELLED_ROUTES = ('/enterprise/v3/search', '/enterprise/v3/document-evidence', '/enterprise/v3/document-context',
-                   '/enterprise/v3/timeline', '/enterprise/v3/project-history', '/enterprise/v3/project-episode',
                    '/enterprise/v3/preferences')
 # The client refreshes its descriptor after 15 minutes and stops trusting it after 24 hours.
 DESCRIPTOR_REFRESH = 900

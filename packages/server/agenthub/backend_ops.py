@@ -1,22 +1,13 @@
-"""Finite owner-operated backend commands. API startup never dispatches models."""
+"""Finite owner-operated backend commands and the package build identity."""
 import hashlib
 import json
-import os
 from pathlib import Path
-import signal
 import sys
 
-from agenthub.backend_worker import Worker, initialize
 from agenthub.local_connectors import Connector
 
 
 def parsers(sub):
-    worker=sub.add_parser('worker');worker.add_argument('action',choices=['once','run','status','stop','retry'])
-    worker.add_argument('--config');worker.add_argument('--ledger');worker.add_argument('--live',action='store_true')
-    worker.add_argument('--job-id');worker.add_argument('--max-jobs',type=int,default=1)
-    worker.add_argument('--reprocess',action='store_true');worker.add_argument('--retain-validated',action='store_true')
-    worker.add_argument('--max-calls',type=int,default=12);worker.add_argument('--max-retries',type=int,default=3)
-    worker.add_argument('--max-seconds',type=int,default=120);worker.add_argument('--max-input-tokens',type=int,default=100000)
     connector=sub.add_parser('connector');connector.add_argument('action',choices=['enroll','sync','status'])
     connector.add_argument('id');connector.add_argument('--token-file',required=True)
     connector.add_argument('--adapter',choices=['directory','conversations','records']);connector.add_argument('--path')
@@ -29,7 +20,6 @@ def parsers(sub):
     connection.add_argument('--visibility');connection.add_argument('--reader',action='append')
     connection.add_argument('--freshness-seconds',type=int,default=86400)
     connection.add_argument('--allow-reviewed-release',action='store_true')
-    budget=sub.add_parser('budget-status');budget.add_argument('--config',required=True);budget.add_argument('--ledger',required=True)
     release=sub.add_parser('reviewed-release');release.add_argument('--token-file',required=True)
     release.add_argument('id');release.add_argument('--revision',required=True);release.add_argument('--project',required=True)
     release.add_argument('--reader',action='append',required=True);release.add_argument('--key',required=True)
@@ -39,12 +29,6 @@ def parsers(sub):
 def execute(store,args,context):
     if args.command=='structured-source':return store.general_source(context(store,args),args.id)
     if args.command=='reviewed-release':return store.reviewed_release(context(store,args),args.id,args.revision,args.project,args.reader,args.key)
-    if args.command=='budget-status':
-        from agenthub.processing.evaluation_budget import snapshot
-        from agenthub.processing.usage import Ledger
-        ledger=Ledger(json.loads(Path(args.config).read_text()))
-        try:return {'campaign':snapshot(args.ledger),'installation':ledger.summary()}
-        finally:ledger.close()
     if args.command=='connection':
         ctx=context(store,args)
         if args.action=='enroll':
@@ -64,36 +48,7 @@ def execute(store,args,context):
                 reader_ids=args.reader,policy_file=args.policy_file)
         if args.action=='sync':return connectors.sync(ctx,args.id,dry_run=args.dry_run,max_items=args.max_items)
         return connectors.status(ctx,args.id)
-    if args.command!='worker':return None
-    with store.open() as state:initialize(state.db)
-    if args.action=='status':
-        worker=Worker.__new__(Worker);worker.store=store;return worker.status()
-    pidfile=store.home/'worker.json'
-    if args.action=='stop':
-        if not pidfile.exists():return {'stopped':True}
-        current=json.loads(pidfile.read_text())
-        import subprocess
-        command=subprocess.run(['ps','-p',str(current['pid']),'-o','command='],capture_output=True,text=True).stdout
-        if 'agenthub.enterprise_cli' not in command or str(store.home) not in command:raise ValueError('worker_pid_mismatch')
-        os.kill(current['pid'],signal.SIGTERM);return {'stop_requested':True,'pid':current['pid']}
-    cfg=Path(args.config) if args.config else store.home/'config.json'
-    config=json.loads(cfg.read_text())
-    worker=Worker(store,config,live=args.live,ledger_path=args.ledger)
-    if args.action=='retry':
-        if not args.job_id:raise ValueError('job_id_required')
-        return worker.recover(args.job_id,reprocess=args.reprocess,retain_validated=args.retain_validated)
-    if pidfile.exists():
-        old=json.loads(pidfile.read_text())
-        try:os.kill(old['pid'],0)
-        except ProcessLookupError:pass
-        else:raise ValueError('worker_already_running')
-    fd=os.open(pidfile,os.O_CREAT|os.O_WRONLY|os.O_TRUNC,0o600)
-    with os.fdopen(fd,'w') as stream:json.dump({'pid':os.getpid(),'interpreter':sys.executable,'role':'bounded-worker'},stream)
-    def stop(signum,frame):worker.stop=True
-    previous=signal.signal(signal.SIGTERM,stop)
-    try:return worker.run(max_jobs=1 if args.action=='once' else args.max_jobs,max_calls=args.max_calls,
-        max_retries=args.max_retries,max_seconds=args.max_seconds,max_input_tokens=args.max_input_tokens)
-    finally:signal.signal(signal.SIGTERM,previous);pidfile.unlink(missing_ok=True)
+    return None
 
 
 def verify_package_build(directory):

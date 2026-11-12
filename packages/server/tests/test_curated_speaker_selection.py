@@ -1,7 +1,7 @@
 """Original speaker roles survive curation without becoming account names."""
 import unittest
 
-from agenthub.processing.durable_memory import VERSION
+from agenthub.cloud_retrieval import DURABLE_POLICY as VERSION
 from agenthub.cloud_retrieval import supported_answer, select_supported_cards
 
 

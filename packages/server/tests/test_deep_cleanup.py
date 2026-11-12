@@ -25,22 +25,6 @@ class RetiredImplementations(unittest.TestCase):
         self.assertTrue(prepare_document('A cited fact').endswith('A cited fact'))
         self.assertTrue(prepare_query('Where is it?').endswith('Where is it?'))
 
-class CanonicalCurationPolicy(unittest.TestCase):
-    def test_default_is_continuous_durable_memory(self):
-        from agenthub.processing.episode_pipeline import curator_version
-        from agenthub.processing.durable_memory import VERSION
-        self.assertEqual(curator_version({}),VERSION)
-        self.assertEqual(curator_version({'episode_curation':{'policy':'durable_memory'}}),VERSION)
-
-    def test_retired_policy_is_explicitly_rejected(self):
-        from agenthub.processing.episode_pipeline import curator_version
-        with self.assertRaisesRegex(ValueError,'retired_curation_policy'):
-            curator_version({'episode_curation':{'policy':'episode'}})
-
-    def test_new_candidates_require_validated_memory_record(self):
-        from agenthub.processing.episode_pipeline import _observation
-        with self.assertRaisesRegex(ValueError,'validated_memory_record_required'):
-            _observation({'title':'Unvalidated old candidate'}, {})
 
 class OneAuthority(unittest.TestCase):
     def test_both_store_entrypoints_use_the_same_indexed_search(self):
@@ -55,7 +39,7 @@ class OneAuthority(unittest.TestCase):
     def test_corpus_initializers_require_migrated_postgres(self):
         from unittest.mock import Mock
         import sqlite3
-        names=('knowledge','episode_pipeline','temporal','metadata','context_delivery')
+        names=('knowledge','context_delivery')
         for name in names:
             initialize=importlib.import_module('agenthub.processing.'+name).initialize
             db=Mock();initialize(db);db.require_schema.assert_called_once_with()

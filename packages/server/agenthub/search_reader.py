@@ -70,7 +70,6 @@ def restrict(store, state, ctx, project=None, *, reach=None, recall_filter=None)
     whole predicate for every other one.
     """
     from psycopg import sql
-    from agenthub.draft_review import selected_documents
     if reach is not None and reach not in REACHES:
         raise ValueError('invalid_search_scope')
     store.current_identity(state.db, ctx)
@@ -83,7 +82,7 @@ def restrict(store, state, ctx, project=None, *, reach=None, recall_filter=None)
         # now need only `read`. Originals use agenthub.raw_access.
         source_read='read' in ctx['actions'],
         delegated=sorted(ctx['delegated_projects']) if ctx.get('delegated_projects') is not None else None,
-        review=selected_documents(store, ctx), releases=releases)
+        review=None, releases=releases)
     if reach is not None:
         context['reach'] = reach
     if recall_filter is not None:

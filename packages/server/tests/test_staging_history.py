@@ -16,7 +16,7 @@ from agenthub.enterprise import Denied
 from agenthub.source_objects import FileSourceObjects
 from test_cloud_postgres import PostgresFixture,SERVICES
 
-FIXTURE=Path(__file__).parents[1]/'tools/fixtures/local_staging_readiness_v1/retrieval_lane.json'
+FIXTURE=Path(__file__).parent/'fixtures/local_staging_readiness_v1/retrieval_lane.json'
 
 
 @unittest.skipUnless(SERVICES,'explicit isolated real PostgreSQL required')
@@ -44,24 +44,8 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
     def search(self,query,actor=None):
         return self.store.search(actor or self.bob,{'version':VERSION,'query':query,'project':'maple','mode':'explicit'})
 
-    def test_native_explicit_validity_current_and_asof_keep_capture_separate(self):
-        sources=self.upload_history()
-        before=self.search('What was the Leaf dryer moisture threshold as of 2026-09-15?')
-        current=self.search('What is the Leaf dryer moisture threshold now?')
-        self.assertTrue(before['answerable']);self.assertIn('9 percent',str(before['results']))
-        self.assertTrue(current['answerable']);self.assertIn('6 percent',str(current['results']))
-        with self.store.open() as state:
-            old=state.db.execute('SELECT active FROM enterprise_sources WHERE id=?',(sources[0]['source_id'],)).fetchone()
-            self.assertEqual(old[0],0)
-            assertions=state.db.execute('SELECT valid_from,valid_basis,recorded_at FROM knowledge_temporal_assertions').fetchall()
-            self.assertTrue(assertions);self.assertTrue(all(row['valid_basis']=='explicit_source' for row in assertions))
-            self.assertTrue(any(row['valid_from']=='2026-09-01' for row in assertions))
-            self.assertFalse(any(row['valid_from']=='2026-09-10T12:00:00Z' for row in assertions))
-        detail=self.store.detail(self.bob,before['results'][0]['id'])
-        self.assertIn('9 percent',str(detail));self.assertLessEqual(len(json.dumps(detail,ensure_ascii=True)),4000)
-
-    def test_current_grant_revocation_denies_historical_search_detail_and_bytes(self):
-        sources=self.upload_history();query='What was the Leaf dryer moisture threshold as of 2026-09-15?'
+    def test_current_grant_revocation_denies_search_detail_and_bytes(self):
+        sources=self.upload_history();query='What is the Leaf dryer moisture threshold?'
         before=self.search(query);self.assertTrue(before['answerable'])
         self.store.connection_policy(self.alice,'native-history',reader_ids=['alice'])
         self.assertFalse(self.search(query)['answerable'])
@@ -75,15 +59,6 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
         self.assertFalse(self.search('What was the Leaf dryer moisture threshold as of 2026-09-15?')['answerable'])
         for source in sources:
             with self.assertRaises(Denied):self.service.fetch(self.bob,source['source_id'])
-
-    def test_unknown_validity_does_not_use_capture_time(self):
-        self.service.ingest(self.alice,'native-history','untimed-dryer','1','untimed.md',
-            io.BytesIO(b'# Untimed dryer specification\nThe moisture threshold is 7 percent.\n'),
-            title='Untimed dryer specification',occurred_at='2026-09-10T12:00:00Z')
-        self.assertFalse(self.search('What was the Untimed dryer moisture threshold as of 2026-09-15?')['answerable'])
-        with self.store.open() as state:
-            rows=state.db.execute('SELECT valid_from,valid_basis FROM knowledge_temporal_assertions').fetchall()
-            self.assertFalse(any(row['valid_from']=='2026-09-10T12:00:00Z' for row in rows))
 
     def test_same_title_originals_remain_distinct_and_explicit_selection_exact(self):
         original=self.fixture['originals'];sources=[]
@@ -101,25 +76,5 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
             with stream:actual=stream.read()
             self.assertEqual(actual,item['bytes'].encode());self.assertEqual(headers['X-Source-SHA256'],hashlib.sha256(actual).hexdigest())
         with self.assertRaises(Denied):self.service.fetch(self.bob,sources[0]['source_id'],version='9')
-
-    def test_authorized_projection_repairs_absent_derivative_without_source_changes(self):
-        sources=self.upload_history()
-        with self.store.open() as state,state.db:
-            before=[tuple(row[key] for key in ('id','source_version','active','payload_hash')) for row in state.db.execute('SELECT id,source_version,active,payload_hash FROM enterprise_sources ORDER BY id')]
-            # Pre-feature authority has originals/passages but zero assertions.
-            state.db.execute('DELETE FROM knowledge_temporal_relations')
-            state.db.execute('DELETE FROM knowledge_temporal_evidence')
-            state.db.execute('DELETE FROM knowledge_temporal_assertions')
-        for source in sources:self.service.project_temporal(self.bob,source['source_id'])
-        self.assertTrue(self.search('What was the Leaf dryer moisture threshold as of 2026-09-15?')['answerable'])
-        with self.store.open() as state:
-            after=[tuple(row[key] for key in ('id','source_version','active','payload_hash')) for row in state.db.execute('SELECT id,source_version,active,payload_hash FROM enterprise_sources ORDER BY id')]
-            count=state.db.execute('SELECT count(*) FROM knowledge_temporal_assertions').fetchone()[0]
-        self.assertEqual(before,after)
-        for source in sources:self.service.project_temporal(self.bob,source['source_id'])
-        with self.store.open() as state:self.assertEqual(count,state.db.execute('SELECT count(*) FROM knowledge_temporal_assertions').fetchone()[0])
-        self.store.connection_policy(self.alice,'native-history',reader_ids=['alice'])
-        with self.assertRaises(Denied):self.service.project_temporal(self.bob,sources[0]['source_id'])
-
 
 if __name__=='__main__':unittest.main()

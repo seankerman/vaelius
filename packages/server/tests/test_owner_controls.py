@@ -67,9 +67,8 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
 
     def drain(self):
         from agenthub.source_index import SourceIndex
-        with patch('agenthub.cloud_execution.execution_from_config', side_effect=AssertionError('no LLM')):
-            while SourceIndex(self.store).run(max_sources=50, max_seconds=30)['completed_sources']:
-                pass
+        while SourceIndex(self.store).run(max_sources=50, max_seconds=30)['completed_sources']:
+            pass
 
     def found(self, ctx, project='maple', **kwargs):
         cards = self.store.search(ctx, {'version': QUERY_VERSION, 'query': self.fixture['query'],

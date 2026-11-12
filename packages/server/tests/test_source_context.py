@@ -15,7 +15,7 @@ class SourceContextTests(HybridPolicyTests):
         with self.store.open() as st:
             rev=st.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?',(doc,)).fetchone()[0]
             body=st.db.execute('SELECT body FROM memories WHERE id=?',(source,)).fetchone()[0]
-            from agenthub.processing.episode_curator import _spans
+            from agenthub.source_evidence import _spans
             with st.db:
                 st.db.execute('DELETE FROM knowledge_support WHERE revision_id=?',(rev,))
                 st.db.execute("INSERT INTO knowledge_support VALUES(?,?,?,'supports','unknown',0)",

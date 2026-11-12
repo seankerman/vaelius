@@ -27,7 +27,7 @@ class FrozenSelectionPostgres(PostgresFixture,unittest.TestCase):
     def tearDown(self):self.postgres_teardown()
 
     def test_frozen_exact_source_native_cases_and_delivery_caps(self):
-        fixture=json.loads((Path(__file__).parents[1]/'tools/fixtures/local_staging_readiness_v1/retrieval_lane.json').read_text())
+        fixture=json.loads((Path(__file__).parent/'fixtures/local_staging_readiness_v1/retrieval_lane.json').read_text())
         for i,case in enumerate(fixture['selection_cases']):
             source=self.service.ingest(self.ctxs['alice'],'selection-native',str(i),'1',str(i)+'.md',
                 io.BytesIO(case['body'].encode()),title=case['title'])

@@ -1,7 +1,8 @@
 # Source-first service defaults
 
-The runtime defaults to `retrieval.corpus: sources`,
-`processing.curation_enabled: false`, and `reranking.enabled: false`.
+The runtime defaults to `retrieval.corpus: sources`. Model curation and model
+reranking were removed: `processing.curation_enabled: true`, `reranking.enabled:
+true` and a `models` section are refused at startup.
 The client is unchanged: deterministic secret cleaning, capture, transport and
 delivery. Permitted person/location facts remain in the private authority; this
 is not blanket PII anonymization. Raw chat passages are redacted text visible only
@@ -49,13 +50,10 @@ was ingested by that cutoff. This is chronological evidence, not an inferred
 validity period. Unknown timestamps cannot satisfy a dated filter. Native original
 documents and private-preference tools remain available.
 
-To explicitly inspect retained derived documents, set `retrieval.corpus: all`.
-To resume model enrichment, set `processing.curation_enabled: true` and use the
-existing private worker configuration with explicit `--live` or `--provider-free`.
-Existing jobs, model outputs, checkpoints and accounting are preserved. The worker
-configuration must name its provider and model, and `runtime.json` `models` must
-allowlist them ([model providers](MODEL_PROVIDERS.md)). Model reranking is
-independently opt-in under `reranking`; see [its configuration](SERVING_RERANKER.md).
+To explicitly inspect retained reviewed notes and preferences, set
+`retrieval.corpus: all`. Cards an earlier model curator wrote stay in their tables
+(no migration drops them) but search no longer returns them, and dated search
+(`as_of`, `time_mode`) needs the source corpus.
 
 Migration 031 is additive and tightens raw-passage RLS for the restricted reader.
 Migration 032 supplies a fixed full-text lookup so PostgreSQL can use its GIN

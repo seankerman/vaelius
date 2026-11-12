@@ -16,6 +16,11 @@ from agenthub.enterprise import Denied
 from agenthub.request_timing import timed, span
 
 FILTERS={'domain','knowledge_type','subject','event_day'}
+# Model curation was removed. Cards an earlier curator wrote carry this policy in
+# `memory_context`; search no longer serves them, and the checks below that name
+# the policy only keep such a retained card from passing as an ordinary note.
+DURABLE_POLICY='durable-memory-8'
+DURABLE_FACETS=('activity','artifact','decision','fact','procedure','learning')
 
 def _vector(values):
     normalized=normalize_vector(values,DIMENSION)
@@ -75,9 +80,15 @@ def _clauses(text):
 
 
 def _actor(query):
-    from agenthub.processing.durable_memory import intent
-    plan=intent(query)
-    if plan and plan.get('reason_actor'):return plan['reason_actor']
+    q=query.casefold()
+    if re.search(r"\bwhy\b",q) and not re.search(r"\b(work(?:ed)? on|what did .* do|activities|where|location)\b",q) and not re.search(
+            r"\b(?:what|which)\b.*\b(?:did|have)\s+i\s+(?:decide|choose|chose|select|pick|settle\s+on)\b",q):
+        named=re.search(r"\bwhy\s+(?:did|do|does|would|should)\s+(.+?)\s+(?:choose|chose|use|prefer|move|save|recommend|consider|reject|sell|buy|switch|decide|select|change)\b",q)
+        named=re.search(r"\bwhy\s+(?:did|do|does|would|should|am|are|is|was|were|have|has)\s+(i|the user|you|the agent|the assistant)\b",q) or named
+        if named:
+            actor=named.group(1).strip()
+            actor={"i":"user","the user":"user","you":"agent","the agent":"agent","the assistant":"agent","we":None}.get(actor,actor)
+            if actor:return actor
     match=re.search(r"\b([A-Z][A-Za-z_]+)['’]s\b|\bby\s+([A-Z][A-Za-z_]+)\b",query)
     return next((v for v in match.groups() if v),None) if match else None
 
@@ -155,12 +166,11 @@ def _supported_claim(query,claim):
     reason_request=bool(re.search(r'\b(?:why|reason|rationale)\b',q))
     curated=None;reason_evidence=''
     if reason_request and 'memory_context' in claim:
-        from agenthub.processing.durable_memory import VERSION,FACETS
         curated=claim['memory_context']
-        if not isinstance(curated,dict) or curated.get('policy')!=VERSION:return False
+        if not isinstance(curated,dict) or curated.get('policy')!=DURABLE_POLICY:return False
         facets=curated.get('facets');actors=curated.get('actors')
         quote=curated.get('reason_quote');speaker=curated.get('reason_actor')
-        if (not isinstance(facets,list) or not facets or set(facets)-set(FACETS) or
+        if (not isinstance(facets,list) or not facets or set(facets)-set(DURABLE_FACETS) or
                 not isinstance(actors,list) or not isinstance(quote,str) or not quote.strip() or
                 not isinstance(speaker,str) or not speaker or speaker not in actors or
                 not isinstance(curated.get('subject'),str) or not curated['subject'].strip()):return False
@@ -406,8 +416,7 @@ def _facets_supported(query,claim,ctx,semantic_score=None,*,balanced=False):
     text=' '.join(prose)
     memory=claim.get('memory_context',{})
     if memory:
-        from agenthub.processing.durable_memory import VERSION
-        canonical=memory.get('policy')==VERSION
+        canonical=memory.get('policy')==DURABLE_POLICY
         historical_event=re.search(
             r'\b(?:first|initial|earliest|previous|last)\s+(?:[\w-]+\s+){0,2}'
             r'(?:playtest|trial|test|run|build|experiment|iteration|session)\b',q)
@@ -434,8 +443,7 @@ def _facets_supported(query,claim,ctx,semantic_score=None,*,balanced=False):
         # An explicitly attributed assistant recommendation is a historical
         # fact, not a private preference of the caller. The original role and
         # attribution still must have survived canonical validation.
-        from agenthub.processing.durable_memory import VERSION
-        if (memory.get('policy')!=VERSION or 'agent' not in memory.get('actors',[]) or
+        if (memory.get('policy')!=DURABLE_POLICY or 'agent' not in memory.get('actors',[]) or
                 memory.get('attribution') not in {'agent_reported','execution_result'}):return False
         actor=None
     if preference and not reported:
@@ -452,8 +460,7 @@ def _facets_supported(query,claim,ctx,semantic_score=None,*,balanced=False):
         # evidence owner; never through the author of a derived summary.
         owners=claim.get('_verified_source_owners',[])
         if memory.get('reason_actor')=='user' and owners==[actor]:attributed=text
-        from agenthub.processing.durable_memory import VERSION
-        if (memory.get('policy')==VERSION and memory.get('attribution')=='user_reported'
+        if (memory.get('policy')==DURABLE_POLICY and memory.get('attribution')=='user_reported'
                 and 'user' in memory.get('actors',[]) and owners==[actor]
                 and (not preference or re.search(
                     r'\b(?:the\s+)?user\s+(?:prefer\w*|want\w*|chose|choose\w*|'
@@ -478,9 +485,8 @@ def _facets_supported(query,claim,ctx,semantic_score=None,*,balanced=False):
     if reason:
         memory=claim.get('memory_context')
         if memory is not None:
-            from agenthub.processing.durable_memory import VERSION,FACETS
-            if (not isinstance(memory,dict) or memory.get('policy')!=VERSION or
-                not isinstance(memory.get('facets'),list) or set(memory['facets'])-set(FACETS) or
+            if (not isinstance(memory,dict) or memory.get('policy')!=DURABLE_POLICY or
+                not isinstance(memory.get('facets'),list) or set(memory['facets'])-set(DURABLE_FACETS) or
                 not isinstance(memory.get('actors'),list) or memory.get('reason_actor') not in memory['actors'] or
                 not isinstance(memory.get('reason_quote'),str) or not memory['reason_quote'].strip()):return False
             # The canonical compiler already checked the reason relation,
@@ -753,14 +759,12 @@ class HybridRetrievalMixin:
         if model is None:raise ValueError('local_embedding_model_required')
         if not 1<=max_documents<=100000:raise ValueError('embedding_bound')
         generation='vectors-'+uuid.uuid4().hex
-        from agenthub.draft_review import selected_documents
-        review=selected_documents(self)
         with self.open() as state,state.db:
             rows=state.db.execute('''SELECT d.document_id,d.active_revision_id,r.claim_json
                 FROM knowledge_documents d JOIN knowledge_revisions r ON r.revision_id=d.active_revision_id
                 JOIN enterprise_documents e ON e.id=d.document_id WHERE d.lifecycle='active' AND e.active=1
-                AND e.tenant=?'''+(' AND d.document_id=ANY(?::text[])' if review is not None else '')+' ORDER BY d.document_id LIMIT ?',
-                (self.tenant_id,*([review] if review is not None else []),max_documents+1)).fetchall()
+                AND e.tenant=? ORDER BY d.document_id LIMIT ?''',
+                (self.tenant_id,max_documents+1)).fetchall()
             if len(rows)>max_documents:raise ValueError('embedding_document_bound')
             state.db.execute('INSERT INTO cloud_vector_generations(id,model_key,dimension,status,created) VALUES(?,?,?,\'building\',?)',
                 (generation,self.semantic_model_key,DIMENSION,time.time()))
@@ -822,12 +826,6 @@ class HybridRetrievalMixin:
         compact, policy_args = predicate(ctx, self._reader_workspaces(state.db, ctx))
         sql += compact
         args = (ctx['tenant'], scopes, ctx['tenant'], ctx['actor'], project, ctx['actor'], ctx['tenant'], *policy_args)
-        from agenthub.draft_review import selected_documents
-        review = selected_documents(self, ctx)
-        if review is not None:
-            sql = sql.replace("g.status='active'))", "g.status='active') OR d.document_id=ANY(?::text[]))")
-            args = (*args[:5], review, *args[5:], review)
-            sql += ' AND d.document_id=ANY(?::text[])'
         return (sql, args)
 
     def _authorized_documents(self,state,ctx,project=None):
@@ -1001,44 +999,12 @@ class HybridRetrievalMixin:
                 output['results'].pop();output['answerable']=False
             if not output['answerable']:output['coverage_gaps']=['one_or_more_requested_facets_unsupported']
             return output
-        candidates=None
-        temporal_requested=bool(value.get('as_of') or value.get('time_mode') or
-            re.search(r'\bas\s+of\b|\b\d{4}-\d{2}-\d{2}\b',value['query'],re.I))
-        if not temporal_requested and re.search(r'\b(?:now|current|currently|latest)\b',value['query'],re.I):
-            # Current-state prose remains searchable, but typed validity must not
-            # be bypassed by returning an expired assertion's parent document.
-            candidates=self.candidates(ctx,value['query'],project=value.get('project'),scope=value.get('scope','project'),filters=filters,
-                limit=self.retrieval_candidate_limit,vector=self.hybrid_enabled,lexical=self.retrieval_lexical_enabled)
-            with self.open() as state:
-                temporal_requested=bool(state.db.execute(
-                    'SELECT 1 FROM knowledge_temporal_assertions WHERE document_id=ANY(?::text[]) LIMIT 1',
-                    ([c['document_id'] for c in candidates],)).fetchone())
-        if temporal_requested:
-            with self.open() as state:
-                scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') or ctx.get('session_label_request') else value.get('project'))
-                # The `read` filter narrows this path too (no statement without one).
-                keep=self._recall_workspaces(state.db,ctx,filters.get('workspaces'),value.get('project'))
-                temporal=self.temporal_search(state,ctx,value,scopes,
-                    candidate_ids=[c['document_id'] for c in candidates] if candidates is not None else None,
-                    workspaces=keep)
-                if temporal is not None:
-                    if value.get('mode')=='automatic' and value.get('session'):
-                        from agenthub.processing.context_delivery import current_epoch
-                        receiver=self._receiver(ctx,value['session']);context=current_epoch(state.db,receiver)
-                        since=0 if context['continuity_status']=='known' else time.time()-300
-                        receipts=state.db.execute("""SELECT document_id,revision FROM enterprise_receipts
-                            WHERE session=? AND epoch=? AND status='offered' AND created>=?
-                            AND document_id=ANY(?::text[])""",(receiver,str(context['epoch']),since,
-                            [card['id'] for card in temporal['results']])).fetchall()
-                        seen={(r['document_id'],r['revision']) for r in receipts}
-                        temporal['results']=[c for c in temporal['results'] if (c['id'],c['revision']) not in seen]
-                        temporal['answerable']=bool(temporal['results'])
-                    if filters:
-                        temporal['results']=[card for card in temporal['results'] if self._filter_card(state,card,filters)]
-                        temporal['answerable']=temporal['answerable'] and bool(temporal['results'])
-                    return temporal
-        if candidates is None:
-            candidates=self.candidates(ctx,value['query'],project=value.get('project'),scope=value.get('scope','project'),filters=filters,limit=self.retrieval_candidate_limit,vector=self.hybrid_enabled,lexical=self.retrieval_lexical_enabled)
+        if (value.get('as_of') or value.get('time_mode') or
+                re.search(r'\bas\s+of\b|\b\d{4}-\d{2}-\d{2}\b',value['query'],re.I)):
+            # Dated search over curated assertions was removed. Only the source corpus is
+            # dated: abstain here, never answer a dated question from current notes.
+            return {'results':[],'answerable':False,'coverage_gaps':['dated_search_requires_source_corpus']}
+        candidates=self.candidates(ctx,value['query'],project=value.get('project'),scope=value.get('scope','project'),filters=filters,limit=self.retrieval_candidate_limit,vector=self.hybrid_enabled,lexical=self.retrieval_lexical_enabled)
         if candidate_pool:
             # Internal serving stage: permissions already scoped candidate SQL.
             # No heuristic relevance or wire-size cuts before model selection.
@@ -1068,10 +1034,7 @@ class HybridRetrievalMixin:
         offered=[];selection_rows=[];complete=False;capture_gaps=[]
         with self.open() as state:
             allowed=[candidate['document_id'] for candidate in candidates]
-            from agenthub.processing.durable_memory import retrieve as durable_retrieve
             scopes=self._readable_scopes(state.db,ctx,None if value.get('scope')=='all' or ctx.get('session_label') or ctx.get('session_label_request') else value.get('project'))
-            durable=durable_retrieve(state,value['query'],scopes[0],read_projects=scopes,authorized_document_ids=allowed) if scopes and self.retrieval_selection_policy=='baseline' else None
-            durable_ids={row['document_id'] for row in durable} if durable is not None else None
             owners={}
             if allowed and self.retrieval_selection_policy in {'facets_v1','facets_v2'}:
                 owner_rows=state.db.execute('''SELECT DISTINCT x.document_id,p.definition->>'owner' AS owner
@@ -1088,7 +1051,8 @@ class HybridRetrievalMixin:
                         line.strip() and not re.match(r'^\s*#{1,6}\s',line)
                         for line in claim.get('lesson','').splitlines()):continue
                 if compatibility(claim,value['query'],scopes[0])[0]=='incompatible':continue
-                if 'memory_context' in claim and durable_ids is not None and candidate['document_id'] not in durable_ids:continue
+                curated=claim.get('memory_context')
+                if isinstance(curated,dict) and str(curated.get('policy','')).startswith('durable-memory-'):continue
                 if self.retrieval_selection_policy=='baseline' and not supported_answer(value['query'],claim):continue
                 if receiver and state.db.execute("SELECT 1 FROM enterprise_receipts WHERE session=? AND epoch=? AND document_id=? AND revision=? AND status='offered' LIMIT 1",(receiver,epoch,candidate['document_id'],candidate['revision_id'])).fetchone():continue
                 if self.retrieval_selection_policy in {'facets_v1','facets_v2'}:
@@ -1140,15 +1104,9 @@ class HybridRetrievalMixin:
         with self.open() as state:
             self.current_identity(state.db,ctx);self._need(ctx,'read')
             from agenthub.search_permissions import current_document_revisions
-            ordinary=[card for card in result['results'] if card.get('evidence_status')!='source_linked_temporal']
-            current_revisions=current_document_revisions(self,state.db,ctx,ordinary)
+            current_revisions=current_document_revisions(self,state.db,ctx,result['results'])
             for card in result['results']:
-                if card.get('evidence_status')=='source_linked_temporal':
-                    current=self._temporal_allowed(state.db,ctx,card['id'],known_at=value.get('time_mode')=='known_at')
-                    valid=current and current['revision_id']==card['revision']
-                else:
-                    valid=current_revisions.get(card['id'])==card['revision']
-                if valid:final.append(card)
+                if current_revisions.get(card['id'])==card['revision']:final.append(card)
         if len(final)==len(result['results']):return result
         output=dict(result,results=final,answerable=False)
         if 'support' in output:output['support']='partial' if final else 'none'
@@ -1164,118 +1122,3 @@ class HybridRetrievalMixin:
         claim=json.loads(row[0])
         return all(not filters.get(key) or claim.get(key)==filters[key] for key in ('domain','knowledge_type')) and (
             not filters.get('subject') or filters['subject'].casefold() in [str(s).casefold() for s in claim.get('subjects',[])])
-
-    def timeline(self,ctx,document_id,*,offset=0,limit=3,cursor=None,cursor_mode=False):
-        if type(offset) is not int or not 0<=offset<=1000 or type(limit) is not int or not 1<=limit<=3:raise ValueError('timeline_bounds')
-        if (type(cursor_mode) is not bool or (cursor is not None and
-                (not cursor_mode or not isinstance(cursor,str) or
-                 not re.fullmatch(r'tc1_[0-9a-f]{64}',cursor))) or
-                (cursor_mode and offset!=0)):
-            raise ValueError('timeline_cursor_request')
-        from agenthub.processing.knowledge import active_generation_id
-        from agenthub.processing.episode_pipeline import episode_links_for_document
-        self._need(ctx,'read')
-        with self.open() as state:
-            doc=self._document_allowed(state.db,ctx,document_id)
-            if not doc:raise Denied()
-            generation=active_generation_id(state.db)
-            if cursor is not None and not generation:raise ValueError('timeline_cursor_stale')
-            if not generation:return {'id':document_id,'revision':doc['active_revision_id'],'episodes':[],
-                'coverage_gaps':['generation_unavailable'],'has_more':False,
-                **({'next_cursor':None} if cursor_mode else {})}
-            # The public offset counts visible episodes. Scanning raw links a
-            # page at a time prevents hidden links from shifting the next page
-            # or revealing their number in a returned offset or gap marker.
-            visible=[];raw_offset=0;scan_bound=False;link_gap=False
-            while cursor_mode or len(visible)<offset+limit+1:
-                if raw_offset>1000:
-                    scan_bound=True;break
-                selected=episode_links_for_document(state.db,generation,doc['internal_project'],
-                    document_id,offset=raw_offset,limit=20)
-                rows=selected.get('episodes',[])
-                if len(rows)>20:raise ValueError('timeline_link_page_bound')
-                if selected.get('coverage_gaps'):link_gap=True
-                for entry in rows:
-                    if self._timeline_episode_allowed(state.db,ctx,generation,entry):visible.append(entry)
-                raw_offset+=len(rows)
-                if not selected.get('has_more',False):break
-                if not rows:scan_bound=True;break
-            if cursor_mode and scan_bound:raise ValueError('timeline_cursor_scan_bound')
-            cursor_for=None
-            if cursor_mode:
-                # A cursor is a state fingerprint, not an authorization grant.
-                # It hashes only authorized projections and is checked against
-                # a fresh current-policy scan before any continuation is sent.
-                identity={key:ctx.get(key) for key in ('tenant','actor','enrollment','acting_for')}
-                identity['delegated_projects']=sorted(ctx.get('delegated_projects') or [])
-                projection=[{key:entry.get(key) for key in ('episode_id','session','source_turn',
-                    'summary_revision','summary','source_range','coverage_gaps','supporting_source_ids')}
-                    for entry in visible]
-                fingerprint=hashlib.sha256(json.dumps([identity,document_id,doc['active_revision_id'],
-                    generation,projection],sort_keys=True,ensure_ascii=True).encode()).hexdigest()
-                def cursor_for(index):
-                    return 'tc1_'+hashlib.sha256((fingerprint+':'+str(index)).encode()).hexdigest()
-                if cursor is not None:
-                    found=next((index for index in range(min(len(visible),1000)+1)
-                        if cursor_for(index)==cursor),None)
-                    if found is None:raise ValueError('timeline_cursor_stale')
-                    offset=found
-            gaps=[]
-            if link_gap:gaps.append('timeline_link_unavailable')
-            # A raw scan bound cannot distinguish restricted links from a
-            # permitted continuation; report incompleteness only when this
-            # request already has a visible episode.
-            if scan_bound and visible:gaps.append('timeline_scan_bound')
-            output={'id':document_id,'revision':doc['active_revision_id'],'episodes':[],
-                    'coverage_gaps':gaps,'has_more':False}
-            if cursor_mode:output['next_cursor']='tc1_'+'0'*64
-            page=visible[offset:offset+limit]
-            for entry in page:
-                item={k:entry.get(k) for k in ('summary','summary_revision','source_range','coverage_gaps')}
-                trial={**output,'episodes':output['episodes']+[item]}
-                if len(json.dumps(trial,ensure_ascii=True))<=4000:
-                    output['episodes'].append(item);continue
-                if output['episodes']:break
-                # A single long summary still consumes exactly one visible
-                # offset. Keep its evidence handle and explicit truncation gap.
-                item['summary']=str(item.get('summary') or '')
-                item['coverage_gaps']=list(dict.fromkeys([*(item.get('coverage_gaps') or []),
-                    'episode_summary_truncated']))
-                item['source_range']=item.get('source_range')
-                trial={**output,'episodes':[item]}
-                if len(json.dumps(trial,ensure_ascii=True))>4000:
-                    item['coverage_gaps']=['episode_summary_truncated']
-                    item['source_range']=None
-                summary=item['summary'];lo=0;hi=len(summary)
-                while lo<hi:
-                    middle=(lo+hi+1)//2;item['summary']=summary[:middle]
-                    if len(json.dumps({**output,'episodes':[item]},ensure_ascii=True))<=4000:lo=middle
-                    else:hi=middle-1
-                item['summary']=summary[:lo]
-                output['episodes'].append(item)
-                break
-            emitted=len(output['episodes'])
-            more=len(visible)>offset+emitted
-            if more and offset+emitted>1000:
-                output['coverage_gaps'].append('timeline_offset_bound')
-            else:output['has_more']=more
-            if cursor_mode:output['next_cursor']=cursor_for(offset+emitted) if output['has_more'] else None
-            current=self._document_allowed(state.db,ctx,document_id)
-            if not current or current['active_revision_id']!=doc['active_revision_id']:raise Denied()
-            if active_generation_id(state.db)!=generation:raise Denied()
-            if any(not self._timeline_episode_allowed(state.db,ctx,generation,entry)
-                   for entry in visible):raise Denied()
-            if len(json.dumps(output,ensure_ascii=True))>4000:raise ValueError('timeline_response_bound')
-            return output
-
-    def _timeline_episode_allowed(self,db,ctx,generation,entry):
-        job=db.execute('''SELECT source_ids FROM curation_episode_jobs WHERE generation_id=? AND episode_id=?
-            AND session=? AND turn=? AND status IN ('done','withdrawn')''',
-            (generation,entry.get('episode_id'),entry.get('session'),entry.get('source_turn'))).fetchone()
-        if not job:return False
-        sources=json.loads(job['source_ids']);required=set(sources)|set(entry.get('supporting_source_ids',[]))
-        if not required:return False
-        for ident in required:
-            source=db.execute('SELECT * FROM enterprise_sources WHERE id=?',(ident,)).fetchone()
-            if not self._visible_source(db,ctx,source):return False
-        return True

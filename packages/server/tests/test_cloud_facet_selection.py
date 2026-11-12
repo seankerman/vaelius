@@ -1,5 +1,5 @@
 import unittest
-from agenthub.processing.durable_memory import VERSION
+from agenthub.cloud_retrieval import DURABLE_POLICY as VERSION
 from agenthub.cloud_retrieval import select_supported_cards
 
 def row(ident,text,*,cosine=.8,rrf=.03,role='agent'):

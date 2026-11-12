@@ -12,7 +12,6 @@ from pathlib import Path
 import time
 import uuid
 
-from agenthub.backend_worker import Worker
 from agenthub.cloud_ops import Meter
 from agenthub.enterprise import Denied
 from agenthub.postgres import connect, TenantRegistry
@@ -300,32 +299,9 @@ def run_fair_index_workers(indexes,embedder,*,max_jobs=100,now=None):
 
 class Maintenance:
     """Bounded commands for one explicitly selected tenant; no inference calls."""
-    def __init__(self,store,config):
+    def __init__(self,store):
+        store.require_ready()
         self.store=store
-        # Worker recovery/status are the canonical state machine. live=False
-        # does not dispatch and does not touch the installation/campaign ledger.
-        self.worker=Worker(store,config,live=False)
-
-    def hold(self,job_ids):
-        if (not isinstance(job_ids,list) or not 1<=len(job_ids)<=100 or
-                len(set(job_ids))!=len(job_ids) or any(not isinstance(j,str) or not j or len(j)>128 for j in job_ids)):
-            raise ValueError('explicit_bounded_jobs_required')
-        with self.store.delivery_lock(),self.store.open() as state,state.db:
-            rows=[]
-            for job_id in sorted(job_ids):
-                row=state.db.execute('SELECT * FROM backend_jobs WHERE id=? FOR UPDATE',(job_id,)).fetchone()
-                if not row or row['status'] not in {'pending','running','held'}:
-                    raise ValueError('holdable_worker_job_required')
-                rows.append(row)
-            for row in rows:
-                state.db.execute("UPDATE backend_jobs SET status='held',fence=?,lease_until=0,last_error='operator_hold',updated=? WHERE id=?",
-                    (uuid.uuid4().hex,time.time(),row['id']))
-                self.store._audit(state.db,{'tenant':self.store.tenant_id,'actor':'operator'},'worker_hold','held',row['id'])
-        return {'job_ids':sorted(job_ids),'held':len(rows),'provider_calls':0}
-
-    def retry(self,job_id,*,retain_validated=False):
-        with self.store.delivery_lock():
-            return self.worker.recover(job_id,retain_validated=retain_validated)|{'provider_calls':0}
 
     def admission(self,value):
         if set(value)-{'max_parallel','max_attempts','enabled'}:raise ValueError('invalid_admission_fields')
@@ -470,7 +446,7 @@ def retire(profile,tenant,*,expected_database,objects,apply=False,max_objects=10
 def execute(profile,tenant,command,*,value=None,token_file=None,output=None,job_id=None,
             connection_id=None,expected_database=None,apply=False):
     profile,operator,item=_operator(profile,tenant,expected_database if command=='tenant-retire' else None)
-    from agenthub.cloud_local import runtime, worker_config
+    from agenthub.cloud_local import runtime
     from agenthub.object_config import objects_from_settings
     settings,registry=runtime(profile)
     if command=='tenant-retire':
@@ -510,13 +486,10 @@ def execute(profile,tenant,command,*,value=None,token_file=None,output=None,job_
                 'elapsed_seconds':max_seconds-max(0,deadline-time.monotonic()),'provider_calls':0}
         else:raise ValueError('invalid_maintenance_command')
     else:
-        maintenance=Maintenance(store,worker_config(profile))
-        if command=='hold':result=maintenance.hold(value['job_ids'])
-        elif command=='retry':result=maintenance.retry(job_id,retain_validated=value.get('retain_validated',False))
-        elif command=='admission':result=maintenance.admission(value)
+        maintenance=Maintenance(store)
+        if command=='admission':result=maintenance.admission(value)
         elif command=='reconcile-usage':result=maintenance.reconcile(value)
         elif command=='usage':result=Meter(store).status()
-        elif command=='queue':result=maintenance.worker.status()
         elif command=='export':
             if not output:raise ValueError('new_export_destination_required')
             result=maintenance.export(objects_from_settings(settings),output,**value)
@@ -591,7 +564,7 @@ def lifecycle_command(store,command,value,objects,*,apply=False,token_file=None,
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['hold','retry','admission','reconcile-usage','usage','queue',
+    parser.add_argument('command',choices=['admission','reconcile-usage','usage',
         'source','connection','export','tenant-retire','index-reconcile','index-status',
         'index-run','index-retry',*LIFECYCLE_COMMANDS])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',required=True)

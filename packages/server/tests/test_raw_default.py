@@ -32,8 +32,7 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
 
     def drain(self,**kwargs):
         from agenthub.source_index import SourceIndex
-        with patch('agenthub.cloud_execution.execution_from_config',side_effect=AssertionError('no LLM')):
-            return SourceIndex(self.store).run(max_sources=20,max_seconds=20,**kwargs)
+        return SourceIndex(self.store).run(max_sources=20,max_seconds=20,**kwargs)
 
     def search(self,ctx=None,**kwargs):
         return self.store.search(ctx or self.ctx,{'version':'enterprise-local-1',
@@ -121,12 +120,6 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
                 self.store.validate_search_delivery(self.ctx,{},dict(results=selected,answerable=False))
             counts.append(len(sql))
         self.assertEqual(counts[0],counts[1])
-
-    def test_enrichment_is_disabled_by_runtime_default(self):
-        from agenthub.backend_worker import Worker
-        worker=Worker.__new__(Worker);worker.store=self.store
-        with patch.object(worker,'prepare',side_effect=AssertionError('must stay idle')):
-            self.assertEqual(worker.run()['calls'],0)
 
     def test_vector_index_is_incremental_and_raw_denial_applies_to_both_channels(self):
         from agenthub.cloud_maintenance import IndexFreshness
@@ -222,26 +215,5 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
         following=client.enterprise_call('fetch_memory',{'id':card['id'],'revision':card['revision'],
             'source_offset':page['next_offset']})
         self.assertGreater(following['sources'][0]['start'],page['sources'][0]['start'])
-
-    def test_optional_ranker_keeps_long_raw_evidence_discoverable(self):
-        from starlette.testclient import TestClient
-        from agenthub.cloud_api import create_app
-        self.ingest(text='Orchard dataset '+('long supporting evidence. '*80));self.drain()
-        store=self.store
-        class Registry:
-            def store_for_token(self,token):return store
-        class Ranker:
-            def rerank(self,query,cards,**kwargs):
-                return {'results':cards[:1],'answerable':True,'support':'complete',
-                    'reranking':{'status':'returned'}}
-        store.serving_reranker=Ranker()
-        client=TestClient(create_app(Registry(),allowed_hosts=['testserver']))
-        response=client.post('/enterprise/v3/search',headers={'Authorization':'Bearer '+self.tokens['alice']},
-            json={'version':'enterprise-local-1','query':'Orchard dataset','project':'maple'})
-        self.assertEqual(response.status_code,200)
-        result=response.json();self.assertTrue(result['results'])
-        self.assertFalse(result['answerable']);self.assertEqual(result['support'],'partial')
-        self.assertTrue(result['results'][0]['excerpt_truncated'])
-
 
 if __name__=='__main__':unittest.main()

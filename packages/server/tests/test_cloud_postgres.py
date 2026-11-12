@@ -111,6 +111,18 @@ class CanonicalPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(len(self.store.search(self.ctx, {"version": VERSION, "query": "Maple dataset location"})["results"]), 1)
         self.assertEqual(list(Path(self.temp.name).rglob("*.sqlite")), [])
 
+    def test_a_retained_model_curated_card_is_no_longer_returned_by_search(self):
+        document = self.note(self.ingest()["source_id"])
+        query = {"version": VERSION, "query": "Maple dataset location"}
+        self.assertEqual([card["id"] for card in self.store.search(self.ctx, query)["results"]], [document])
+        # A card an earlier curator wrote carries its policy; the note's own text is unchanged.
+        with self.store.open() as state, state.db:
+            state.db.execute('''UPDATE knowledge_revisions SET claim_json=(claim_json::jsonb ||
+                '{"memory_context":{"policy":"durable-memory-8","facets":["fact"],"actors":["user"]}}'::jsonb)::text
+                WHERE document_id=?''', (document,))
+        self.assertEqual(self.store.search(self.ctx, query)["results"], [])
+        self.assertIsNotNone(self.store.detail(self.ctx, document))
+
     def test_failed_transaction_rolls_back_claim_and_index_together(self):
         from agenthub.processing.knowledge import accept_local_candidate
         source = self.ingest()["source_id"]

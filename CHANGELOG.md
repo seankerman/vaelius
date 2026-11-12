@@ -6,6 +6,38 @@ The release workflow publishes the section whose heading matches the tag.
 
 ## [Unreleased]
 
+### Removed
+
+- **Trimmed to the core product: raw chat capture and recall.** Removed, to be
+  brought back later if wanted; all of it remains in Git history at commit
+  `26e8a5132c0dc38976b051d1250344c3da8a0c91`, the last one before this change:
+  - Model curation and everything that called a model to produce or serve derived
+    memory: the episode pipeline and curator, durable-memory extraction, the
+    backend worker, model execution (`cloud_execution`, `bedrock_execution`,
+    `model_policy`), the serving reranker, curated temporal assertions and dated
+    search over them, project history, memory timelines, the curation operator and
+    draft/historical review. `vaelius worker-run` still indexes sources and
+    embeddings; `--live`, `retry` and the `hold`/`retry`/`queue` maintenance
+    commands are gone.
+  - The MCP tools `expand_memory_timeline`, `project_memory_history` and
+    `fetch_memory_episode`, the routes `/enterprise/v3/timeline`,
+    `/enterprise/v1/timeline/`, `/enterprise/v3/temporal-detail`,
+    `/enterprise/v3/project-history` and `/enterprise/v3/project-episode`, and
+    the dated options of `fetch_memory`.
+  - The Slack connector.
+  - The old evaluation tools and fixtures under `packages/server/tools/`.
+  - The `bedrock` extra of `vaelius-server`.
+- **Configuration that turned those on is refused at startup**, never silently
+  ignored: `processing.curation_enabled: true`
+  (`curation_removed_delete_processing_curation_enabled`), `reranking.enabled:
+  true` (`reranking_removed_delete_the_reranking_section`) and a `models` section
+  (`model_execution_removed_delete_the_models_section`). `curation_enabled: false`
+  and `reranking.enabled: false` are still accepted.
+- No migration drops anything: tables that only curation wrote stay, unused.
+  Cards an earlier curator wrote are no longer returned by search, and deleting or
+  withdrawing a source still purges everything derived from it.
+- `docs/TESTS_TO_REWRITE.md` lists the tests turned off by this change.
+
 ### Added
 
 - **Private chats and private folders.** `vaelius-client session private`, or the
@@ -26,8 +58,8 @@ The release workflow publishes the section whose heading matches the tag.
   with recall and search (hook injection, and MCP through the header helper), and
   `search_memory` accepts `workspaces` for one search. It is a filter, never a
   permission: the service intersects it with what the session label allows. It
-  applies to every search path, dated (temporal) search over curated memory
-  included, and a document derived from sources in several workspaces is kept
+  applies to every search path, and a document derived from sources in several
+  workspaces is kept
   when at least one of them is listed; the reader still needs every one of its
   sources, exactly as without a filter. Opening an item by id, a named
   workspace's history and a person's own preferences are not searches and are

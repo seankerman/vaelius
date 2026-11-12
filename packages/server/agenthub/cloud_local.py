@@ -1,7 +1,7 @@
 """Bounded operator interface for the opt-in local PostgreSQL profile.
 
 Secrets stay in private files. No command changes founder/global hooks or selects
-an external provider. Application startup and default worker runs are model-free.
+an external provider. No command runs a language model.
 """
 import argparse
 import json
@@ -25,29 +25,6 @@ def runtime(profile):
     settings=read_settings(Path(profile)/'runtime.json')
     return settings,registry_from_settings(settings,Path(profile)/'server-state')
 
-def worker_config(profile,*,provider_free=True):
-    """Provider-free runs get a synthetic fixture; live runs get no provider or model.
-
-    A live worker must name `backend_execution.kind` and its model in the private
-    worker-config.json, and runtime.json `models` must allowlist them.
-    """
-    observer={'enabled':True,'min_interval_seconds':0,'timeout_seconds':60}
-    if provider_free:observer['model']='fixture'
-    cfg={'paused':False,'knowledge_backend':{'mode':'enterprise_local'},'observer':observer,
-        'episode_curation':{'enabled':True,'policy':'durable_memory','settle_seconds':0,
-            'generation_id':'cloud-readiness-v1'}}
-    if provider_free:cfg['backend_execution']={'kind':'deterministic'}
-    selected=Path(profile)/'worker-config.json'
-    if selected.exists():cfg.update(json.loads(selected.read_text()))
-    return cfg
-
-def require_live_worker_allowed(settings,cfg):
-    """Fail a live curation worker at startup unless its stage is allowlisted."""
-    from agenthub.model_policy import policy_from_settings, require_stage_allowed
-    policy=policy_from_settings(settings)
-    require_stage_allowed(policy,cfg,'curation')
-    return policy
-
 def receipt(profile,command,value):
     from agenthub.backend_ops import build_identity
     from agenthub.pipeline_pin import verify
@@ -60,7 +37,6 @@ def receipt(profile,command,value):
 def status(profile):
     settings,registry=runtime(profile);result={'provider_startup':'off','tenants':{}}
     from agenthub.cloud_ops import Meter
-    from agenthub.backend_worker import Worker
     with registry.open_control() as control:
         tenants = [dict(row) for row in control.execute('SELECT id,active FROM cloud_tenants ORDER BY id')]
     for registered in tenants:
@@ -68,15 +44,15 @@ def status(profile):
         if not registered['active']:
             result['tenants'][tenant] = {'active': False}
             continue
-        store=registry.resolve(tenant);worker=Worker.__new__(Worker);worker.store=store
+        store=registry.resolve(tenant)
         with store.open() as state:
             counts={name:state.db.execute('SELECT count(*) FROM '+name).fetchone()[0]
                 for name in ('enterprise_sources','knowledge_documents','backend_document_versions')}
             versions=[r[0] for r in state.db.execute('SELECT version FROM cloud_schema ORDER BY version')]
         from agenthub.source_index import SourceIndex
         result['tenants'][tenant]={'active': True, 'counts':counts,'schema_versions':versions,
-            'curation_enabled':store.curation_enabled,'retrieval_corpus':store.retrieval_corpus,
-            'source_index':SourceIndex(store).status(),'enrichment_queue':worker.status(),'usage':Meter(store).status()}
+            'retrieval_corpus':store.retrieval_corpus,
+            'source_index':SourceIndex(store).status(),'usage':Meter(store).status()}
     return result
 
 def doctor(profile):
@@ -147,15 +123,13 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=[
         'doctor','up','worker-run','status','stop','reindex',
         'source-index-reconcile',
-        'retry','connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
+        'connection-status','readiness','backup','usage','versions','tenant-disable','tenant-enable',
         *GOVERNANCE_COMMANDS,'workspace','tenant-policy','backfill'])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',default='acme',type=tenant_id)
+    # Every run is provider-free now; the flag is accepted for existing scripts.
     parser.add_argument('--provider-free',action='store_true')
-    parser.add_argument('--live',action='store_true');parser.add_argument('--ledger');parser.add_argument('--job-id')
-    parser.add_argument('--reviewed-stage-limit',type=int)
-    parser.add_argument('--rederive',action='store_true',help='Rebuild a held job from its authorized originals in a fresh observer')
+    parser.add_argument('--live',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--max-jobs',type=int,default=20);parser.add_argument('--max-seconds',type=int,default=60)
-    parser.add_argument('--max-calls',type=int,default=12);parser.add_argument('--max-retries',type=int,default=3)
     parser.add_argument('--output');parser.add_argument('--connection-id')
     parser.add_argument('--after',default='')
     # Memory-governance operator commands (see docs/MEMORY_GOVERNANCE.md).
@@ -182,9 +156,8 @@ def main(argv=None):
     parser.add_argument('--refresh-connections',action='store_true',
         help='backfill: re-observe the backfill connections of active writers (run at least every 30 days)')
     args=parser.parse_args(argv);profile=Path(args.profile).expanduser().resolve();os.umask(0o077)
-    if args.live and args.provider_free:parser.error('choose one execution mode')
-    if args.rederive and args.command!='retry':parser.error('--rederive requires retry')
-    if args.max_jobs<1 or args.max_seconds<1 or args.max_calls<1 or args.max_retries<0:parser.error('invalid local run size')
+    if args.live:parser.error('--live was removed: this version runs no language model (see CHANGELOG.md)')
+    if args.max_jobs<1 or args.max_seconds<1:parser.error('invalid local run size')
     if args.command=='doctor':value=doctor(profile)
     elif args.command=='up':value=up(profile)
     elif args.command=='stop':value=stop(profile)
@@ -197,12 +170,6 @@ def main(argv=None):
         from agenthub.model_resources import release_models
         atexit.register(lambda: release_models(registry, dict(registry._stores), store.semantic_embedder))
         if args.command=='worker-run':
-            policy=None
-            if store.curation_enabled:
-                if not (args.provider_free or args.live):parser.error('enabled enrichment requires explicit --provider-free or --live')
-                cfg=worker_config(profile,provider_free=args.provider_free)
-                # Refuse before any indexing or model work if the stage is not allowlisted.
-                if args.live:policy=require_live_worker_allowed(settings,cfg)
             from agenthub.cloud_maintenance import IndexFreshness
             index=IndexFreshness(store)
             if store.semantic_embedder is not None:index.ensure_generation()
@@ -216,14 +183,6 @@ def main(argv=None):
                     if result['status']=='idle':break
                     indexed+=int(result['status']=='searchable')
             value['vector_documents']=indexed
-            if store.curation_enabled:
-                from agenthub.backend_worker import Worker
-                from agenthub.cloud_execution import execution_from_config
-                def fixture(*_):return {'records':[],'episode_summary':{'intent':None,'open_work':[]}}, {'input_tokens':0,'output_tokens':0}, 'synthetic-observer'
-                runner=execution_from_config(cfg,provider_free=args.provider_free,fixture=fixture if args.provider_free else None,
-                    policy=policy,stage='curation')
-                value['enrichment']=Worker(store,cfg,runner=runner,live=args.live,ledger_path=args.ledger).run(max_jobs=args.max_jobs,
-                    max_seconds=args.max_seconds,max_calls=args.max_calls,max_retries=args.max_retries)
         elif args.command=='source-index-reconcile':
             from agenthub.source_index import SourceIndex
             value=SourceIndex(store).reconcile(after=args.after,limit=min(args.max_jobs,1000))
@@ -233,11 +192,6 @@ def main(argv=None):
             from agenthub.cloud_recovery import backup
             from agenthub.object_config import objects_from_settings
             value=backup(store,objects_from_settings(settings),args.output)
-        elif args.command=='retry':
-            if not args.job_id:parser.error('--job-id required')
-            from agenthub.backend_worker import Worker
-            value=Worker(store,worker_config(profile),live=False).recover(args.job_id,retain_validated=not args.rederive,
-                reviewed_stage_limit=args.reviewed_stage_limit,rederive=args.rederive)
         elif args.command=='usage':
             from agenthub.cloud_ops import Meter
             value=Meter(store).status()

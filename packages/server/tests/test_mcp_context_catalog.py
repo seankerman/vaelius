@@ -3,7 +3,20 @@ import unittest
 from starlette.testclient import TestClient
 from agenthub.cloud_api import create_app
 from agenthub.mcp_tools import TOOLS
-from test_serving_reranker_api import Registry, Store
+from agenthub.enterprise import Denied
+
+
+class Store:
+    tenant_id = 'synthetic'
+    def require_ready(self): pass
+    def authenticate(self, token, request_id=None):
+        if token != 'synthetic': raise Denied()
+        return {'tenant': self.tenant_id, 'actor': 'alice', 'actions': ['read'], 'request_id': request_id}
+
+
+class Registry:
+    def __init__(self, store): self.store = store
+    def store_for_token(self, token): return self.store
 
 class ContextCatalogTests(unittest.TestCase):
     def test_current_workflow_is_always_advertised(self):

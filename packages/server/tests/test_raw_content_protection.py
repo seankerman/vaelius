@@ -314,8 +314,7 @@ class RawContentPostgresTests(PostgresFixture, unittest.TestCase):
 
     def index(self):
         from agenthub.source_index import SourceIndex
-        with patch('agenthub.cloud_execution.execution_from_config', side_effect=AssertionError('no model')):
-            return SourceIndex(self.store).run(max_sources=20, max_seconds=20)
+        return SourceIndex(self.store).run(max_sources=20, max_seconds=20)
 
     def search(self, ctx):
         return self.store.search(ctx, {'version': 'enterprise-local-1', 'query': 'Where is the Orchard dataset?',

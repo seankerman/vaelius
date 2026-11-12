@@ -5,7 +5,7 @@ explicit disposable services, installation, containers and recovery.
 
 The supported path is source-first PostgreSQL ingestion, indexed authorization,
 search and cited evidence through the backend MCP service. Clients capture and
-transport; optional model enrichment and reranking run only on the backend.
+transport; the backend indexes and recalls, and runs no language model.
 
 ```sh
 vaelius doctor --profile /absolute/private/profile
@@ -16,7 +16,7 @@ python -m agenthub.cloud_runtime --profile /absolute/private/profile --port PORT
 
 Profiles and original source objects remain outside the repository. Use application
 credentials for the API and separate operator credentials for provisioning and
-migrations. See [source-first defaults](SOURCE_FIRST.md), [model providers](MODEL_PROVIDERS.md),
+migrations. See [source-first defaults](SOURCE_FIRST.md),
 [backend MCP](BACKEND_MCP.md), and [release acceptance](../../../docs/RELEASE_ACCEPTANCE.md).
 
 The numeric worker options bound one batch; repeat batches until authorized work

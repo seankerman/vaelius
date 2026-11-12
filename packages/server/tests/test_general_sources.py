@@ -131,7 +131,6 @@ class GeneralSourceTests(unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT count(*) FROM knowledge_fts').fetchone()[0],0)
 
     def test_v2_restore_purges_saved_outputs_and_retains_current_denials(self):
-        from agenthub.backend_worker import initialize
         self.store.create_principal('orchard','bob');self.store.set_membership('orchard','maple','bob',True)
         bob_token=self.store.enroll('orchard','bob','bob-device',['read'])
         self.store.enroll_connection(self.ctx,'lifecycle','codex-life','maple',['agent'],visibility='team',reader_ids=['alice','bob'])
@@ -139,7 +138,7 @@ class GeneralSourceTests(unittest.TestCase):
         old=self.store.ingest_general(self.ctx,event)['source_id']
         doc=self.store.accept_reviewed_note(self.ctx,old,'Maple location','Dataset is at /Users/demo/My Data/maple.csv.')
         with self.store.open() as state,state.db:
-            db=state.db;initialize(db)
+            db=state.db;db.require_schema()
             db.execute('''INSERT INTO curation_episode_jobs(id,generation_id,episode_id,project,session,turn,source_ids,
                 source_hash,status,progress,created,updated,version) VALUES('purge-job','g','e','p','s','t',?,'h','done',?,1,1,'fixture')''',
                 (json.dumps([old]),json.dumps({'private':'DELETE_CANDIDATE_CANARY'})))

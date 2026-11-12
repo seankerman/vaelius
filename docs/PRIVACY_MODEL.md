@@ -328,7 +328,7 @@ organization entry contains every session audience except quarantined members,
 who must be direct members. Nothing is cached between requests.
 
 **Recall filter.** A recall request (prompt injection, `search_memory`, evidence,
-context, timeline and history routes) that carries a label returns only items
+context routes) that carries a label returns only items
 whose audience contains the session audience:
 
 ```
@@ -361,12 +361,11 @@ list instead. It is a convenience, never a permission, and is not part of the
 predicate above: `WorkspaceAccessMixin._recall_workspaces` resolves the names,
 intersects them with `S` (with every workspace the person reads, for a private
 session or a request without a label) and always keeps the session's own workspace.
-Every search path then applies the result on top of the authorized query: the
-candidate query through the search reader's row-level security (the context key
+The candidate query (the one search path) then applies the result on top of the
+authorized query, through the search reader's row-level security (the context key
 `recall_filter`, checked beside retrieval reach: it can only refuse a document
-earlier, and the predicate is evaluated in full for every document it keeps), and
-dated search over curated memory through one SQL condition on the documents it
-selects from (`RECALL_FILTER_SQL`). A document is kept when at least one source it
+earlier, and the predicate is evaluated in full for every document it keeps).
+A document is kept when at least one source it
 depends on is in a listed workspace, so one derived from sources in several
 workspaces is not lost while one of them is listed; the reader still needs every
 one of its sources. A name the session may not read is dropped silently, so a

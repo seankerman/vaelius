@@ -1,4 +1,4 @@
-"""Installed API/worker runtime with explicit local configuration and no startup models."""
+"""Installed API/worker runtime with explicit local configuration; it runs no language model."""
 import argparse
 import ipaddress
 import json
@@ -10,7 +10,6 @@ from agenthub.cloud_ops import require_reconciled
 from agenthub.data_lifecycle import DataLifecycleMixin
 
 class CloudStore(DataLifecycleMixin, PostgresEnterpriseStore):
-    curation_enabled=False
     def reconcile_indexes(self,*,max_pages=10):
         """Queue missing/stale vectors after an accepted change or owned restart.
 
@@ -43,15 +42,6 @@ class CloudStore(DataLifecycleMixin, PostgresEnterpriseStore):
             active=state.db.execute('SELECT 1 FROM cloud_vector_state WHERE singleton=1').fetchone()
         if active:self.reconcile_indexes()
         return registered
-
-    def project_history(self,ctx,project,*,cursor=None,limit=8):
-        from agenthub.project_history import project_overview
-        return project_overview(self,ctx,project,cursor=cursor,page_limit=limit)
-
-    def project_episode(self,ctx,project,episode_id,*,offset=0,limit=8,text_offset=0):
-        from agenthub.project_history import project_episode_detail
-        return project_episode_detail(self,ctx,project,episode_id,offset=offset,
-            limit=limit,text_offset=text_offset)
 
     def require_ready(self):
         super().require_ready()
@@ -150,22 +140,19 @@ def registry_from_settings(settings,home):
     if (not isinstance(processing,dict) or set(processing)-{'curation_enabled'}
             or type(processing.get('curation_enabled',False)) is not bool):
         raise ValueError('runtime_processing_configuration')
+    # Model curation, reranking and model execution were removed (CHANGELOG.md). A
+    # profile that still turns one on is refused, never started without it.
+    if processing.get('curation_enabled'):
+        raise ValueError('curation_removed_delete_processing_curation_enabled')
     from agenthub.cloud_identity import validate_credential_lifetimes
     lifetimes=validate_credential_lifetimes(settings.get('credentials',{}))
     reranking=settings.get('reranking',{})
-    if (not isinstance(reranking,dict) or set(reranking)-{'enabled','worker_config','ledger','timeout_seconds'}
-            or type(reranking.get('enabled',False)) is not bool):
+    if not isinstance(reranking,dict) or type(reranking.get('enabled',False)) is not bool:
         raise ValueError('runtime_reranking_configuration')
-    from agenthub.model_policy import policy_from_settings, require_stage_allowed
-    model_policy=policy_from_settings(settings)
-    reranker_config=None
     if reranking.get('enabled'):
-        source=Path(reranking['worker_config']).expanduser()
-        if not source.is_absolute() or source.stat().st_mode&0o077:raise ValueError('reranker_private_configuration')
-        reranker_config=json.loads(source.read_text())
-        if reranking.get('ledger') is not None and not Path(reranking['ledger']).expanduser().is_absolute():raise ValueError('reranker_shared_ledger_required')
-        # Startup refuses an enabled stage whose provider/model is not allowlisted.
-        require_stage_allowed(model_policy,reranker_config,'reranking')
+        raise ValueError('reranking_removed_delete_the_reranking_section')
+    if settings.get('models'):
+        raise ValueError('model_execution_removed_delete_the_models_section')
     from agenthub.write_limits import limits_from_settings
     from agenthub.governance import notice_from_settings
     ingest_limits=limits_from_settings(settings.get('ingest_limits'))
@@ -196,7 +183,6 @@ def registry_from_settings(settings,home):
         store=CloudStore(path,dsn,tenant,registry=registry)
         store.credential_lifetimes=lifetimes
         store.ingest_limits=ingest_limits;store.capture_notice_config=capture_notice
-        store.curation_enabled=processing.get('curation_enabled',False)
         store.retrieval_corpus=configuration.get('corpus','sources')
         if objects is not None:
             from agenthub.conversation_segments import ConversationSegments
@@ -205,12 +191,6 @@ def registry_from_settings(settings,home):
         store.hybrid_enabled=bool(settings.get('semantic',{}).get('enabled',False))
         store.hybrid_enabled = store.hybrid_enabled and configuration.get('vector', True)
         store.semantic_embedder=model
-        if reranker_config is not None:
-            from agenthub.serving_reranker import ServingReranker
-            from agenthub.cloud_ops import Meter
-            store.serving_reranker=ServingReranker(path/'reranking',reranker_config,
-                ledger=Path(reranking['ledger']).expanduser() if reranking.get('ledger') else None,meter=Meter(store),
-                timeout_seconds=reranking.get('timeout_seconds',20),model_policy=model_policy)
         for key, default in [('candidate_limit', 20), ('numeric_mode', 'legacy'),
                              ('lexical_weight', 1), ('vector_weight', 1), ('require_prose', False),
                              ('authorization_shape', 'compiled'), ('selection_policy', 'baseline')]:

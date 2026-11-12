@@ -92,9 +92,9 @@ other entries is a workspace of one.
    restricts which workspaces recall searches: a convenience filter, never a
    permission. The service intersects it with what the session may read, the
    current workspace always stays in, and without it recall is unfiltered. It
-   applies to every search, dated search over curated memory included. An item
-   derived from sources in several workspaces is kept when at least one of them
-   is listed, and is still returned only to a reader of all of them. Opening an
+   applies to every search. An item derived from sources in several workspaces
+   is kept when at least one of them is listed, and is still returned only to a
+   reader of all of them. Opening an
    item by id, a named workspace's history and a person's own preferences are not
    searches, so the list does not apply to them.
 7. **File reads** in a session whose capture is shared (the Claude Code guardrail
@@ -137,7 +137,7 @@ other entries is a workspace of one.
 | --- | --- |
 | **One read predicate, three implementations** | *reader ∈ item audience* (owner; or not private, a role in the item's workspace and in every carried workspace) plus the session term for recall: the Python oracle (`agenthub.workspace_access`), the indexed SQL filter (`agenthub.search_permissions`) and PostgreSQL row-level security (`search_document_allowed`). None of them has a per-item share term (migration 057). Parity tests keep them identical, and a planted share row is refused by all three. |
 | **Capture** | `WorkspaceAccessMixin._ingest_privacy` stores a capture owner-private when the person is not a writer, the chat is registered private (`POST /enterprise/v3/sessions/private`), or the request, connection, personal setting or workspace default says private; `_check_remote` refuses a remote linked elsewhere. |
-| **Recall filter** | `_recall_workspaces` intersects a `read` list with the label's workspaces. Every search path applies the result on top of the unchanged read predicate, so it only narrows: the candidate query through the search reader's row-level security (context key `recall_filter`, which can only refuse a document earlier) and dated search over curated memory through one SQL condition (`RECALL_FILTER_SQL`). A document is kept when at least one source it depends on is in a listed workspace. |
+| **Recall filter** | `_recall_workspaces` intersects a `read` list with the label's workspaces. Every search path applies the result on top of the unchanged read predicate, so it only narrows: the candidate query through the search reader's row-level security (context key `recall_filter`, which can only refuse a document earlier); dated search over curated memory, the one other search path, was removed. A document is kept when at least one source it depends on is in a listed workspace. |
 | **Scope files (client)** | `scope_file.governing` is the one boundary rule for capture discovery and the read allowlist; `load` applies `.vaelius.local` narrow-only; `default_capture` rejects any value but `off` and `read-only`. |
 | **Session label** | `POST /enterprise/v3/workspaces/descriptor` tells the client which workspaces its session may read; recall routes carry the label and the service recomputes it from current membership on every request (nothing about access is cached on the server). |
 | **Read-only chats** | The service refuses every write route and tool with `403 read_only_session` for a registered chat, its MCP connection and `capture = "read-only"` folders. |

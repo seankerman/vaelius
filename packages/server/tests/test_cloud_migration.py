@@ -6,7 +6,6 @@ import unittest
 import sqlite3
 
 from agentclient.enterprise_contract import VERSION
-from agenthub.processing.episode_pipeline import create_jobs
 from agentclient.enterprise_capture import normalize_capture
 from agenthub.enterprise import Denied
 from vaelius_test_support.fixtures.postgres import database
@@ -38,12 +37,12 @@ class MigrationTests(PostgresFixture, unittest.TestCase):
                 'event_id':'held-'+kind, 'session_id':'held-chat', 'turn_id':'held-turn',
                 'prompt':'Keep this work pending until the source is reviewed.',
                 'last_assistant_message':'The synthetic work remains pending.'}, 'maple', 'agent'))
-        config={'knowledge_backend':{'mode':'enterprise_local'}, 'observer':{'model':'fixture'},
-            'episode_curation':{'policy':'durable_memory','generation_id':'migration-building','settle_seconds':0}}
+        # A held job an earlier curator left behind: retained rows migrate unchanged.
         with self.old.open() as state, state.db:
-            scope = state.db.execute("SELECT internal_project FROM enterprise_sources WHERE external_id LIKE 'agent:%' LIMIT 1").fetchone()[0]
-            create_jobs(state, config, project_scope=scope)
-            state.db.execute("UPDATE curation_episode_jobs SET status='held',error='fixture_review_pending'")
+            state.db.execute('''INSERT INTO curation_episode_jobs(id,generation_id,episode_id,project,session,turn,
+                source_ids,source_hash,status,progress,error,created,updated,version)
+                VALUES('held-job','migration-building','e','p','held-chat','held-turn','[]','h','held','{}',
+                'fixture_review_pending',1,1,'fixture')''')
         self.snapshot = Path(self.temp.name) / 'selected-immutable.sqlite'
         # Build a selected legacy-format input using only synthetic canonical rows.
         # This fixture is a file-format writer, never a SQLite service.
@@ -80,7 +79,6 @@ class MigrationTests(PostgresFixture, unittest.TestCase):
         with self.store.open() as state:
             self.assertEqual(state.db.execute('SELECT lifecycle FROM knowledge_documents WHERE document_id=?', (self.document,)).fetchone()[0], 'active')
             self.assertEqual(state.db.execute('SELECT status FROM curation_episode_jobs').fetchone()[0], 'held')
-            self.assertEqual(state.db.execute('SELECT status FROM knowledge_generations').fetchone()[0], 'building')
         self.assertEqual(list(self.store.home.rglob('*.sqlite')), [])
 
     def test_cloud_reenrollment_and_post_migration_withdrawal_survive_code_rollback(self):

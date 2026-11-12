@@ -1,13 +1,12 @@
 """The serving runtime applies the identified retrieval configuration."""
 from pathlib import Path
-import json
 import tempfile
 import unittest
 from unittest.mock import patch
 
 
 class RuntimeConfigurationTests(unittest.TestCase):
-    def test_reranker_is_internal_opt_in_and_startup_does_not_dispatch(self):
+    def test_removed_model_stages_are_refused_at_startup_never_ignored(self):
         from agenthub.cloud_runtime import registry_from_settings
         class Registry:
             def __init__(self, dsn, home, max_stores, store_factory):
@@ -16,34 +15,21 @@ class RuntimeConfigurationTests(unittest.TestCase):
             def __init__(self, *args, **kwargs): pass
         with tempfile.TemporaryDirectory() as directory, \
              patch('agenthub.cloud_runtime.CloudStore', Store), \
-             patch('agenthub.cloud_runtime.TenantRegistry', Registry), \
-             patch('agenthub.processing.harness.run_structured') as provider, \
-             patch('agenthub.cloud_ops.Meter'):
+             patch('agenthub.cloud_runtime.TenantRegistry', Registry):
             home = Path(directory)
-            worker = home/'worker.json'
-            worker.write_text(json.dumps({'backend_execution': {'kind': 'codex'},
-                                          'observer': {'model': 'synthetic-model'}}))
-            worker.chmod(0o600)
-            settings = {'control_dsn': 'synthetic'}
-            factory = registry_from_settings(settings, home).store_factory
-            store=factory(home, 'synthetic', 'org')
+            settings = {'control_dsn': 'synthetic', 'processing': {'curation_enabled': False},
+                        'reranking': {'enabled': False}}
+            store = registry_from_settings(settings, home).store_factory(home, 'synthetic', 'org')
             self.assertFalse(hasattr(store, 'serving_reranker'))
-            self.assertFalse(store.curation_enabled)
+            self.assertFalse(hasattr(store, 'curation_enabled'))
             self.assertEqual(store.retrieval_corpus,'sources')
-            settings['reranking'] = {'enabled': True, 'worker_config': str(worker),
-                                    'ledger': str(home/'shared.sqlite'), 'timeout_seconds': 30}
-            with self.assertRaisesRegex(ValueError, 'model_provider_not_allowlisted'):
-                registry_from_settings(settings, home)
-            settings['models'] = {'allowed_providers': ['codex'], 'allowed_models': ['synthetic-model']}
-            factory = registry_from_settings(settings, home).store_factory
-            ranker = factory(home, 'synthetic', 'org').serving_reranker
-            self.assertEqual(ranker.config['observer']['model'], 'synthetic-model')
-            self.assertEqual(ranker.config['observer']['reasoning'], 'low')
-            self.assertEqual(ranker.timeout_seconds, 30)
-            provider.assert_not_called()
-            worker.chmod(0o644)
-            with self.assertRaisesRegex(ValueError, 'reranker_private_configuration'):
-                registry_from_settings(settings, home)
+            for change, error in (
+                    ({'processing': {'curation_enabled': True}}, 'curation_removed_delete_processing_curation_enabled'),
+                    ({'reranking': {'enabled': True, 'worker_config': '/unused'}}, 'reranking_removed_delete_the_reranking_section'),
+                    ({'models': {'allowed_providers': ['codex']}}, 'model_execution_removed_delete_the_models_section'),
+                    ({'processing': {'observer': True}}, 'runtime_processing_configuration')):
+                with self.subTest(change=change), self.assertRaisesRegex(ValueError, error):
+                    registry_from_settings(dict(settings, **change), home)
 
     def test_serving_factory_keeps_admitted_selection_and_current_authorization(self):
         from agenthub.cloud_runtime import registry_from_settings

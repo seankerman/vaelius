@@ -25,6 +25,7 @@ Each exercised only a removed feature.
 | `test_staging_history.NativeHistoryTests` (3 tests) | Explicit validity dates read from original documents, and their repair. |
 | `test_cloud_maintenance.MaintenanceTests.test_hold_fences_running_claim_and_retry_is_explicit_and_model_free` | Operator hold and retry of curation jobs. |
 | `test_deep_cleanup.CanonicalCurationPolicy` (3 tests) | The curator policy version and its validated-record rule. |
+| `test_cloud_recovery.LogicalRecoveryPostgresTests.test_populated_claim_temporal_and_episode_history_survive_offline_reconcile` | Temporal assertions and episode history survived an offline restore (it needed a recovery profile and never ran in CI). |
 
 ## Tests kept with a removed path taken out
 

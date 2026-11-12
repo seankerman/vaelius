@@ -1051,7 +1051,8 @@ class HybridRetrievalMixin:
                         line.strip() and not re.match(r'^\s*#{1,6}\s',line)
                         for line in claim.get('lesson','').splitlines()):continue
                 if compatibility(claim,value['query'],scopes[0])[0]=='incompatible':continue
-                if str((claim.get('memory_context') or {}).get('policy','')).startswith('durable-memory-'):continue
+                curated=claim.get('memory_context')
+                if isinstance(curated,dict) and str(curated.get('policy','')).startswith('durable-memory-'):continue
                 if self.retrieval_selection_policy=='baseline' and not supported_answer(value['query'],claim):continue
                 if receiver and state.db.execute("SELECT 1 FROM enterprise_receipts WHERE session=? AND epoch=? AND document_id=? AND revision=? AND status='offered' LIMIT 1",(receiver,epoch,candidate['document_id'],candidate['revision_id'])).fetchone():continue
                 if self.retrieval_selection_policy in {'facets_v1','facets_v2'}:

@@ -508,5 +508,192 @@ class ReadOnlyChatTest(LabelFixture):
         self.assertEqual(self.register_calls(), [{'sessions': ['q1']}])
 
 
+class PrivateChatTest(LabelFixture):
+    """Private chats and private folders: captured owner-private, personal sessions, one-way."""
+
+    def private_calls(self):
+        return [v for p, v in self.service.calls if p == '/enterprise/v3/sessions/private']
+
+    def headers(self, folder):
+        from agentclient import mcp_headers
+        backend = mock.Mock(token='synthetic-token')
+        with mock.patch('agentclient.transport.enterprise_client', return_value=backend), \
+                mock.patch('agentclient.transport.require_backend', return_value={}), \
+                mock.patch('agentclient.transport.backend_endpoint', return_value='https://service.test'):
+            return mcp_headers.headers(self.home, project_dir=str(folder))
+
+    def make_private(self, **options):
+        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
+            return session_label.private(self.home, self.config, cwd=str(self.src / 'a'), **options)
+
+    def test_session_private_is_one_way_owner_private_and_a_personal_session(self):
+        self.start()
+        self.hook('UserPromptSubmit', prompt='before the switch')
+        before = len(Outbox.events)
+        self.assertEqual(Outbox.events[-1].get('sharing'), 'organization', 'a writer\'s chat joins the workspace')
+        self.assertIsNotNone(self.read(self.home_dir / 'dotfile'), 'a shared session does not read unscoped files')
+        self.assertIsNotNone(self.read(self.src / 'b/notes.md'), 'nor a narrower workspace')
+        connection = self.headers(self.src / 'a')['X-AgentNetwork-Session']
+        result = self.make_private()
+        self.assertEqual(result['status'], session_label.PRIVATE_STATUS + session_label.PRIVATE_FORGET)
+        self.assertIn('stays where it was', result['status'])
+        self.assertIn('vaelius-client forget --session current', result['status'])
+        self.assertEqual(self.private_calls(), [{'sessions': ['s1', connection]}],
+                         'the service stores later captures of this chat owner-private')
+        first = self.hook('UserPromptSubmit', prompt='after the switch')
+        self.assertIn(session_label.PRIVATE_STATUS, first.get('systemMessage', ''), 'announced once')
+        self.assertEqual(len(Outbox.events), before + 1, 'still captured')
+        self.assertNotIn('sharing', Outbox.events[-1], 'owner-private: no sharing request on the wire')
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search']
+        self.assertIs(searched[-1]['session_label']['private'], True, 'recall follows the personal-session rules')
+        self.assertIsNone(self.read(self.home_dir / 'dotfile'), 'file reads follow them too')
+        self.assertIsNone(self.read(self.src / 'b/notes.md'))
+        self.assertIs(json.loads(self.headers(self.src / 'a')['X-Vaelius-Session-Label'])['private'], True)
+        # One-way: asking again changes nothing, and there is no command to switch back.
+        self.assertTrue(self.make_private()['already'])
+        self.assertTrue(self.label()['private'])
+        from agentclient import cli
+        with self.assertRaises(SystemExit):
+            cli.main(['--home', str(self.home), 'session', 'shared'])
+        # A new chat (or /clear) captures into the workspace again.
+        self.hook('SessionEnd', reason='clear')
+        self.start(session='s2')
+        self.assertFalse(self.label('s2')['private'])
+        self.hook('UserPromptSubmit', session='s2', prompt='a new chat')
+        self.assertEqual(Outbox.events[-1].get('sharing'), 'organization')
+
+    def test_the_mcp_tool_result_switches_the_chat(self):
+        self.start()
+        self.hook('PostToolUse', tool_name='mcp__plugin_vaelius_vaelius__private_session', tool_input={},
+                  tool_response=[{'type': 'text', 'text': json.dumps({'vaelius_session_private': True})}])
+        self.assertTrue(self.label().get('private'))
+        self.assertEqual(self.private_calls()[-1]['sessions'][0], 's1')
+        self.hook('UserPromptSubmit', prompt='after')
+        self.assertNotIn('sharing', Outbox.events[-1])
+        # Any other tool result, or the tool refused, switches nothing.
+        self.start(session='s3')
+        self.hook('PostToolUse', session='s3', tool_name='mcp__plugin_vaelius_vaelius__private_session',
+                  tool_input={}, tool_response=[{'type': 'text', 'text': 'Memory request unavailable or invalid.'}])
+        self.assertFalse(self.label('s3').get('private'))
+
+    def test_read_only_is_narrower_and_wins_in_either_order(self):
+        self.start()
+        self.make_private()
+        with mock.patch('agentclient.transport.enterprise_client', return_value=self.service):
+            session_label.read_only(self.home, self.config, cwd=str(self.src / 'a'))
+        captured = len(Outbox.events)
+        self.hook('UserPromptSubmit', prompt='after both')
+        self.assertEqual(len(Outbox.events), captured, 'read-only: nothing is saved')
+        result = self.make_private()
+        self.assertEqual((result['private'], result['read_only']), (False, True), 'private never widens read-only')
+        self.assertTrue(self.label()['read_only'])
+
+    def test_a_private_folder_starts_personal_sessions_and_registers_them(self):
+        folder = self.src / 'p'
+        (folder / '.git').mkdir(parents=True)
+        (folder / '.vaelius').write_text('workspace = "team-a"\ncapture = "private"\nread = ["team-a", "org-c"]\n')
+        status = self.start(session='p1', cwd=folder)
+        self.assertIn('capture PRIVATE for workspace team-a', status['systemMessage'])
+        self.assertTrue(self.label('p1')['private'])
+        self.assertEqual(self.private_calls(), [{'sessions': ['p1']}])
+        self.hook('UserPromptSubmit', session='p1', cwd=folder, prompt='in a private folder')
+        self.assertNotIn('sharing', Outbox.events[-1])
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search'][-1]['session_label']
+        self.assertEqual((searched['private'], searched['read']), (True, ['team-a', 'org-c']))
+        self.assertIsNone(self.read(self.home_dir / 'dotfile', session='p1', cwd=folder), 'a personal session')
+        label = json.loads(self.headers(folder)['X-Vaelius-Session-Label'])
+        self.assertEqual((label['private'], label['read']), (True, ['team-a', 'org-c']), 'MCP through the header helper')
+        self.start(session='p1', cwd=folder)
+        self.assertEqual(len(self.private_calls()), 1, 'registered once')
+
+    def test_a_shared_folder_sends_its_read_filter_in_the_label_and_none_without_the_key(self):
+        folder = self.src / 'f'
+        (folder / '.git').mkdir(parents=True)
+        (folder / '.vaelius').write_text('workspace = "team-a"\nread = ["org-c"]\n')
+        self.start(session='f1', cwd=folder)
+        self.hook('UserPromptSubmit', session='f1', cwd=folder, prompt='filtered')
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search'][-1]['session_label']
+        self.assertEqual((searched['read'], searched['private']), (['org-c'], False))
+        self.assertEqual(json.loads(self.headers(folder)['X-Vaelius-Session-Label'])['read'], ['org-c'])
+        self.start()
+        self.hook('UserPromptSubmit', prompt='unfiltered')
+        searched = [v for p, v in self.service.calls if p == '/enterprise/v3/search'][-1]['session_label']
+        self.assertNotIn('read', searched)
+        self.assertNotIn('read', json.loads(self.headers(self.src / 'a')['X-Vaelius-Session-Label']))
+        # A read-only folder carries its filter in a read-only label.
+        (self.src / 'quiet/.vaelius').write_text('workspace = "team-a"\ncapture = "read-only"\nread = ["org-c"]\n')
+        headers = self.headers(self.src / 'quiet')
+        self.assertEqual(json.loads(headers['X-Vaelius-Session-Label']),
+                         {'workspace': 'team-a', 'read_only': True, 'read': ['org-c']})
+        self.assertEqual(headers['X-Vaelius-Read-Only'], '1')
+
+    def test_default_capture_read_only_makes_an_unscoped_folder_a_read_only_connection(self):
+        plain = self.src / 'plain'
+        self.assertNotIn('X-Vaelius-Read-Only', self.headers(plain))
+        (self.home / 'config.json').write_text(json.dumps(dict(self.config, default_capture='read-only')))
+        headers = self.headers(plain)
+        self.assertEqual(headers['X-Vaelius-Read-Only'], '1')
+        self.assertNotIn('X-AgentNetwork-Project', headers)
+        self.assertNotIn('X-Vaelius-Session-Label', headers)
+        self.assertNotIn('X-Vaelius-Read-Only', self.headers(self.src / 'a'), 'a scope file governs its folder')
+
+
+class RepositoryBoundaryParityTest(unittest.TestCase):
+    """Capture discovery and the read allowlist agree on which scope file governs a path."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        home = self.home_dir = self.tmp / 'home'
+        self.work = home / 'work'
+        files = {
+            home / '.vaelius': 'workspace = "everything"\n',                 # ignored location
+            self.work / '.vaelius': 'workspace = "parent"\n',                # a plain folder, not a repository
+            self.work / 'readme.md': 'x', self.work / 'docs/deep/d.md': 'x',
+            self.work / 'nested/.git/HEAD': 'x', self.work / 'nested/src/n.py': 'x',   # repository, no scope file
+            self.work / 'scoped/.git/HEAD': 'x', self.work / 'scoped/.vaelius': 'workspace = "inner"\n',
+            self.work / 'scoped/pkg/s.py': 'x',
+            self.work / 'scoped/pkg/sub/.vaelius': 'workspace = "below"\n', self.work / 'scoped/pkg/sub/b.py': 'x',
+            self.work / 'scoped/vendor/.git/HEAD': 'x', self.work / 'scoped/vendor/v.py': 'x',   # repository in a repository
+            home / 'solo/.git/HEAD': 'x', home / 'solo/z.py': 'x',
+            home / 'loose/l.txt': 'x',
+        }
+        for path, text in files.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        self.enterContext(mock.patch.dict(os.environ, {'HOME': str(home)}))
+
+    def test_both_sides_resolve_every_path_to_the_same_scope_file(self):
+        from agentclient.scope_file import discover
+        work, home = self.work, self.home_dir
+        expected = {
+            work / 'readme.md': work, work / 'docs/deep/d.md': work,
+            # Inside a Git repository only a scope file at or below its root governs.
+            work / 'nested/src/n.py': None,
+            work / 'scoped/pkg/s.py': work / 'scoped',
+            work / 'scoped/pkg/sub/b.py': work / 'scoped/pkg/sub',
+            work / 'scoped/vendor/v.py': None,
+            home / 'solo/z.py': None,
+            # Outside Git: the nearest scope file upwards, never one at an ignored location.
+            home / 'loose/l.txt': None,
+        }
+        context = origin.Context(None, str(work), {})
+        for path, root in expected.items():
+            with self.subTest(str(path.relative_to(home))):
+                captured = discover(path.parent)
+                read = context._scoped(path)
+                self.assertEqual((captured or {}).get('root'), str(root) if root else None, 'capture discovery')
+                self.assertEqual((read or {}).get('root'), str(root) if root else None, 'read allowlist')
+        self.assertEqual(context.scope_of(str(work / 'nested/src/n.py'))['category'], 'unscoped_repo')
+
+    def test_a_session_in_the_parent_folder_does_not_read_a_nested_repository(self):
+        scope = {'project': 'parent', 'root': str(self.work), 'scope_file': str(self.work / '.vaelius')}
+        context = origin.Context(scope, str(self.work), {})
+        self.assertEqual(context.scope_of(str(self.work / 'readme.md'))['category'], 'project')
+        self.assertEqual(context.scope_of(str(self.work / 'nested/src/n.py'))['category'], 'unscoped_repo')
+        self.assertEqual(context.scope_of(str(self.work / 'scoped/vendor/v.py'))['category'], 'unscoped_repo')
+        self.assertEqual(context.scope_of(str(self.work / 'scoped/pkg/s.py'))['project'], 'inner')
+
+
 if __name__ == '__main__':
     unittest.main()

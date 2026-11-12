@@ -185,6 +185,10 @@ def status(state, project, notice=None, *, sharing='private', personal=None):
         mine = (' Your sharing setting: ' + personal + ' (' + SHARING_CONTROL + ').') if personal in AUDIENCE else ''
         return ('Vaelius capture ON for workspace ' + project + ': prompts, assistant replies and tool '
                 'calls/results are shared (readers: ' + who + ').' + passages + mine + ' Pause: vaelius-client pause.')
+    if state == 'private':
+        return ('Vaelius capture PRIVATE for workspace ' + project + ': prompts, assistant replies and tool '
+                'calls/results are saved to your personal memory only (the folder asks for private capture); '
+                'shared memory recall stays on. Pause: vaelius-client pause.')
     if state == 'read-only':
         return ('Vaelius capture OFF (read-only scope file) for workspace ' + project +
                 ': nothing is captured; shared memory recall stays on.')

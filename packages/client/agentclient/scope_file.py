@@ -3,14 +3,34 @@
 A scope file (default name `.vaelius`, TOML) at a repository root declares::
 
     workspace = "example-repo"   # service workspace name
-    capture = "on"               # on | read-only | off
+    capture = "on"               # on | private | read-only | off
+    read = ["maple", "birch"]    # optional recall filter
 
-The keys are `workspace` and `capture`. A `visibility` key is ignored with a
-one-time warning: who can read a workspace is set on the server (`vaelius-client
-workspace create [--private]`, `workspace set-visibility`), never in a checked-in
-file. A `read` key (an earlier draft's recall list) is ignored with a one-time
-warning too: recall covers what the session label allows, the current workspace
-first.
+The keys are `workspace`, `capture` and `read`. The capture ladder runs from wide to
+narrow: `on` (a writer's chat joins the workspace), `private` (the chat is captured
+to each person's personal memory only, and is a personal session), `read-only`
+(recall, nothing saved) and `off`. A file can only request, and `private` only
+narrows, so it is safe in a committed file.
+
+`read` restricts which workspaces recall searches. It is a convenience filter, never
+a permission: the service intersects it with what the session may read, and the
+current workspace is always included. Without the key recall covers everything the
+session may read.
+
+A `visibility` key is ignored with a one-time warning: who can read a workspace is
+set on the server (`vaelius-client workspace create [--private]`, `workspace
+set-visibility`), never in a checked-in file.
+
+A `.vaelius.local` beside a `.vaelius` is the person's own override (keep it out of
+Git: `vaelius-client scope-local` adds it to `.git/info/exclude`). It may set
+`capture` and `read`. Its `capture` can only be NARROWER than the committed file's
+on the ladder above; a wider value is ignored with a one-time warning. It cannot
+change `workspace`, and without a `.vaelius` beside it it does nothing.
+
+Precedence, lowest to highest: the person's `default_capture` profile setting (only
+where no scope file applies; `off` or `read-only`, never more) < the committed
+`.vaelius` < `.vaelius.local` (narrow only) < the per-chat `session private` /
+`session read-only` (narrow only).
 
 The current access model builds on **workspaces** rather than flat projects
 (see `docs/ACCESS_MODEL.md`). The new `workspace` key is the explicit opt-in to
@@ -51,6 +71,10 @@ Discovery walks up from the working directory and stops at the Git root (a
 directory holding `.git`) or the filesystem root. A linked worktree whose
 checkout lacks the file falls back to the same relative place in the main
 worktree, so every worktree of a repository resolves to the same request.
+`governing` is that one rule; capture discovery (`discover`) and the read
+allowlist (`agentclient.origin.Context`) both call it, so a path inside a Git
+repository is governed only by a scope file at or below that repository's root
+on both sides.
 
 A scope file at an ignored location (`ignored_scope_root`) is skipped
 entirely: the home folder, any folder above it (including `/`), a top-level
@@ -77,7 +101,13 @@ import tomllib
 
 DEFAULT_NAMES = ('.vaelius',)
 PRIMARY = '.vaelius'
-CAPTURE_MODES = ('on', 'read-only', 'off')
+# The capture ladder, widest first: each step is narrower than the one before it.
+CAPTURE_MODES = ('on', 'private', 'read-only', 'off')
+# The person's profile default for folders no scope file governs: recall only, or
+# nothing. Never `on` or `private`: only a scope file in the folder turns capture on.
+DEFAULT_CAPTURE = ('off', 'read-only')
+LOCAL_SUFFIX = '.local'
+MAX_READ = 32
 SHARING = ('private', 'team', 'organization')
 LEGACY_MODES = {'default': 'on', 'read-only': 'read-only', 'readonly': 'read-only',
                 'disabled': 'off', 'off': 'off', 'on': 'on'}
@@ -93,8 +123,11 @@ WARN_SHARING_IGNORED = 'scope_file_sharing_ignored_under_workspace'
 WARN_ORIGINALS_IGNORED = 'scope_file_originals_ignored'
 # `visibility` is set on the server only (`vaelius-client workspace set-visibility`).
 WARN_VISIBILITY_IGNORED = 'scope_file_visibility_ignored'
-# `read` (a recall list) is not a scope-file key; recall follows the session label.
-WARN_READ_IGNORED = 'scope_file_read_ignored'
+# `.vaelius.local`: a capture mode wider than the committed file's, or a key it may not set.
+WARN_LOCAL_WIDER = 'scope_local_wider_capture_ignored'
+WARN_LOCAL_KEYS = 'scope_local_keys_ignored'
+# A `read` list Vaelius cannot use (not a list of workspace names): no filter is applied.
+WARN_READ_INVALID = 'scope_file_read_invalid'
 # One-time warning for a scope file skipped because of where it is.
 WARN_IGNORED_LOCATION = 'scope_file_ignored_location'
 
@@ -151,6 +184,33 @@ def ignored_scope_root(directory, home=None):
     return any(directory == home / p or home / p in directory.parents for p in NEVER_SCOPED)
 
 
+def narrower(first, second):
+    """The narrower of two capture modes on the ladder `on` > `private` > `read-only` > `off`."""
+    return max(first, second, key=CAPTURE_MODES.index)
+
+
+def default_capture(config):
+    """The profile's `default_capture`: 'off' (the default) or 'read-only'.
+
+    Anything else is rejected: a profile setting can never turn capture on."""
+    value = config.get('default_capture', 'off') if isinstance(config, dict) else 'off'
+    if value not in DEFAULT_CAPTURE:
+        raise ScopeFileError('invalid_default_capture')
+    return value
+
+
+def _read_filter(value):
+    """A `read` list as workspace names, or None when it is not one.
+
+    `read` is a convenience filter, never a permission, so a list Vaelius cannot use
+    does not make the file invalid: no filter is applied (recall covers everything
+    the session may read, the default) and the caller warns once."""
+    if (not isinstance(value, list) or len(value) > MAX_READ
+            or any(not isinstance(n, str) or not WORKSPACE.fullmatch(n) for n in value)):
+        return None
+    return list(dict.fromkeys(value))
+
+
 def _lenient(text):
     values = {}
     for line in text.splitlines():
@@ -190,12 +250,14 @@ def parse(path):
         text = raw.decode('utf-8')
     except UnicodeDecodeError:
         raise ScopeFileError('scope_file_not_utf8') from None
+    lenient = False
     try:
         values = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         if path.name == PRIMARY:
             raise ScopeFileError('scope_file_invalid_toml') from None
         values = _lenient(text)
+        lenient = True
     capture = values.get('capture')
     allowed_paths, allowed_mcp = [], []
     if isinstance(capture, dict):
@@ -241,8 +303,10 @@ def parse(path):
     if 'visibility' in values:
         # Who can read a workspace is decided on the server, never by a checked-in file.
         warnings.append(WARN_VISIBILITY_IGNORED)
-    if 'read' in values:
-        warnings.append(WARN_READ_IGNORED)
+    # A recall filter (never a permission). A legacy non-TOML file has no lists.
+    read = _read_filter(values['read']) if 'read' in values and not lenient else None
+    if 'read' in values and not lenient and read is None:
+        warnings.append(WARN_READ_INVALID)
     if workspace_key:
         # In a workspace file the sharing ladder is replaced by the workspace
         # access list. Only `sharing = "private"` is honored (sent as omission;
@@ -256,7 +320,97 @@ def parse(path):
         sharing = 'private' if sharing == 'private' and 'sharing' in values else 'organization'
     return {'project': identifier, 'workspace': identifier, 'workspace_key': workspace_key,
             'capture': capture, 'sharing': sharing, 'originals': originals, 'path': str(path),
-            'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp, 'warnings': warnings}
+            'allowed_paths': allowed_paths, 'allowed_mcp_servers': allowed_mcp, 'warnings': warnings,
+            'read': read}
+
+
+def local_file(path):
+    """The local override beside a scope file: `.vaelius` -> `.vaelius.local`."""
+    path = Path(path)
+    return path.with_name(path.name + LOCAL_SUFFIX)
+
+
+def _parse_local(path):
+    try:
+        with open(path, 'rb') as stream:
+            raw = stream.read(MAX_BYTES + 1)
+    except OSError:
+        raise ScopeFileError('scope_local_unreadable') from None
+    if len(raw) > MAX_BYTES:
+        raise ScopeFileError('scope_local_too_large')
+    try:
+        values = tomllib.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        raise ScopeFileError('scope_local_invalid_toml') from None
+    capture = values.get('capture')
+    if capture is not None and capture not in CAPTURE_MODES:
+        raise ScopeFileError('scope_local_invalid_capture')
+    read = _read_filter(values['read']) if 'read' in values else None
+    return capture, read, 'read' in values, bool(set(values) - {'capture', 'read'})
+
+
+def load(path):
+    """`parse`, then the person's `.vaelius.local` beside the file, when there is one.
+
+    The override may set `capture` and `read`. Its capture mode applies only when it
+    is NARROWER than (or equal to) the committed file's on the ladder `on` >
+    `private` > `read-only` > `off`; a wider one is ignored (`WARN_LOCAL_WIDER`).
+    Any other key, `workspace` included, is ignored (`WARN_LOCAL_KEYS`). An override
+    that cannot be read fails closed like any invalid scope file (ScopeFileError)."""
+    request = parse(path)
+    local = local_file(path)
+    if not _regular_file(local):
+        return request
+    capture, read, has_read, extra = _parse_local(local)
+    request['local'] = str(local)
+    if capture is not None:
+        if narrower(capture, request['capture']) == capture:
+            request['capture'] = capture
+        else:
+            request['warnings'].append(WARN_LOCAL_WIDER)
+    if has_read and read is None:
+        request['warnings'].append(WARN_READ_INVALID)  # the committed file's filter, if any, stays
+    elif has_read:
+        request['read'] = read
+    if extra:
+        request['warnings'].append(WARN_LOCAL_KEYS)
+    return request
+
+
+def write_local(scope_path, *, capture=None, read=None):
+    """Write the `.vaelius.local` beside a scope file and keep it out of Git.
+
+    In a Git repository the file name is added to `.git/info/exclude` (this clone
+    only), never to `.gitignore`. Returns {'path', 'excluded'}."""
+    scope_path = Path(scope_path)
+    if capture is not None and capture not in CAPTURE_MODES:
+        raise ScopeFileError('scope_local_invalid_capture')
+    lines = ['# Your own Vaelius override for this folder. Not committed.']
+    if capture is not None:
+        lines.append('capture = "' + capture + '"')
+    if read is not None:
+        names = _read_filter(list(read))
+        if names is None:
+            raise ScopeFileError('scope_local_invalid_read')
+        lines.append('read = [' + ', '.join('"' + name + '"' for name in names) + ']')
+    local = local_file(scope_path)
+    local.write_text('\n'.join(lines) + '\n')
+    excluded = False
+    _, top = _walk(scope_path.parent, (), home=user_home())
+    info = top / '.git' / 'info'
+    if (top / '.git').is_dir():
+        try:
+            relative = local.relative_to(top).as_posix()
+            info.mkdir(exist_ok=True)
+            exclude = info / 'exclude'
+            current = exclude.read_text() if exclude.exists() else ''
+            if '/' + relative not in current.splitlines():
+                exclude.write_text(current + ('' if current.endswith('\n') or not current else '\n')
+                                   + '/' + relative + '\n')
+            excluded = True
+        except (OSError, ValueError):
+            excluded = False
+    return {'path': str(local), 'excluded': excluded}
 
 
 def _walk(start, names, stop=None, home=None, ignored=None):
@@ -296,21 +450,17 @@ def _main_worktree(top):
     return None if main == top else main
 
 
-def discover(cwd, names=DEFAULT_NAMES, ignored=None):
-    """The scope request governing cwd, or None when no scope file applies.
+def governing(start, names=DEFAULT_NAMES, *, home=None, ignored=None):
+    """(scope file or None, where the walk stopped) for a resolved folder.
 
-    Returns the fields documented on ``parse`` plus ``root``; an invalid file
-    yields capture 'off' with an ``error`` so the caller fails closed rather
-    than open. Scope files skipped by ``ignored_scope_root`` are appended to
-    ``ignored`` when a list is given.
-    """
-    try:
-        start = Path(cwd).resolve(strict=True)
-    except (OSError, RuntimeError, TypeError):
-        return None
-    if not start.is_dir():
-        start = start.parent
-    home = user_home()
+    The one rule for which scope file governs a folder, shared by capture discovery
+    (`discover`) and the read allowlist (`agentclient.origin.Context`) so the two
+    cannot drift: the nearest scope file from `start` upwards, never above the Git
+    root of the repository `start` is in (a linked worktree without its own file
+    falls back to the same place in the main worktree). A folder in no Git
+    repository takes the nearest scope file upwards. Scope files at an ignored
+    location (`ignored_scope_root`) never count."""
+    home = user_home() if home is None else Path(home)
     found, top = _walk(start, names, home=home, ignored=ignored)
     if found is None and (top / '.git').is_file():
         main = _main_worktree(top)
@@ -323,10 +473,28 @@ def discover(cwd, names=DEFAULT_NAMES, ignored=None):
             while not target.is_dir() and target != main:
                 target = target.parent
             found, _ = _walk(target, names, stop=main, home=home, ignored=ignored)
+    return found, top
+
+
+def discover(cwd, names=DEFAULT_NAMES, ignored=None):
+    """The scope request governing cwd, or None when no scope file applies.
+
+    Returns the fields documented on ``parse`` plus ``root`` (after the person's
+    `.vaelius.local`, see ``load``); an invalid file yields capture 'off' with an
+    ``error`` so the caller fails closed rather than open. Scope files skipped by
+    ``ignored_scope_root`` are appended to ``ignored`` when a list is given.
+    """
+    try:
+        start = Path(cwd).resolve(strict=True)
+    except (OSError, RuntimeError, TypeError):
+        return None
+    if not start.is_dir():
+        start = start.parent
+    found, _ = governing(start, names, ignored=ignored)
     if found is None:
         return None
     try:
-        request = parse(found)
+        request = load(found)
     except ScopeFileError as error:
         return {'project': None, 'workspace': None, 'workspace_key': False, 'capture': 'off',
                 'sharing': 'private', 'originals': 'private', 'path': str(found),

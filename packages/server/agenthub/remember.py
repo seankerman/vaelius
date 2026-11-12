@@ -7,8 +7,12 @@ person's own words, and one curated document over it whose audience follows the
 source. Nothing here adds a permission path:
 
 * writing needs only the person's own credential with `ingest` (the action that
-  already creates their content) and the writer role in the workspace it is stored
-  in; it never needs `curate`, because the person's explicit command is the review;
+  already creates their content) and an active workspace to file it under: the same
+  rule as a capture, so anyone who can open a personal session in a workspace's
+  folder (a reader, a non-member, a private folder or chat) can keep a personal
+  note there. It never needs the writer role, because the item is owner-private and
+  never joins the workspace's memory, nor `curate`, because the person's explicit
+  command is the review. A read-only chat still writes nothing (agenthub.read_only);
 * the item starts owner-private and is recalled only where the existing audience
   rules admit it (the owner's private sessions, per the session-label rule); it is
   personal memory and is never shared (there is no per-item sharing);
@@ -127,8 +131,9 @@ class RememberMixin:
                     raise ValueError('replace_keeps_the_workspace')
             if not isinstance(workspace, str) or not NAME.fullmatch(workspace):
                 raise ValueError('invalid_remember_workspace')
-            # Writing needs the writer role there, as capture does.
-            if not self._project_member(db, ctx, workspace, 2):
+            # An owner-private item needs no role: like a reader's or non-member's
+            # capture, it is personal memory filed under an active workspace.
+            if not self._capture_workspace(db, ctx, workspace):
                 raise Denied()
             sharing = 'private'
             if target is not None:

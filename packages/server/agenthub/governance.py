@@ -250,7 +250,7 @@ class GovernanceMixin:
         with self.open() as state:
             db = state.db
             if path == '/enterprise/v3/search':
-                # Current project first, then other projects' tiers, each labelled.
+                # Relevance order is kept; items from other projects are labelled (tier, from).
                 cards = decorate_cards(db, result.get('results', []), project=(request or {}).get('project'))
                 bound = 1500 if (request or {}).get('mode') == 'automatic' else 4000
                 # Source discovery adds `notice`/`truncated`, which the v3 client

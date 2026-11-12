@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 
 from agenthub.enterprise import Denied
 from agenthub.cloud_identity import IdentityError
-from agenthub.read_only import ReadOnlySession
+from agenthub.read_only import ReadOnlySession, header_read_only
 from agenthub.mcp_tools import CONTEXT_READ_INSTRUCTIONS, MemoryTools, enterprise_tools
 
 
@@ -61,7 +61,8 @@ def build_mcp(authenticate, deliver, *, allowed_hosts, allowed_origins,challenge
                     # Each call resolves current identity through the same REST
                     # operation boundary; no token or permission result is cached.
                     return deliver(request, 'GET' if value is None else 'POST', path, value, mcp=True)
-                tools=MemoryTools(project,SimpleNamespace(request=operation),session=session,label=label)
+                tools=MemoryTools(project,SimpleNamespace(request=operation),session=session,label=label,
+                                  read_only=header_read_only(request.headers))
                 return tools.call(params.name,arguments)
             result=await run_in_threadpool(invoke)
             return types.CallToolResult(content=[types.TextContent(type='text',text=json.dumps(result,ensure_ascii=True))])

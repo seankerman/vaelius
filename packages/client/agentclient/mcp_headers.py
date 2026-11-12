@@ -22,6 +22,8 @@ def headers(home, *, project=None, project_dir=None, url=None):
     from agentclient.hooks import resolve_scope
     from agentclient.scope_file import enrollments
     config=json.loads((Path(home)/'config.json').read_text())
+    from agentclient.scope_file import default_capture
+    default_capture(config)  # rejects anything but off / read-only
     if url is not None and url.rstrip('/')!=backend_endpoint(require_backend(config))+'/mcp':
         raise ValueError('mcp_url_not_this_profile_service')
     backend=enterprise_client(config)
@@ -56,7 +58,12 @@ def headers(home, *, project=None, project_dir=None, url=None):
         try:label=mcp_label(home,scope.get('root'),label)
         except Exception:pass
         result['X-Vaelius-Session-Label']=json.dumps(label,separators=(',',':'))
-    if (scope and scope.get('capture')=='read-only' and selected) or (label and label.get('read_only')):
+    fallback=None
+    if scope is None and not project:
+        # No scope file governs the folder: the person's `default_capture` may make it recall-only.
+        from agentclient.hooks import default_scope
+        fallback=default_scope(config,{'cwd':project_dir or os.getcwd()})
+    if (scope and scope.get('capture')=='read-only' and selected) or (label and label.get('read_only')) or fallback:
         # A read-only folder or chat: the service refuses every write on this connection.
         result['X-Vaelius-Read-Only']='1'
     if scope and selected:
@@ -73,13 +80,25 @@ def session_label(scope, selected):
     Claude Code gives the header helper no session ID, so `headers` narrows this by
     the label the hooks recorded for the session last active in the folder
     (session_label.compose), never wider. No label (old behavior) outside a
-    workspace folder with capture on."""
+    workspace folder with capture on.
+
+    A `capture = "private"` folder's label says `private` (a personal session). The
+    folder's `read` list travels in the label as a recall filter, which the service
+    intersects with what the label may read; a read-only folder with a `read` list
+    gets a read-only label just to carry it."""
     from agentclient.session_label import LABELLED_ORIGINS, NAME
-    if (not scope or not selected or scope.get('project')!=selected or scope.get('capture')!='on'
+    if (not scope or not selected or scope.get('project')!=selected
             or scope.get('origin') not in LABELLED_ORIGINS or not NAME.fullmatch(str(selected))):
         return None
+    read=[n for n in scope['read'] if isinstance(n,str) and NAME.fullmatch(n)][:32] \
+        if isinstance(scope.get('read'),list) else None
+    if scope.get('capture')=='read-only' and read is not None:
+        return {'workspace':selected,'read_only':True,'read':read}
+    if scope.get('capture')!='on':return None
     label={'workspace':selected}
     if scope.get('sharing') in ('private','team'):label['sharing']=scope['sharing']
+    if scope.get('private'):label['private']=True
+    if read is not None:label['read']=read
     return label
 
 

@@ -306,7 +306,8 @@ class WorkspaceAccessMixin:
         private: no sharing request (an older client's default), a legacy `team`
         request in a workspace with an organization entry, a private capture
         connection, the person's contributions_default, the workspace's
-        item_default, or the person not being a writer there. A reader or a
+        item_default, the person not being a writer there, or the chat being
+        registered private (agenthub.read_only, migration 056). A reader or a
         non-member working in a workspace's repository captures into their personal
         memory only (owner-private); the service decides it on the current role, never
         on what the client says. A request never widens anything."""
@@ -330,6 +331,10 @@ class WorkspaceAccessMixin:
             reasons.append('workspace')
         if self._workspace_role(db, ctx, value['project'])[0] < WRITER:
             reasons.append('not_a_writer')
+        # A chat the person made private (or a `capture = "private"` folder's chat):
+        # owner-private from registration on, whatever this capture asks for.
+        if hasattr(self, 'private_registered') and self.private_registered(ctx, [value.get('conversation')], db):
+            reasons.append('private_session')
         return bool(reasons), requested, reasons
 
     def _check_remote(self, db, ctx, workspace, remote):
@@ -1422,8 +1427,11 @@ class WorkspaceAccessMixin:
                        or roles.get(workspace['id'], (0, 0))[0] < WRITER)
         epoch = db.execute('SELECT coalesce(sum(epoch),0) FROM enterprise_projects WHERE tenant=?',
                            (ctx['tenant'],)).fetchone()[0]
+        # `read` is the folder's recall filter, kept as sent: `_recall_workspaces` caps it
+        # by this label's own lists at query time. It never enters the access decision.
         result = {'workspace': workspace['id'], 'narrowed': names[1:], 'readable': readable, 'epoch': int(epoch),
-                  'private': private, 'workspaces': readable, 'direct': readable, 'groups': [], 'principals': []}
+                  'private': private, 'workspaces': readable, 'direct': readable, 'groups': [], 'principals': [],
+                  'read': label.get('read')}
         if private:
             return result
         audience = ' INTERSECT '.join('(' + self._AUDIENCE_SQL + ')' for _ in names)
@@ -1488,6 +1496,35 @@ class WorkspaceAccessMixin:
                                           for label, _ in shown],
                                 'more': max(count - covered, 0)}
         return found
+
+    def _recall_workspaces(self, db, ctx, requested=None, project=None):
+        """Workspace ids a filtered recall keeps, or None when nothing filters it.
+
+        The filter is the session label's `read` list (the folder's `.vaelius`), or
+        `requested`: a one-off list for one search, which replaces it. It is a
+        convenience, never a permission: the names are intersected with the
+        workspaces this request may read (the label's list; every workspace the
+        person reads in a personal session or without a label), so a filter can
+        only narrow recall. The session's own workspace always stays in. A name
+        that does not resolve, or that the request may not read, is dropped
+        silently."""
+        session = self._label(db, ctx)
+        wanted = validate_read_filter(requested) if requested is not None else (session or {}).get('read')
+        if wanted is None:
+            return None
+        if session:
+            permitted = set(session['readable'] if session.get('private') else session['workspaces'])
+            own = {session['workspace']}
+        else:
+            permitted = set(self._reader_workspaces(db, ctx)[0])
+            row = self._resolve_workspace(db, ctx['tenant'], project, active_only=True) if project else None
+            own = {row['id']} if row else set()
+        named = set()
+        for ref in wanted:
+            row = self._resolve_workspace(db, ctx['tenant'], ref, active_only=True)
+            if row:
+                named.add(row['id'])
+        return sorted((named & permitted) | own)
 
     def _label(self, db, ctx):
         """This request's session-label recall filter, computed once, on first use, inside
@@ -1636,8 +1673,20 @@ MISSING_NAMES = 3
 MISSING_WORKSPACES = 64
 # `newly_unreadable` is computed when the caller reads at most this many workspaces.
 CONTAINMENT_SCOPE = 200
-SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing', 'read_only'}
+SESSION_LABEL_KEYS = {'workspace', 'narrowed', 'private', 'sharing', 'read_only', 'read'}
 MAX_NARROWED = 16
+# A `read` filter (or a one-off `workspaces` list on one search) names at most this many.
+MAX_READ = 32
+
+
+def validate_read_filter(value):
+    """A recall filter: a list of workspace names or ids. None means no filter."""
+    if value is None:
+        return None
+    if (not isinstance(value, list) or len(value) > MAX_READ
+            or any(not isinstance(n, str) or not NAME.fullmatch(n) for n in value)):
+        raise ValueError('invalid_read_filter')
+    return list(dict.fromkeys(value))
 
 
 def validate_session_label(label):
@@ -1653,6 +1702,10 @@ def validate_session_label(label):
         raise ValueError('invalid_session_label')
     if type(label.get('read_only', False)) is not bool:
         raise ValueError('invalid_session_label')
+    try:
+        read = validate_read_filter(label.get('read'))
+    except ValueError:
+        raise ValueError('invalid_session_label') from None
     return {'workspace': label['workspace'], 'narrowed': list(dict.fromkeys(narrowed)),
             'private': label.get('private', False), 'sharing': label.get('sharing', 'organization'),
-            'read_only': label.get('read_only', False)}
+            'read_only': label.get('read_only', False), 'read': read}

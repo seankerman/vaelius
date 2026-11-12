@@ -49,7 +49,7 @@ class RememberTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(listed[0]['sharing'], 'private')
         self.assertEqual(self.store.remembered(self.bob, {})['items'], [])
 
-    def test_needs_ingest_and_the_writer_role(self):
+    def test_needs_ingest_and_an_active_workspace(self):
         reader = self.store.authenticate(self.store.enroll('acme', 'alice', 'alice-read', ['read']))
         with self.assertRaises(Denied):
             self.add(ctx=reader)
@@ -57,6 +57,36 @@ class RememberTests(PostgresFixture, unittest.TestCase):
             self.add(workspace='nowhere')
         with self.assertRaises(ValueError):
             self.add('x' * 8193)
+
+    def test_a_reader_or_non_member_keeps_a_personal_note_nobody_else_reads(self):
+        for name in ('carol', 'erin'):
+            self.store.create_principal('acme', name)
+        self.store.operator_workspace('set-entry', 'maple', subject_kind='principal', subject='carol', role='reader')
+        people = {name: self.store.authenticate(self.store.enroll('acme', name, name + '-own', ['ingest', 'read']))
+                  for name in ('carol', 'erin')}
+        with self.store.open() as state:
+            roles = {name: self.store._workspace_role(state.db, ctx, 'maple')[0] for name, ctx in people.items()}
+        self.assertEqual(roles, {'carol': 1, 'erin': 0}, 'a reader and a non-member: neither writes to maple')
+        for name, ctx in people.items():
+            with self.subTest(name):
+                result = self.add('My own note about the maple deploy.', ctx=ctx)
+                self.assertEqual((result['disposition'], result['sharing'], result['private_owner']),
+                                 ('accepted', 'private', name))
+                with self.store.open() as state:
+                    private = state.db.execute('SELECT private FROM enterprise_sources WHERE id=%s',
+                                               (result['source_id'],)).fetchone()[0]
+                self.assertEqual(private, 1, 'owner-private: it never joins the workspace\'s memory')
+                self.assertEqual(self.store.detail(ctx, result['document_id'])['claim']['lesson'],
+                                 'My own note about the maple deploy.')
+                for other in (self.writer, self.bob):
+                    with self.assertRaises(Denied):
+                        self.store.detail(other, result['document_id'])
+                self.assertEqual([item['document_id'] for item in self.store.remembered(ctx, {})['items']],
+                                 [result['document_id']])
+        self.assertEqual(self.store.remembered(self.writer, {})['items'], [])
+        # A workspace that does not exist takes nothing, whoever asks.
+        with self.assertRaises(Denied):
+            self.add(ctx=people['erin'], workspace='nowhere')
 
     def test_preview_changes_nothing_and_only_its_token_applies(self):
         value = {'text': 'Prefer pytest.', 'workspace': 'maple', 'request_key': 'preview-1', 'always_load': True}

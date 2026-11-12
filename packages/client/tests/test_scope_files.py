@@ -56,13 +56,65 @@ class ScopeFileDiscoveryTest(unittest.TestCase):
             self.assertEqual(found['capture'], 'off', text)
             self.assertIn('error', found)
 
-    def test_visibility_and_read_keys_are_ignored_with_a_warning(self):
+    def test_visibility_is_ignored_and_an_unusable_read_list_applies_no_filter(self):
         self.write(self.repo / '.vaelius', 'workspace = "example-repo"\nvisibility = "org"\nread = ["*", 1]\n')
         found = discover(self.repo)
         self.assertEqual(found['capture'], 'on', 'ignored, not invalid')
-        self.assertEqual(found['warnings'], [scope_file.WARN_VISIBILITY_IGNORED, scope_file.WARN_READ_IGNORED])
+        self.assertEqual(found['warnings'], [scope_file.WARN_VISIBILITY_IGNORED, scope_file.WARN_READ_INVALID])
         self.assertNotIn('visibility', found)
-        self.assertNotIn('read', found)
+        self.assertIsNone(found['read'], 'no filter: recall covers everything the session may read')
+
+    def test_read_is_a_recall_filter_and_private_is_a_capture_mode(self):
+        self.write(self.repo / '.vaelius', 'workspace = "maple"\ncapture = "private"\nread = ["maple", "birch", "maple"]\n')
+        found = discover(self.repo)
+        self.assertEqual((found['capture'], found['read'], found['warnings']), ('private', ['maple', 'birch'], []))
+        self.write(self.repo / '.vaelius', 'workspace = "maple"\n')
+        self.assertIsNone(discover(self.repo)['read'], 'no key: unfiltered')
+        self.assertEqual(scope_file.CAPTURE_MODES, ('on', 'private', 'read-only', 'off'))
+        self.assertEqual(scope_file.narrower('on', 'private'), 'private')
+        self.assertEqual(scope_file.narrower('read-only', 'private'), 'read-only')
+
+    def test_local_override_only_narrows_capture_and_cannot_change_the_workspace(self):
+        ladder = scope_file.CAPTURE_MODES
+        for committed in ladder:
+            for local in ladder:
+                with self.subTest(committed=committed, local=local):
+                    self.write(self.repo / '.vaelius', 'workspace = "maple"\ncapture = "' + committed + '"\n')
+                    self.write(self.repo / '.vaelius.local', 'capture = "' + local + '"\n')
+                    found = discover(self.repo)
+                    wider = ladder.index(local) < ladder.index(committed)
+                    # Narrow-only: the effective mode is never wider than the committed file's.
+                    self.assertEqual(found['capture'], committed if wider else local)
+                    self.assertEqual(scope_file.WARN_LOCAL_WIDER in found['warnings'], wider)
+        self.write(self.repo / '.vaelius', 'workspace = "maple"\nread = ["maple"]\n')
+        self.write(self.repo / '.vaelius.local', 'workspace = "birch"\nsharing = "organization"\nread = ["birch"]\n')
+        found = discover(self.repo)
+        self.assertEqual((found['workspace'], found['capture'], found['read']), ('maple', 'on', ['birch']))
+        self.assertEqual(found['warnings'], [scope_file.WARN_LOCAL_KEYS])
+        self.assertEqual(found['local'], str(self.repo / '.vaelius.local'))
+        # An override Vaelius cannot read fails closed, like any invalid scope file.
+        self.write(self.repo / '.vaelius.local', 'capture = "always"\n')
+        self.assertEqual((discover(self.repo)['capture'], discover(self.repo)['error']), ('off', 'scope_local_invalid_capture'))
+
+    def test_a_local_override_without_a_scope_file_does_nothing(self):
+        self.write(self.repo / '.vaelius.local', 'capture = "on"\nread = ["maple"]\n')
+        self.assertIsNone(discover(self.repo))
+        from agentclient.hooks import resolve_scope
+        self.assertIsNone(resolve_scope({}, {'session_id': 's', 'cwd': str(self.repo)}))
+
+    def test_write_local_goes_into_git_info_exclude_never_gitignore(self):
+        self.write(self.repo / '.vaelius', 'workspace = "maple"\n')
+        self.write(self.repo / 'pkg/.vaelius', 'workspace = "maple"\n')
+        first = scope_file.write_local(self.repo / 'pkg/.vaelius', capture='read-only', read=['maple'])
+        again = scope_file.write_local(self.repo / 'pkg/.vaelius', capture='private')
+        self.assertEqual((first['excluded'], again['excluded']), (True, True))
+        self.assertEqual((self.repo / '.git/info/exclude').read_text().splitlines().count('/pkg/.vaelius.local'), 1)
+        self.assertFalse((self.repo / '.gitignore').exists())
+        self.assertEqual(discover(self.repo / 'pkg')['capture'], 'private')
+        loose = self.tmp / 'loose'
+        loose.mkdir()
+        self.write(loose / '.vaelius', 'workspace = "maple"\n')
+        self.assertFalse(scope_file.write_local(loose / '.vaelius', capture='off')['excluded'])
 
     def test_legacy_name_needs_explicit_configuration_and_maps_only_known_fields(self):
         self.write(self.repo / '.mindshare', 'mode: read-only\ntags: [alpha, beta]\nteam: example-team\nsearch:\n  tags:\n    scope: [x]\n')
@@ -128,9 +180,11 @@ class WorktreeScopeTest(unittest.TestCase):
 class Backend:
     def __init__(self):
         self.calls = []
+        self.requests = []
 
     def request(self, path, value=None):
         self.calls.append(path)
+        self.requests.append((path, value))
         if path.endswith('capture-notice'):
             raise OSError('service unavailable')
         if path.endswith('preferences'):
@@ -239,6 +293,112 @@ class ScopeHookTest(unittest.TestCase):
         status, _ = self.hook('SessionStart')
         self.assertIn('read-only', status['systemMessage'])
         self.assertEqual(Outbox.events, [])
+
+    def test_private_folder_is_captured_owner_private(self):
+        self.scope('workspace = "maple"\ncapture = "private"\n')
+        result, backend = self.hook()
+        self.assertTrue(self.recalled(result))
+        self.assertEqual([e['project'] for e in Outbox.events], ['maple'])
+        self.assertNotIn('sharing', Outbox.events[0], 'owner-private: no sharing request goes on the wire')
+        status, _ = self.hook('SessionStart')
+        self.assertIn('capture PRIVATE for workspace maple', status['systemMessage'])
+        self.assertIn('personal memory only', status['systemMessage'])
+        from agentclient.hooks import resolve_scope
+        scope = resolve_scope(self.config, {'session_id': 's1', 'cwd': str(self.repo)})
+        self.assertEqual((scope['capture'], scope['sharing'], scope['private']), ('on', 'private', True))
+
+    def test_local_override_narrows_the_hook_and_a_wider_one_warns_once(self):
+        self.scope('workspace = "maple"\n')
+        self.scope('capture = "read-only"\n', name='.vaelius.local')
+        result, backend = self.hook()
+        self.assertTrue(self.recalled(result))
+        self.assertEqual(Outbox.events, [], 'narrowed to read-only: recall, nothing saved')
+        self.scope('workspace = "maple"\ncapture = "read-only"\n')
+        self.scope('capture = "on"\n', name='.vaelius.local')
+        first, _ = self.hook()
+        self.assertEqual(Outbox.events, [], 'a local file never widens the committed one')
+        self.assertIn('can only narrow', first['systemMessage'])
+        again, _ = self.hook()
+        self.assertNotIn('can only narrow', again.get('systemMessage', ''), 'once')
+
+    def test_read_filter_travels_with_recall(self):
+        self.scope('workspace = "maple"\nread = ["maple", "birch"]\n')
+        _, backend = self.hook()
+        search = [value for path, value in backend.requests if path == '/enterprise/v3/search'][0]
+        self.assertEqual(search['workspaces'], ['maple', 'birch'])
+        self.scope('workspace = "maple"\n')
+        _, backend = self.hook()
+        search = [value for path, value in backend.requests if path == '/enterprise/v3/search'][0]
+        self.assertNotIn('workspaces', search, 'no key: everything the session may read')
+
+    def test_default_capture_read_only_recalls_and_saves_nothing_where_no_scope_file_applies(self):
+        self.write(default_capture='read-only')
+        result, backend = self.hook()
+        self.assertTrue(self.recalled(result))
+        self.assertEqual(backend.calls, ['/enterprise/v3/search'], 'recall only: no preferences, no receipt')
+        self.assertNotIn('project', backend.requests[0][1], 'no workspace: everything the person can read')
+        self.assertNotIn('session_label', backend.requests[0][1])
+        start, backend = self.hook('SessionStart')
+        self.assertIn(('/enterprise/v3/sessions/read-only', {'sessions': ['s1']}), backend.requests,
+                      'the service refuses writes naming this chat')
+        self.assertIn('sent to the Vaelius service as recall queries', start['systemMessage'])
+        for kind, extra in (('PostToolUse', {'tool_name': 'Bash', 'tool_input': {'command': 'true'}, 'tool_response': {}}),
+                            ('Stop', {'last_assistant_message': 'done'}), ('PostCompact', {'trigger': 'auto'})):
+            self.assertEqual(self.hook(kind, **extra)[0], {})
+        self.assertEqual(Outbox.events, [], 'nothing is ever captured by the default')
+        # A scope file in the folder governs instead: off stays off and an invalid one fails closed.
+        for text in ('project = "example-repo"\ncapture = "off"\n', 'project = [\n'):
+            self.scope(text)
+            result, backend = self.hook()
+            self.assertEqual((result, backend.calls, Outbox.events), ({}, [], []), text)
+        # And it is off unless the person turned it on.
+        (self.repo / '.vaelius').unlink()
+        self.write()
+        result, backend = self.hook()
+        self.assertEqual((result, backend.calls, Outbox.events), ({}, [], []))
+
+    def test_default_capture_can_only_be_off_or_read_only(self):
+        from agentclient.hooks import default_scope
+        for value in ('on', 'private', 'ON', 'always', True, None, ['read-only']):
+            with self.subTest(value=value):
+                self.write(default_capture=value)
+                with self.assertRaises(ScopeFileError):
+                    self.hook()
+                with self.assertRaises(ScopeFileError):
+                    self.hook('SessionStart')
+                with self.assertRaises(ScopeFileError):
+                    scope_file.default_capture({'default_capture': value})
+                with self.assertRaises(ScopeFileError):
+                    default_scope({'default_capture': value}, {'cwd': str(self.repo)})
+                self.assertEqual(Outbox.events, [], 'a profile setting never turns capture on')
+        self.assertEqual(scope_file.default_capture({}), 'off')
+        self.assertEqual(scope_file.DEFAULT_CAPTURE, ('off', 'read-only'))
+        scope = default_scope({'default_capture': 'read-only'}, {'cwd': str(self.repo)})
+        self.assertEqual((scope['capture'], scope['project']), ('read-only', None))
+
+    def test_config_command_sets_and_shows_default_capture(self):
+        import contextlib
+        import io
+        from agentclient import cli
+        def run(*argv):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                cli.main(['--home', str(self.home), *argv])
+            return json.loads(out.getvalue())
+        self.assertEqual(run('config', 'default-capture')['default_capture'], 'off')
+        self.assertEqual(run('config', 'default-capture', 'read-only'), mock.ANY)
+        self.assertEqual(json.loads((self.home / 'config.json').read_text())['default_capture'], 'read-only')
+        self.assertEqual(run('scope-status', '--cwd', str(self.repo))['default_capture'], 'read-only')
+        for value in ('on', 'private'):
+            with self.assertRaises(SystemExit):
+                run('config', 'default-capture', value)
+        self.assertEqual(json.loads((self.home / 'config.json').read_text())['default_capture'], 'read-only')
+        # A hand-edited value is rejected at load by every other command, and `config` repairs it.
+        self.write(default_capture='on')
+        with self.assertRaises(SystemExit) as refused:
+            run('scope-status', '--cwd', str(self.repo))
+        self.assertIn('invalid_default_capture', str(refused.exception))
+        self.assertEqual(run('config', 'default-capture', 'off')['default_capture'], 'off')
 
     def test_off_neither_captures_nor_recalls_even_when_explicitly_enrolled(self):
         self.scope('project = "example-repo"\ncapture = "off"\n')

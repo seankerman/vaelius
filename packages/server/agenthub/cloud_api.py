@@ -109,6 +109,8 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/workspaces/visibility'):(('manage',),('settings',)),
     # Read-only chats (agenthub.read_only): registering the caller's own chat only narrows.
     ('POST','/enterprise/v3/sessions/read-only'):READ,
+    # Private chats: the same one-way registration; later captures are owner-private.
+    ('POST','/enterprise/v3/sessions/private'):READ,
     ('POST','/enterprise/v3/workspaces/settings'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/workspaces/entries/set'):(('manage',),('settings',)),
     ('POST','/enterprise/v3/workspaces/entries/remove'):(('manage',),('settings',)),
@@ -180,6 +182,7 @@ WORKSPACE_ROUTES={'/enterprise/v3/workspaces':'list_workspaces','/enterprise/v3/
     '/enterprise/v3/workspaces/descriptor':'session_descriptor',
     '/enterprise/v3/workspaces/create':'create_workspace','/enterprise/v3/workspaces/settings':'workspace_settings',
     '/enterprise/v3/workspaces/visibility':'set_visibility','/enterprise/v3/sessions/read-only':'mark_read_only',
+    '/enterprise/v3/sessions/private':'mark_private',
     '/enterprise/v3/workspaces/entries/set':'set_entry','/enterprise/v3/workspaces/entries/remove':'remove_entry',
     '/enterprise/v3/workspaces/repos/link':'link_repo','/enterprise/v3/workspaces/repos/unlink':'unlink_repo',
     '/enterprise/v3/groups':'list_groups','/enterprise/v3/groups/show':'show_group',

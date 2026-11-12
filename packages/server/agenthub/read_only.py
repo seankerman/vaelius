@@ -15,6 +15,13 @@ workspace administration) for:
 
 Reads keep working. Registration is one-way: there is no route that removes a row, so
 only a new chat (or `/clear`, which starts a new session id) writes again.
+
+Private chats use the same registration (`POST /enterprise/v3/sessions/private`,
+migration 056): the person made the rest of a chat private (`vaelius-client session
+private`, the MCP tool `private_session`) or it runs in a `capture = "private"`
+folder. The service stores every later capture naming a registered session
+owner-private, whatever the client sends (`WorkspaceAccessMixin._ingest_privacy`).
+Also one-way, and it never refuses anything: it only narrows who reads the capture.
 """
 import hashlib
 import json
@@ -27,6 +34,8 @@ STATUS = 'vaelius: read-only — nothing from this chat is saved'
 # Credential actions that only read; a route whose rule can be met with these alone is not a write.
 READ_ACTIONS = frozenset({'read', 'source_read', 'audit'})
 REGISTRATION = '/enterprise/v3/sessions/read-only'
+PRIVATE_REGISTRATION = '/enterprise/v3/sessions/private'
+PRIVATE_STATUS = 'vaelius: private — this chat is saved to your personal memory only'
 MAX_SESSIONS = 8
 RETENTION = 30 * 86400
 
@@ -39,7 +48,7 @@ class ReadOnlySession(Exception):
 
 def is_write(rule, path):
     """True for a route that changes stored state; registration itself only narrows."""
-    if path == REGISTRATION or rule is None:
+    if path in (REGISTRATION, PRIVATE_REGISTRATION) or rule is None:
         return False
     return not any(set(group) <= READ_ACTIONS for group in rule)
 
@@ -74,10 +83,9 @@ def named_sessions(path, data, headers):
 
 
 class ReadOnlySessionsMixin:
-    """Registration and lookup of read-only chats for one tenant store."""
+    """Registration and lookup of read-only and private chats for one tenant store."""
 
-    def mark_read_only(self, ctx, value):
-        """Register the caller's chat session ids as read-only (one-way; needs `read`)."""
+    def _register_sessions(self, ctx, value, table, operation):
         if (not isinstance(value, dict) or set(value) != {'sessions'} or not isinstance(value['sessions'], list)
                 or not 1 <= len(value['sessions']) <= MAX_SESSIONS
                 or any(not isinstance(s, str) or not 0 < len(s) <= 256 for s in value['sessions'])):
@@ -86,13 +94,32 @@ class ReadOnlySessionsMixin:
         now = time.time()
         with self.open() as state, state.db:
             db = state.db
-            db.execute('DELETE FROM read_only_sessions WHERE created<?', (now - RETENTION,))
+            db.execute('DELETE FROM ' + table + ' WHERE created<?', (now - RETENTION,))
             for session in dict.fromkeys(value['sessions']):
-                db.execute('''INSERT INTO read_only_sessions(tenant,principal,session,created) VALUES(?,?,?,?)
+                db.execute('INSERT INTO ' + table + '''(tenant,principal,session,created) VALUES(?,?,?,?)
                     ON CONFLICT(tenant,principal,session) DO NOTHING''',
                            (ctx['tenant'], ctx['principal'], _digest(ctx['tenant'], ctx['principal'], session), now))
-            self._audit(db, ctx, 'session_read_only', 'registered', None, len(value['sessions']))
-        return {'read_only': True, 'sessions': len(set(value['sessions'])), 'message': MESSAGE}
+            self._audit(db, ctx, operation, 'registered', None, len(value['sessions']))
+        return len(set(value['sessions']))
+
+    def mark_read_only(self, ctx, value):
+        """Register the caller's chat session ids as read-only (one-way; needs `read`)."""
+        count = self._register_sessions(ctx, value, 'read_only_sessions', 'session_read_only')
+        return {'read_only': True, 'sessions': count, 'message': MESSAGE}
+
+    def mark_private(self, ctx, value):
+        """Register the caller's chat session ids as private (one-way; needs `read`):
+        every later capture naming one of them is stored owner-private."""
+        count = self._register_sessions(ctx, value, 'private_sessions', 'session_private')
+        return {'private': True, 'sessions': count, 'message': PRIVATE_STATUS}
+
+    def private_registered(self, ctx, sessions, db):
+        """True when any of these session ids was registered private by the caller."""
+        digests = sorted({_digest(ctx['tenant'], ctx['principal'], s) for s in sessions if isinstance(s, str) and s})
+        if not digests:
+            return False
+        return bool(db.execute('''SELECT 1 FROM private_sessions WHERE tenant=? AND principal=?
+            AND session=ANY(?::text[]) LIMIT 1''', (ctx['tenant'], ctx['principal'], digests)).fetchone())
 
     def read_only_registered(self, ctx, sessions, db=None):
         """True when any of these session ids was registered read-only by the caller."""

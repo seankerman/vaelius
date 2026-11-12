@@ -117,7 +117,7 @@ class AccessMigrationTests(unittest.TestCase):
             rows = db.execute('''SELECT s.id,array_agg(who.id ORDER BY who.id) readers FROM enterprise_sources s
                 JOIN search_source_policies m ON m.source_id=s.id JOIN search_policies p ON p.id=m.policy_id
                 JOIN enterprise_principals who ON who.tenant=s.tenant
-                WHERE search_reader_in_audience(p.definition,s.tenant,who.id,NULL,false) GROUP BY s.id''').fetchall()
+                WHERE search_reader_in_audience(p.definition,s.tenant,who.id,NULL) GROUP BY s.id''').fetchall()
         return {row[0]: row[1] for row in rows}
 
 
@@ -198,6 +198,43 @@ class AccessMigrationTests(unittest.TestCase):
                         run('''INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,
                             created,passages,originals,issued_with) VALUES('acme','source','new','principal','bob',
                             'alice',0,%s,1,%s)''', (passages, issued))
+
+    def test_057_drops_the_share_functions_and_leaves_the_originals_grant_alone(self):
+        migrate(self.admin_dsn, through=56)
+        functions = """SELECT p.proname,p.pronargs FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname=%s AND p.proname IN ('search_reader_in_audience','search_session_admits',
+                'search_passage_granted','search_passage_session_granted','search_document_allowed')"""
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            run("INSERT INTO enterprise_organizations(id) VALUES('acme')")
+            for name in ('alice', 'bob'):
+                run("INSERT INTO enterprise_principals(tenant,id) VALUES('acme',%s)", (name,))
+            run("""INSERT INTO raw_source_grants(tenant,scope_kind,scope_id,grantee_kind,grantee,granted_by,created,
+                passages,originals,issued_with) VALUES('acme','source','s-original','principal','bob','alice',0,0,1,
+                'policy')""")
+            before = run('SELECT * FROM raw_source_grants').fetchall()
+            self.assertEqual({tuple(r.values()) for r in run(functions, (self.schema,)).fetchall()},
+                             {('search_reader_in_audience', 5), ('search_session_admits', 3),
+                              ('search_passage_granted', 3), ('search_passage_session_granted', 5),
+                              ('search_document_allowed', 1)})
+        receipts = migrate(self.admin_dsn)
+        self.assertEqual((receipts[-1]['version'], receipts[-1]['status']), (57, 'applied'))
+        with connect(self.admin_dsn) as db:
+            run = db.execute
+            self.assertEqual({tuple(r.values()) for r in run(functions, (self.schema,)).fetchall()},
+                             {('search_reader_in_audience', 4), ('search_session_admits', 2),
+                              ('search_document_allowed', 1)}, 'the share forms and lookups are gone')
+            self.assertEqual(run('SELECT * FROM raw_source_grants').fetchall(), before,
+                             'the operator originals grant is untouched')
+            self.assertEqual(run("""SELECT count(*) FROM pg_constraint WHERE conrelid='raw_source_grants'::regclass
+                AND conname='raw_source_grants_originals_only'""").fetchone()[0], 1, 'and so is its constraint')
+            self.assertIsNotNone(run("""SELECT 1 FROM information_schema.columns WHERE table_schema=%s
+                AND table_name='enterprise_documents' AND column_name='raw_granted'""", (self.schema,)).fetchone())
+            # A grant never puts its grantee in an item's audience.
+            definition = json.dumps({'tenant': 'acme', 'owner': 'alice', 'project': 'maple', 'private': True})
+            audience = lambda who: run('SELECT search_reader_in_audience(%s::jsonb,%s,%s,NULL)',
+                                       (definition, 'acme', who)).fetchone()[0]
+            self.assertEqual((audience('alice'), audience('bob')), (True, False))
 
 
 if __name__ == '__main__':

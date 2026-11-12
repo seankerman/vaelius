@@ -177,8 +177,9 @@ service never promotes it past the access list.
 Per-item shares to chosen people or groups were removed (migration 055). The
 migration revoked every passage share and every owner-issued share (rows kept for
 audit) and a CHECK constraint keeps every active `raw_source_grants` row an
-operator-issued originals grant, so the share term that remains in the predicate
-matches nothing in any layer.
+operator-issued originals grant. The share term that this left unreachable in the
+predicate was then removed from all three layers (migration 057): no layer reads
+a grant when deciding who may read a passage or a derived document.
 
 ### Carried workspaces
 
@@ -226,7 +227,7 @@ apply to the source as to any other.
 
 Tenant isolation, active principal, withdrawal and deletion, legal holds,
 operator quarantine (held content stays with its author; quarantined readers
-lose the organization entry and share paths), delegation limits, connection
+lose the organization entry), delegation limits, connection
 reader lists and freshness, source ACL freshness and moderation all apply on
 top, unchanged. Reviewed releases (operator `policy` action,
 `backend_releases`) stay an explicit operator path, unchanged.
@@ -267,8 +268,7 @@ can_read(reader r, item i) =
   ∧ 'read' ∈ actions(r.credential)
   ∧ ( i.owner = r
     ∨ ( ¬i.origin_private
-      ∧ ( (¬i.private ∧ role(r, i.workspace) ≥ reader)
-        ∨ (shared_with(i, r) ∧ ¬quarantined(r)) )
+      ∧ ¬i.private ∧ role(r, i.workspace) ≥ reader
       ∧ ∀ w ∈ i.carried : role(r, w) ≥ reader
       ∧ legacy_team_origin(r, i) ) )
 
@@ -283,17 +283,17 @@ also needs `source_read` and ownership or an operator originals grant.
 It is implemented three times and a parity test keeps them in agreement:
 
 1. the **Python oracle** in `agenthub.workspace_access`
-   (`WorkspaceAccessMixin._in_audience`, `_shared_with`), used by
-   `EnterpriseStore._document_allowed`, `_visible_source` and
-   `agenthub.raw_access`;
+   (`WorkspaceAccessMixin._in_audience`), used by
+   `EnterpriseStore._document_allowed` and `_visible_source`;
 2. the **indexed SQL filter** in `agenthub.search_permissions.AUDIENCE`, with
    the reader's workspaces `R` and delegated set `D` computed once per request;
 3. **row-level security** functions `search_reader_in_audience` and
    `search_document_allowed`, applied by the restricted search-reader role to
    every ranking query. A denied row never leaves the database.
 
-Operator originals grants (`raw_source_grants`) reach only originals; no grant
-reaches a passage or a derived document (migration 055).
+Operator originals grants (`raw_source_grants`) reach only originals, through
+their own check in `agenthub.raw_access`; no grant reaches a passage or a derived
+document, and none of the three layers reads the table (migrations 055 and 057).
 
 ## Project-scoped retrieval
 
@@ -323,10 +323,9 @@ workspace have no label and capture nothing.
 
 **Superset list.** For a label the service computes, on current materialized
 membership, the set `S` of workspaces the reader can read whose audience contains
-the session audience (`audience(A) ∩ audience(narrowed…)`), plus the groups whose
-members contain it. It is extensional: an organization entry contains every session
-audience except quarantined members, who must be direct members. Nothing is cached
-between requests.
+the session audience (`audience(A) ∩ audience(narrowed…)`). It is extensional: an
+organization entry contains every session audience except quarantined members,
+who must be direct members. Nothing is cached between requests.
 
 **Recall filter.** A recall request (prompt injection, `search_memory`, evidence,
 context, timeline and history routes) that carries a label returns only items
@@ -335,14 +334,14 @@ whose audience contains the session audience:
 ```
 session_admits(i) = private session
                   ∨ ( ¬i.origin_private
-                    ∧ ( (¬i.private ∧ i.workspace ∈ S) ∨ shared_to_subject_containing(session audience) )
+                    ∧ ¬i.private ∧ i.workspace ∈ S
                     ∧ i.carried ⊆ S
                     ∧ (i.origin_ceiling ≠ 'team' ∨ (i.workspace, i.carried ⊆ S_direct)) )
 ```
 
 It is the fourth term of the same predicate in all three layers
 (`WorkspaceAccessMixin._session_admits`, `search_permissions.SESSION`, and
-`search_session_admits` called from `search_document_allowed`, migration 049), with
+`search_session_admits` called from `search_document_allowed`, migration 057), with
 parity tests. In a shared session the person's own private items are not recalled;
 a private session recalls everything the person can read. The person's private
 preferences and private "always load" remembered items follow the same rule: only
@@ -361,10 +360,19 @@ folder's `.vaelius` or `.vaelius.local`), and one search may carry a `workspaces
 list instead. It is a convenience, never a permission, and is not part of the
 predicate above: `WorkspaceAccessMixin._recall_workspaces` resolves the names,
 intersects them with `S` (with every workspace the person reads, for a private
-session or a request without a label), always keeps the session's own workspace,
-and the result is one more `AND` predicate over the already authorized candidate
-query. A name the session may not read is dropped silently, so a filter can only
-narrow what recall returns. Without a list recall is unfiltered.
+session or a request without a label) and always keeps the session's own workspace.
+Every search path then applies the result on top of the authorized query: the
+candidate query through the search reader's row-level security (the context key
+`recall_filter`, checked beside retrieval reach: it can only refuse a document
+earlier, and the predicate is evaluated in full for every document it keeps), and
+dated search over curated memory through one SQL condition on the documents it
+selects from (`RECALL_FILTER_SQL`). A document is kept when at least one source it
+depends on is in a listed workspace, so one derived from sources in several
+workspaces is not lost while one of them is listed; the reader still needs every
+one of its sources. A name the session may not read is dropped silently, so a
+filter can only narrow what recall returns. Without a list recall is unfiltered.
+Opening an item by id, a named workspace's history and a person's own preferences
+are not searches and are not filtered.
 
 **Read rule.** The client caches an advisory descriptor (the service's `S` for the
 session) in its profile and the PreToolUse guardrail hook denies reads of scoped

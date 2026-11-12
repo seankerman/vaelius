@@ -231,6 +231,7 @@ reader's workspaces `R` and delegated set `D`) and the row-level security
 functions `search_reader_in_audience` and `search_document_allowed`, applied by
 the restricted search-reader role. A parity test keeps all three in agreement,
 and a teammate's search runs the same number of SQL statements as the owner's.
+None of the three has a per-item share term (migrations 055 and 057).
 
 Migrations `042_project_sharing.sql` (team sharing), `045_sharing_levels.sql`
 (the ladder, person and tenant ceilings, originals level), `046_origin_labels`

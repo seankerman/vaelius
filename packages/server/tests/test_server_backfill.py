@@ -69,7 +69,7 @@ class ServerBackfillTests(PostgresFixture, unittest.TestCase):
     def visible(self, ctx, source):
         with self.store.open() as state:
             row = state.db.execute('SELECT * FROM enterprise_sources WHERE id=?', (source['id'],)).fetchone()
-            return self.store._visible_source(state.db, ctx, row, raw=True)
+            return self.store._visible_source(state.db, ctx, row)
 
     def test_dry_run_counts_only_and_writes_nothing_but_the_audit_row(self):
         report = self.run_backfill()

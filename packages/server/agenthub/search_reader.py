@@ -55,13 +55,19 @@ REACHES = ('project', 'all')
 
 
 @contextmanager
-def restrict(store, state, ctx, project=None, *, reach=None):
+def restrict(store, state, ctx, project=None, *, reach=None, recall_filter=None):
     """Switch one existing transaction; RESET/rollback cannot leak user context.
 
     `reach` narrows retrieval, never authorization. 'project': the requested
     project's documents, plus documents from other projects only when they are
     shared with the whole organization. 'all': every project the reader may
     read. None keeps the earlier behavior (scopes of the requested project).
+
+    `recall_filter` (workspace ids from WorkspaceAccessMixin._recall_workspaces, or
+    None) is the `read` filter: it keeps a document when at least one source it
+    depends on is in a listed workspace. Like `reach` it only narrows: row-level
+    security returns false earlier for a document outside it and evaluates the
+    whole predicate for every other one.
     """
     from psycopg import sql
     from agenthub.draft_review import selected_documents
@@ -73,17 +79,19 @@ def restrict(store, state, ctx, project=None, *, reach=None):
     releases = [r[0] for r in state.db.execute('SELECT document_id FROM backend_releases WHERE tenant=?', (ctx['tenant'],))]
     releases = [doc for doc in releases if store._document_allowed(state.db, ctx, doc)]
     context = dict(tenant=ctx['tenant'], actor=ctx['actor'], scopes=scopes, project=project,
-        # Migration 031 names this flag source_read; it gates the owner's or shared redacted
-        # passages, which now need only `read`. Originals use agenthub.raw_access.
+        # Migration 031 names this flag source_read; it gates redacted passages, which
+        # now need only `read`. Originals use agenthub.raw_access.
         source_read='read' in ctx['actions'],
         delegated=sorted(ctx['delegated_projects']) if ctx.get('delegated_projects') is not None else None,
         review=selected_documents(store, ctx), releases=releases)
     if reach is not None:
         context['reach'] = reach
+    if recall_filter is not None:
+        context['recall_filter'] = sorted(recall_filter)
     session = store._label(state.db, ctx)
     if session and not session.get('private'):
-        # Recall in a labelled session (docs/ACCESS_MODEL.md section 7, migration 049).
-        context['session'] = {key: list(session.get(key, ())) for key in ('workspaces', 'direct', 'principals', 'groups')}
+        # Recall in a labelled session (docs/ACCESS_MODEL.md rule 6, migration 057).
+        context['session'] = {key: list(session.get(key, ())) for key in ('workspaces', 'direct')}
     connection = state.db.connection
     database, schema, worker = connection.execute('SELECT current_database(),current_schema(),current_user').fetchone().values()
     role = reader_role(database, schema, worker)

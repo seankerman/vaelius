@@ -17,6 +17,17 @@ Follow [AGENTS.md](AGENTS.md). Add behavior-focused regressions for security and
 retrieval changes; record installed SQL counts and query latency where applicable.
 Report skipped tests and optional-provider gaps accurately.
 
+CI runs the suite in parallel shards (`python scripts/test.py --shard 2/4 ...`), each
+against its own disposable PostgreSQL. Test modules are split by the seconds recorded
+in `scripts/test_timings.json`; a new test file needs no entry there and lands in a
+shard on its own. The `installed-postgres` job fails unless the shard reports add up
+to full discovery with every test in exactly one shard. To rebalance, download the
+`test-report-*` artifacts of a run on `main` and run
+`python scripts/test.py --record-timings <reports>/shard-*.json`. The shard jobs
+start their PostgreSQL with `--postgres-host-network` and durability off
+(`--postgres-setting fsync=off` and two more): only for a database that is thrown
+away, never for one you keep.
+
 CI installs third-party packages only from hash-locked files
 (`python -m pip install --require-hashes -r requirements-dev.txt`, then
 `python scripts/build.py --no-isolation`). When you change a dependency pin, update

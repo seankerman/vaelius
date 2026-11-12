@@ -9,9 +9,73 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  installed-postgres:
+  # One job per shard, each with its own disposable PostgreSQL. To change the shard
+  # count, change only the matrix list: it must be 1..N.
+  tests:
+    name: tests (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # base images mirrored by base-images.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install hash-locked development dependencies
+        run: python -m pip install --require-hashes -r requirements-dev.txt
+      - name: Build and install matching release packages
+        run: |
+          python scripts/build.py --no-isolation
+          python -m pip install --no-deps --no-index --force-reinstall dist/*.whl
+          # Offline: fails if the lock does not satisfy a declared extra.
+          python -m pip install --no-index --find-links dist 'vaelius-server[cloud,semantic,cloud-test]'
+          python -m pip check
+      - name: Start disposable services
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the pinned base image from the GHCR mirror when it exists.
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin || true
+          contexts=$(python scripts/base_images.py contexts "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vaelius-base" containers/Dockerfile.test-postgres)
+          docker build $contexts -f containers/Dockerfile.test-postgres -t vaelius-test-postgres:ci .
+          docker logout ghcr.io
+          # This database is destroyed with the job: no crash durability, and the server on the
+          # runner's loopback instead of a published port (no proxy hop per round trip).
+          python scripts/dev_services.py start --state "$RUNNER_TEMP/vaelius-services" --engine docker --postgres-image vaelius-test-postgres:ci \
+            --postgres-host-network --postgres-setting fsync=off --postgres-setting synchronous_commit=off --postgres-setting full_page_writes=off
+      - name: Installed unit and PostgreSQL regressions, one shard
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          python scripts/test.py --installed --services "$RUNNER_TEMP/vaelius-services/services.json" \
+            --shard "$SHARD/$SHARDS" --report "$RUNNER_TEMP/vaelius-tests/shard-$SHARD.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-report-${{ matrix.shard }}
+          path: ${{ runner.temp }}/vaelius-tests/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Stop disposable services
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/vaelius-services/dev-services.json"; then
+            python scripts/dev_services.py destroy --state "$RUNNER_TEMP/vaelius-services"
+          fi
+
+  # Everything that runs once, not per shard.
+  delivery:
+    name: oauth, delivery and artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: read # base images mirrored by base-images.yml
@@ -43,8 +107,6 @@ jobs:
           docker build $contexts -f containers/Dockerfile.test-postgres -t vaelius-test-postgres:ci .
           docker logout ghcr.io
           python scripts/dev_services.py start --state "$RUNNER_TEMP/vaelius-services" --engine docker --postgres-image vaelius-test-postgres:ci
-      - name: Installed unit and PostgreSQL regressions
-        run: python scripts/test.py --installed --services "$RUNNER_TEMP/vaelius-services/services.json" --report "$RUNNER_TEMP/vaelius-tests.json"
       - name: Real disposable OAuth provider and installed client
         run: |
           python - <<'PY'
@@ -75,3 +137,34 @@ jobs:
           if test -f "$RUNNER_TEMP/vaelius-services/dev-services.json"; then
             python scripts/dev_services.py destroy --state "$RUNNER_TEMP/vaelius-services"
           fi
+
+  # The one check to require: it reports for every run, whatever the shard count.
+  installed-postgres:
+    needs: [tests, delivery]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Every shard and the once-only checks succeeded
+        env:
+          TESTS: ${{ needs.tests.result }}
+          DELIVERY: ${{ needs.delivery.result }}
+        run: |
+          echo "tests=$TESTS delivery=$DELIVERY"
+          test "$TESTS" = success
+          test "$DELIVERY" = success
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: test-report-*
+          path: ${{ runner.temp }}/vaelius-tests
+          merge-multiple: true
+      - name: The shards add up to full discovery, each test exactly once
+        run: python scripts/test.py --verify-shards "$RUNNER_TEMP/vaelius-tests"

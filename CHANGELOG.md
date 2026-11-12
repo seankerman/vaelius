@@ -6,7 +6,55 @@ The release workflow publishes the section whose heading matches the tag.
 
 ## [Unreleased]
 
+### Added
+
+- **Private chats and private folders.** `vaelius-client session private`, or the
+  MCP tool `private_session` when the person asks, saves the rest of a chat to
+  their personal memory only and makes the session personal (recall and file reads
+  follow the personal-session rules). One-way until `/clear` or a new chat, like
+  `session read-only`; captures made before the switch stay where they were, and
+  the status line says so and names `vaelius-client forget --session current`.
+  `capture = "private"` in `.vaelius` does the same for every chat started in a
+  folder. The capture ladder is now `on` > `private` > `read-only` > `off`. The
+  service enforces it (migration 056, the read-only registration mechanism): once a
+  chat is registered private, every later capture from it is stored owner-private
+  whatever the client sends. A personal private space was already possible:
+  `vaelius-client workspace create <name> --private` with no other entries.
+- **A `read` recall filter.** `read = ["maple", "birch"]` in `.vaelius` restricts
+  which workspaces recall searches; the current workspace is always included, and
+  with no key recall covers everything the session may read. The client sends it
+  with recall and search (hook injection, and MCP through the header helper), and
+  `search_memory` accepts `workspaces` for one search. It is a filter, never a
+  permission: the service intersects it with what the session label allows. A
+  `read` key is no longer ignored with a warning; needs the matching service.
+- **`.vaelius.local`**, a person's own uncommitted override beside a `.vaelius`. It
+  may set `capture` and `read`, can only narrow capture along the ladder (a wider
+  value is ignored with a one-time line), cannot change `workspace`, and does
+  nothing without a `.vaelius` beside it. `vaelius-client scope-local` writes it
+  and adds it to `.git/info/exclude`, never to `.gitignore`.
+- **`default_capture`**, a profile setting for folders with no scope file:
+  `off` (the default) or `read-only` (`vaelius-client config default-capture`,
+  shown by `status`). With `read-only` a chat there recalls as a read-only chat and
+  saves nothing; prompts in those folders are sent to the service as recall
+  queries, which is why the default is `off`. It can never be `on` or `private`,
+  and any other value is rejected when the profile is loaded.
+
 ### Changed
+
+- **Recall is ordered by relevance, with no current-workspace tier.** Results from
+  the current workspace no longer rank above every other result regardless of
+  score; they compete on score with everything else the session may read. Results
+  from other workspaces keep their `from <workspace> · <author> · <date>` line.
+- **File reads stop at the repository root, like capture.** A path inside a Git
+  repository is governed only by a scope file at or below that repository's root
+  (linked worktrees still fall back to the main worktree). A parent folder's
+  `.vaelius` no longer makes nested repositories readable while chats started
+  inside them were not captured. Capture discovery and the read allowlist now share
+  one helper. Folders in no repository keep the nearest-scope-file-upwards rule.
+- **`remember` no longer needs the writer role.** A remembered item is
+  owner-private, so anyone who can open a personal session in a folder (a reader, a
+  non-member, a private folder or chat) can keep a personal note there. Read-only
+  chats are still refused.
 
 - **Readers and non-members capture into personal memory.** Someone who is not
   a writer in the workspace a folder names (a reader, or not on the access list at
@@ -79,6 +127,11 @@ The release workflow publishes the section whose heading matches the tag.
   (GHSA-mpqx-q82w-9x46).
 - Runtime base image updated to Python 3.12.16 (`python:3.12.16-slim-trixie`,
   CVE-2026-115557), and `joserfc` to 1.7.6 (GHSA-9pg5-8c7x-5hfx).
+- Runtime base image digest moved to the 2026-11-08 rebuild of the same tag
+  (`python:3.12.16-slim-trixie`), which carries the fixed Debian `apt` 3.0.4
+  (CVE-2026-109518). That rebuild predates the `zlib1g` fix (CVE-2026-76844,
+  CVE-2026-85091), so the image installs exactly `1:1.3.dfsg+really1.3.1-1+deb13u1`
+  from the Debian security archive until a base image carries it.
 - Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is
   switched off in captured repositories: `install --claude-code` writes
   `autoMemoryEnabled: false` into each enrolled or scoped project's

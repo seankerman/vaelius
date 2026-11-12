@@ -263,9 +263,9 @@ class Context:
 
     def _request(self, found):
         if found not in self._requests:
-            from agentclient.scope_file import parse, ScopeFileError
+            from agentclient.scope_file import load, ScopeFileError
             try:
-                request = parse(found)
+                request = load(found)  # the committed file, then the person's `.vaelius.local`
             except ScopeFileError as error:
                 request = {'project': None, 'capture': 'off', 'sharing': 'private', 'path': str(found), 'error': str(error)}
             self._requests[found] = dict(request, root=str(found.parent))
@@ -274,9 +274,13 @@ class Context:
     def _scoped(self, path):
         """The scope governing `path`: CURRENT (this session's root), a scope request, or None.
 
-        Walks up from the nearest existing folder; unlike capture discovery it does
-        not stop at a Git root, so a scope file covers its whole subtree. A linked
-        worktree without its own scope file falls back to the main worktree's."""
+        The same rule as capture discovery (`scope_file.governing`, the one helper both
+        sides call): the nearest scope file from the nearest existing folder upwards,
+        never above the Git root of the repository the path is in. A parent folder's
+        scope file therefore does not make a nested repository readable, exactly as
+        it does not capture chats started there. A linked worktree without its own
+        scope file falls back to the main worktree's; a folder in no Git repository
+        takes the nearest scope file upwards."""
         directory = path
         while not directory.is_dir() and directory.parent != directory:
             directory = directory.parent
@@ -285,23 +289,23 @@ class Context:
     def _scoped_dir(self, directory):
         if directory in self._dirs:
             return self._dirs[directory]
-        from agentclient.scope_file import _regular_file, discover
+        from agentclient.scope_file import governing
+        try:
+            found, top = governing(directory, self.names, home=self.home)
+        except Exception:
+            found, top = None, directory
         result = None
-        if not self._unscopable(directory):
-            found = next((directory / n for n in self.names if _regular_file(directory / n)), None)
-            if found is not None:
-                result = self._request(found)
-        if result is None and directory == self.root:
+        root = self.root
+        if found is not None:
+            # A session root without its own scope file (an explicit enrollment) that
+            # sits between the folder and the scope file is nearer, so it governs.
+            nearer = (root is not None and root != found.parent and _within(directory, root)
+                      and _within(root, found.parent))
+            result = CURRENT if nearer else self._request(found)
+        elif root is not None and _within(directory, root) and _within(root, top):
+            # No scope file up to the repository root: the session's own root governs
+            # only folders of the same repository (or, outside Git, below the root).
             result = CURRENT
-        if result is None and (directory / '.git').is_file():
-            try:
-                linked = discover(directory, self.names)
-            except Exception:
-                linked = None
-            if linked and linked.get('path') and not self._unscopable(Path(linked['path']).parent):
-                result = linked
-        if result is None and directory.parent != directory:
-            result = self._scoped_dir(directory.parent)
         self._dirs[directory] = result
         return result
 

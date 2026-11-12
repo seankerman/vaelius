@@ -194,6 +194,19 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     enroll=sub.add_parser('enroll-project');enroll.add_argument('--root',required=True);enroll.add_argument('--name',required=True)
     scope=sub.add_parser('scope-status',help='show the workspace, capture mode and sharing request for a folder')
     scope.add_argument('--cwd',default=os.getcwd())
+    local=sub.add_parser('scope-local',help='write your own .vaelius.local beside this folder\'s .vaelius (kept out '
+        'of Git through .git/info/exclude): a narrower capture mode and/or a recall filter, for you only')
+    local.add_argument('--capture',choices=('on','private','read-only','off'),
+        help='only takes effect when narrower than the committed file (on > private > read-only > off)')
+    local.add_argument('--read',action='append',metavar='WORKSPACE',help='recall only these workspaces (repeatable); '
+        'a filter, never a permission')
+    local.add_argument('--cwd',default=os.getcwd())
+    settings=sub.add_parser('config',help='show or change a client profile setting')
+    inner=settings.add_subparsers(dest='config_command',required=True)
+    default=inner.add_parser('default-capture',help='what a chat does in a folder with no .vaelius: off (the '
+        'default), or read-only: recall works and nothing is saved, but your prompts there are sent to the Vaelius '
+        'service as recall queries. It can never be on or private: only a .vaelius turns capture on')
+    default.add_argument('value',nargs='?',choices=('off','read-only'),help='omit to show the current value')
     sharing=sub.add_parser('sharing',help='show or change your own sharing setting (contributions_default: shared or '
         'private); there is no per-item sharing')
     sharing.add_argument('--set',dest='level',choices=SHARING_LEVELS,
@@ -278,7 +291,23 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
     else:
         config=json.loads((home/'config.json').read_text())
         from agentclient.transport import require_backend,enterprise_client
+        from agentclient.scope_file import default_capture,ScopeFileError
         require_backend(config)
+        if args.command=='config':
+            # Runs before the load check so a hand-edited invalid value can be repaired.
+            if args.value is not None:
+                config['default_capture']=args.value
+                temporary=home/'config.json.tmp';temporary.write_text(json.dumps(config,indent=2)+'\n');temporary.chmod(0o600);temporary.replace(home/'config.json')
+            try:value=default_capture(config)
+            except ScopeFileError:value='invalid (treated as an error; set it to off or read-only)'
+            print(json.dumps({'default_capture':value,'changed':args.value is not None,
+                'note':'applies only in folders with no .vaelius; read-only sends your prompts there to the Vaelius '
+                       'service as recall queries and saves nothing; capture is only ever turned on by a .vaelius'},indent=2));return
+        try:default_capture(config)
+        except ScopeFileError:
+            # Rejected at load: a profile setting can never turn capture on.
+            raise SystemExit(json.dumps({'error':'invalid_default_capture','reason':'default_capture must be off or '
+                'read-only; run `vaelius-client config default-capture off`'})) from None
         if args.command=='credential-renew':
             from agentclient.credentials import renew,LoginRequired
             try:result=renew(config['knowledge_backend'],force=args.force)
@@ -304,9 +333,11 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             value=resolve_scope(config,{'cwd':str(Path(args.cwd).expanduser().resolve())})
             result={'cwd':str(Path(args.cwd).expanduser().resolve()),'scope':value,
                 'paused':bool(config.get('paused')),'scope_files':config.get('scope_files',['.vaelius']),
-                'scope_enrollments':enrollments(home),
+                'scope_enrollments':enrollments(home),'default_capture':default_capture(config),
                 'note':'`workspace` chooses the access-model workspace; the service decides who reads items. '
                        'Legacy `sharing`/`originals` are requests, capped by the access list and your own setting.'}
+        elif args.command=='scope-local':
+            result=_scope_local_command(config,args)
         elif args.command in {'mine','forget'}:
             result=_owner_command(config,args)
         elif args.command=='sharing':
@@ -352,6 +383,8 @@ def main(argv=None, *, profile_namespace='agentnetwork'):
             from agentclient.credentials import LoginRequired
             try:result=enterprise_client(config).request('/enterprise/v1/status')
             except LoginRequired as exc:raise SystemExit(json.dumps({'status':'signed_out','reason':str(exc)})) from None
+            # The profile's default for folders with no scope file (off or read-only).
+            if isinstance(result,dict):result=dict(result,default_capture=default_capture(config))
     print(json.dumps(result,indent=2))
 
 
@@ -402,12 +435,41 @@ def _sharing_command(config, home, args):
             'note': note}
 
 
+def _scope_local_command(config, args):
+    """`vaelius-client scope-local`: the person's `.vaelius.local` beside the governing `.vaelius`."""
+    from agentclient import scope_file
+    if args.capture is None and args.read is None:
+        raise SystemExit(json.dumps({'error': 'nothing_to_set', 'reason': 'pass --capture and/or --read'}))
+    found = scope_file.discover(str(Path(args.cwd).expanduser().resolve()), scope_file.scope_names(config))
+    if not found or not found.get('path'):
+        raise SystemExit(json.dumps({'error': 'no_scope_file', 'reason': 'a .vaelius.local only works beside a '
+                                     '.vaelius; this folder has none'}))
+    try:
+        written = scope_file.write_local(found['path'], capture=args.capture, read=args.read)
+        committed = scope_file.parse(found['path'])
+        effective = scope_file.load(found['path'])
+    except scope_file.ScopeFileError as error:
+        raise SystemExit(json.dumps({'error': 'scope_local_refused', 'reason': str(error)})) from None
+    result = dict(written, committed_capture=committed['capture'], capture=effective['capture'],
+                  read=effective.get('read'))
+    if scope_file.WARN_LOCAL_WIDER in effective['warnings']:
+        result['note'] = ('capture = "' + args.capture + '" is wider than the committed file, so it is ignored: a '
+                          'local override can only narrow (on > private > read-only > off)')
+    if not written['excluded']:
+        result['git'] = 'not added to .git/info/exclude (no Git repository here); do not commit this file'
+    return result
+
+
 def _add_session_commands(sub):
-    """`vaelius-client session status|read-only`: a running agent session's fixed label."""
-    session = sub.add_parser('session', help='show the fixed label of a running agent session, or make it read-only')
+    """`vaelius-client session status|private|read-only`: a running agent session's fixed label."""
+    session = sub.add_parser('session', help='show the fixed label of a running agent session, or make it private '
+                             'or read-only')
     inner = session.add_subparsers(dest='session_command', required=True)
     status = inner.add_parser('status', help='the label of the session active in this folder')
     status.add_argument('--session', help='host session ID (default: the session active in this folder)')
+    private = inner.add_parser('private', help='save the rest of this chat to your personal memory only (one-way '
+                               'until /clear or a new chat); what was saved before stays where it was')
+    private.add_argument('--session', help='host session ID (default: the session active in this folder)')
     readonly = inner.add_parser('read-only', help='save nothing more from this chat (one-way until /clear or a '
                                 'new chat); reads keep working')
     readonly.add_argument('--session', help='host session ID (default: the session active in this folder)')
@@ -421,6 +483,8 @@ def _session_command(home, config, args):
     try:
         if command == 'read-only':
             return session_label.read_only(home, config, session=args.session)
+        if command == 'private':
+            return session_label.private(home, config, session=args.session)
         _, entry = session_label.resolve_session(home, os.getcwd(), args.session, scope_names(config))
     except session_label.UseRefused as refused:
         raise SystemExit(json.dumps({'error': 'session_refused', 'reason': str(refused)})) from None
@@ -530,7 +594,7 @@ def _selection(config,args):
     if value.get('session')=='current' and not value.get('project'):
         from agentclient.hooks import resolve_scope
         scope=resolve_scope(config,{'cwd':os.getcwd()})
-        if not scope:raise SystemExit(json.dumps({'error':'project_required','reason':'--session current needs --project '
+        if not scope or not scope.get('project'):raise SystemExit(json.dumps({'error':'project_required','reason':'--session current needs --project '
             'or an enrolled project folder'}))
         value['project']=scope['project']
     return value

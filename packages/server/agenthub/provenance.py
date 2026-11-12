@@ -203,8 +203,8 @@ def decorate(item, block, flagged, text_keys):
     return item
 
 
-# Delivery order: the current project, then other projects the reader belongs to
-# (only with scope "all"), then other projects' organization-shared content.
+# Where an item comes from relative to the current project: a label only. Results
+# keep their relevance order; no tier is delivered ahead of another.
 TIERS = ('project', 'other_project', 'organization')
 
 
@@ -220,8 +220,8 @@ def decorate_cards(db, cards, project=None):
     """Provenance, the origin label and, against the current project, the tier.
 
     Items from another project (or every item when no project is current) also
-    carry `from`: "from <project> · <author> · <date>". With a current project the
-    result is ordered by tier, keeping relevance order within each tier.
+    carry `from`: "from <project> · <author> · <date>". The order is the caller's
+    (relevance): the tier labels an item, it never moves it.
     """
     known = document_metadata(db, [card['id'] for card in cards])
     output = []
@@ -236,8 +236,6 @@ def decorate_cards(db, cards, project=None):
             if item.get('tier') != 'project':
                 item['from'] = origin_line(origin, block)
         output.append(item)
-    if project is not None:
-        output.sort(key=lambda item: TIERS.index(item.get('tier', 'project')))
     return output
 
 

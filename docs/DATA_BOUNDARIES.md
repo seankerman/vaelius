@@ -152,16 +152,21 @@ workspace ([client side](CLIENT.md#repository-scope-files)):
 ```toml
 # .vaelius at the repository root
 workspace = "example-repo"   # the Vaelius workspace this capture belongs to
-capture = "on"               # on | read-only | off
-# sharing = "private"        # optional owner opt-out; omit to inherit the audience
+capture = "on"               # on | private | read-only | off
+# read = ["example-repo"]    # optional recall filter; never a permission
 ```
 
 The file is a **request, never a grant**: anyone who can edit the repository
 can edit it, and `workspace =` only works when the person already holds a role
-in that workspace. Its keys are `workspace` and `capture`. Who can read a
+in that workspace. Its keys are `workspace`, `capture` and `read`. The capture
+ladder is `on` > `private` > `read-only` > `off`; `capture = "private"` only
+narrows (every chat started in the folder is captured to that person's personal
+memory only), so it is safe in a committed file. `read` restricts which workspaces
+recall searches; the service intersects it with what the session may read, so it
+never grants anything. Who can read a
 workspace (its **visibility**) is chosen on the server when the workspace is
 created (org by default, `--private` to restrict) and changed there by its admins;
-a `visibility` (or `read`) key in the file is ignored with a one-time warning. A workspace needs no repository: any folder whose scope file names it
+a `visibility` key in the file is ignored with a one-time warning. A workspace needs no repository: any folder whose scope file names it
 captures into it for a writer, and into personal memory for anyone else. Legacy keys (`project`, `sharing`, `originals`) are read as
 an upper bound and are mapped as described in
 [the client guide](CLIENT.md#repository-scope-files) and
@@ -300,6 +305,49 @@ nothing. Anything captured before the
 switch stays until the person deletes it (`vaelius-client forget --session
 current`); `push-session` refuses a chat that ran read-only.
 
+### Private chats and private folders
+
+`vaelius-client session private` (or the MCP tool `private_session`, when the
+person asks) makes the rest of the current chat private, one-way until `/clear` or
+a new chat: from then on its captures are owner-private (personal memory), and the
+session is a personal one, so recall and file reads follow the personal-session
+rules above. `capture = "private"` in a scope file does the same for every chat
+started in that folder. The service enforces it: the client registers the chat's
+session id and the folder's recent MCP connection ids (`private_sessions`, digests
+only, migration 056, the same mechanism as read-only chats), and the service then
+stores every later capture naming one of them owner-private, **whatever the client
+sends** (`_ingest_privacy` reason `private_session`). Nothing is refused: the
+registration only narrows who reads the capture. Captures made before the switch
+stay where they were; the status line says so and names `vaelius-client forget
+--session current`. Switching a private chat to read-only narrows it further; a
+read-only chat cannot become private.
+
+### Folders with no scope file: the personal default
+
+A folder that no scope file governs is neither captured nor recalled, unless the
+person sets the profile option `default_capture` to `read-only` (`vaelius-client
+config default-capture read-only`; the default is `off`). A chat there then recalls
+as a read-only chat (everything the person can read) and saves nothing: the client
+captures nothing, registers the chat read-only, and the service refuses every write
+from it. **The person's prompts in those folders are sent to the Vaelius service as
+recall queries**, which is why the default is `off`. The setting has exactly these
+two values: it can never be `on` or `private`, any other value is rejected when the
+profile is loaded, and capture is only ever turned on by a scope file in the
+folder. It never applies where a scope file governs, including one that is `off` or
+invalid.
+
+### The local override
+
+A `.vaelius.local` beside a `.vaelius` is one person's own override and is not
+committed (`vaelius-client scope-local` writes it and adds it to
+`.git/info/exclude`, never to `.gitignore`). It may set `capture` and `read`. Its
+capture mode can only be narrower than the committed file's on the ladder above; a
+wider one is ignored with a one-time line for the person. It cannot change
+`workspace`, and with no `.vaelius` beside it it does nothing. Precedence, lowest to
+highest: `default_capture` (only where no scope file applies) < the committed
+`.vaelius` < `.vaelius.local` (narrow only) < the per-chat `session private` /
+`session read-only` (narrow only).
+
 ### What an event touched
 
 | Touched | Label |
@@ -345,10 +393,21 @@ MCP resource tools and Codex `McpToolCall` items.
 ### Scoped folders
 
 A folder that holds a scope file (`.vaelius`, or a legacy name from the profile's
-`scope_files`) is a **scoped folder**, together with its whole subtree, whether or
-not it is a Git repository. The nearest scope file above a path governs it, so a
-nested scope file overrides its parent, and a workspace folder with one scope file
-covers every repository inside it that has none. The rules are checked in the order
+`scope_files`) is a **scoped folder**, whether or not it is a Git repository. Which
+scope file governs a path follows one rule, shared by capture discovery and this
+read allowlist (`scope_file.governing`), so the two cannot drift:
+
+- a path **inside a Git repository** is governed only by a scope file at or below
+  that repository's root (the nearest one from the path upwards; a linked worktree
+  without its own falls back to its main worktree). A scope file in a parent folder
+  does not reach into a repository nested under it: chats started in that
+  repository are not captured, and a session in the parent folder does not read it;
+- a path **in no Git repository** is governed by the nearest scope file upwards, so
+  a nested scope file overrides its parent.
+
+Before, the read side kept walking past the Git root, so a parent folder's scope
+file made nested repositories readable while chats started inside them were not
+captured. The rules are checked in the order
 of the table above: credentials first, then scoped folders, so a repository under
 `~/Documents` behaves like any other repository, while a loose file in `~/Documents`
 stays private.
@@ -406,7 +465,7 @@ repository's own workspace audience:
 workspace = "example-repo"
 
 [capture]
-mode = "on"                                  # on | read-only | off (default on)
+mode = "on"                                  # on | private | read-only | off (default on)
 allowed_paths = ["../shared-fixtures"]       # relative to the scope file, absolute, or ~/
 allowed_mcp_servers = ["docs"]               # names as the host registers them
 ```

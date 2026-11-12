@@ -6,6 +6,7 @@ principal, enrollment, delegation and readable scopes from the credential.
 from __future__ import annotations
 
 import json
+import re
 
 VERSION = "enterprise-local-1"
 MAX_BODY_BYTES = 262_144
@@ -59,7 +60,7 @@ def validate_source(value):
 
 def validate_search(value):
     _object(value, {"version", "query"}, {"project", "limit", "mode", "as_of", "time_mode",
-                                           "session", "boundary_id", "scope"})
+                                           "session", "boundary_id", "scope", "workspaces"})
     _text(value["query"], MAX_QUERY_CHARS)
     if "project" in value: _text(value["project"], 256)
     if "session" in value: _text(value["session"], 256)
@@ -81,6 +82,13 @@ def validate_search(value):
     # reader may read. It narrows retrieval and never grants access.
     if value.get("scope", "project") not in {"project", "all"}:
         raise ValueError("invalid_search_scope")
+    # A one-off recall filter: workspace names or ids. The service intersects it
+    # with what the request may read, so it narrows recall and never grants access.
+    if "workspaces" in value:
+        names = value["workspaces"]
+        if (not isinstance(names, list) or len(names) > 32
+                or any(not isinstance(n, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", n) for n in names)):
+            raise ValueError("invalid_search_workspaces")
     return value
 
 

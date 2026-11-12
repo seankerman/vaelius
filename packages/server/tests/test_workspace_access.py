@@ -557,6 +557,32 @@ class VisibilityAndReadOnlyTests(WorkspaceFixture, unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.mark_read_only(self.alice, {'sessions': []})
 
+    def test_a_registered_private_chat_is_stored_owner_private_whatever_the_client_sends(self):
+        def private(source):
+            with self.store.open() as state:
+                return state.db.execute('SELECT private FROM enterprise_sources WHERE id=?', (source,)).fetchone()[0]
+        conversation = self.fixture['conversation'] + 'pv'
+        before = self.ingest(tag='pv')['source_id']
+        self.assertEqual(self.store.mark_private(self.alice, {'sessions': [conversation]})['private'], True)
+        # The client still asks for the workspace audience (sharing = organization).
+        after = self.ingest(tag='pv', index=1)['source_id']
+        other = self.ingest(tag='pv-other', index=2)['source_id']
+        self.assertEqual((private(before), private(after), private(other)), (0, 1, 0),
+                         'captures before the switch stay where they were; another chat is not affected')
+        self.store.mark_private(self.bob, {'sessions': [self.fixture['conversation'] + 'pv-bob']})
+        self.assertEqual(private(self.ingest(tag='pv-bob', index=1)['source_id']), 0,
+                         'a registration only covers the person who made it')
+        self.drain()
+        for layer in self.layers(self.bob):  # oracle, indexed filter, row-level security
+            self.assertIn(before, layer)
+            self.assertNotIn(after, layer, 'a writer of the same workspace does not read it')
+        self.assertIn(after, self.layers(self.alice)[0], 'its owner does')
+        # One-way: registering again changes nothing and there is no route that removes a row.
+        self.store.mark_private(self.alice, {'sessions': [conversation]})
+        self.assertEqual(private(self.ingest(tag='pv', index=2)['source_id']), 1)
+        with self.assertRaises(ValueError):
+            self.store.mark_private(self.alice, {'sessions': []})
+
 
 @unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
 class SessionLabelTests(ParityItems, unittest.TestCase):
@@ -719,6 +745,86 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
                                                 self.store.sync_containment(state.db, 'acme', ['core']), 'test')
         self.assertIn('"newly_unreadable": ["maple"]', logged.output[0], 'erin left maple')
 
+    def keep(self, ctx, requested=None, project=None):
+        with self.store.open() as state:
+            return self.store._recall_workspaces(state.db, ctx, requested, project)
+
+    def searched(self, ctx, **request):
+        """(workspaces of the delivered cards, the cards) for one search."""
+        query = dict({'version': 'enterprise-local-1', 'query': self.fixture['query'], 'limit': 20}, **request)
+        cards = self.store.search(ctx, query)['results']
+        with self.store.open() as state:
+            projects = {r[0]: r[1] for r in state.db.execute('SELECT id,source_project FROM enterprise_documents')}
+        return {projects[card['id']] for card in cards}, cards
+
+    def test_read_filter_is_intersected_with_what_the_session_may_read(self):
+        shared = lambda **extra: self.label(self.alice, 'maple', **extra)  # reads maple only (birch, oak narrower)
+        self.assertIsNone(self.keep(shared()), 'no key: unfiltered')
+        self.assertEqual(self.keep(shared(read=['birch', 'oak'])), ['maple'],
+                         'workspaces the session may not read are dropped: a filter never widens')
+        self.assertEqual(self.keep(shared(read=['nowhere', 'maple'])), ['maple'])
+        self.assertEqual(self.keep(shared(read=[])), ['maple'], 'the current workspace is always included')
+        self.assertEqual(self.keep(self.label(self.alice, 'birch', read=['oak'])), ['birch', 'oak'])
+        self.assertEqual(self.keep(shared(private=True, read=['birch'])), ['birch', 'maple'],
+                         'a personal session is capped by what the person reads')
+        self.assertEqual(self.keep(self.label(self.erin, 'oak', read=['maple', 'birch'])), ['oak'],
+                         'erin reads oak only')
+        # A one-off list replaces the folder's and is capped the same way.
+        self.assertEqual(self.keep(shared(read=['maple']), ['birch', 'oak']), ['maple'])
+        self.assertEqual(self.keep(self.label(self.alice, 'birch', read=['maple']), ['oak']), ['birch', 'oak'])
+        # Without a label: the reader's own workspaces, plus the request's project.
+        self.assertEqual(self.keep(self.erin, ['maple', 'oak']), ['oak'])
+        self.assertEqual(self.keep(self.alice, ['oak'], 'maple'), ['maple', 'oak'])
+        with self.assertRaises(ValueError):
+            self.label(self.alice, 'maple', read=['../x'])
+        with self.assertRaises(ValueError):
+            self.keep(shared(), ['ok', 7])
+
+    def test_filtered_recall_narrows_results_and_never_returns_more(self):
+        birch = self.label(self.alice, 'birch')
+        self.assertEqual(self.searched(birch, project='birch')[0], {'maple', 'oak'}, 'unfiltered: all it may read')
+        self.assertEqual(self.searched(self.label(self.alice, 'birch', read=['oak']), project='birch')[0], {'oak'})
+        self.assertEqual(self.searched(birch, project='birch', workspaces=['maple'])[0], {'maple'}, 'one-off list')
+        # A shared maple session does not reach oak or birch, with or without a filter naming them.
+        maple = self.searched(self.label(self.alice, 'maple'), project='maple')
+        named = self.searched(self.label(self.alice, 'maple', read=['oak', 'birch']), project='maple')
+        self.assertEqual((maple[0], named[0]), ({'maple'}, {'maple'}))
+        self.assertTrue({card['id'] for card in named[1]} <= {card['id'] for card in maple[1]})
+        # erin reads oak only: naming maple returns nothing of maple.
+        self.assertTrue(self.searched(self.erin, workspaces=['maple', 'oak'])[0] <= {'oak'})
+        self.assertEqual(self.searched(self.erin, workspaces=['maple'])[0], set())
+
+    def test_recall_is_ordered_by_score_with_no_current_workspace_tier(self):
+        # A personal maple session reads everything. The decision text is carried by three
+        # maple items and one oak item; every other item scores lower.
+        session = self.label(self.alice, 'maple', private=True)
+        text = self.fixture['messages'][1]['text']
+        documents = self.documents()
+        top = self.store.candidates(session, text, project='maple', limit=4)
+        self.assertEqual({documents[row['document_id']] for row in top},
+                         self.expect('m_private', 'm_team_oak', 'm_birch_private', 'o_maple'),
+                         'the best four by score: the current workspace does not fill the limit first')
+        rows = self.store.candidates(session, text, project='maple', limit=20)
+        scores = [row['rrf'] for row in rows]
+        self.assertEqual(scores, sorted(scores, reverse=True), 'score order across workspaces')
+        projects = [row['source_project'] for row in rows]
+        oak = projects.index('oak')
+        last_maple = len(projects) - 1 - projects[::-1].index('maple')
+        self.assertLess(oak, last_maple, 'an oak item is ahead of lower-scored items of the current workspace')
+        # Delivery keeps that order and still labels items from other workspaces.
+        request = {'version': 'enterprise-local-1', 'query': text, 'project': 'maple', 'limit': 20}
+        found = self.store.search(session, request)
+        delivered = self.store.decorate_delivery('/enterprise/v3/search', found, request)['results']
+        self.assertEqual([card['id'] for card in delivered], [card['id'] for card in found['results']][:len(delivered)])
+        tiers = [card['tier'] for card in delivered]
+        self.assertLess(next(i for i, tier in enumerate(tiers) if tier != 'project'),
+                        len(tiers) - 1 - tiers[::-1].index('project'))
+        for card in delivered:
+            if card['tier'] == 'project':
+                self.assertNotIn('from', card)
+            else:
+                self.assertRegex(card['from'], r'^from oak · alice · \d{4}-\d{2}-\d{2}$')
+
     def test_labelled_search_and_mcp_carry_the_filter(self):
         from agenthub.mcp_tools import MemoryTools
         from types import SimpleNamespace
@@ -744,5 +850,10 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
         tools.call('search_memory', {'query': 'synthetic'})
         self.assertEqual(sent[-1][1]['session_label'], {'workspace': 'maple'})
         self.assertNotIn('scope', sent[-1][1])
+        self.assertNotIn('workspaces', sent[-1][1])
+        tools.call('search_memory', {'query': 'synthetic', 'workspaces': ['oak']})
+        self.assertEqual(sent[-1][1]['workspaces'], ['oak'], 'a one-off filter; the service caps it')
+        with self.assertRaises(ValueError):
+            tools.call('search_memory', {'query': 'synthetic', 'workspaces': ['../etc']})
         with self.assertRaises(ValueError):
             tools.call('search_memory', {'query': 'synthetic', 'scope': 'all'})

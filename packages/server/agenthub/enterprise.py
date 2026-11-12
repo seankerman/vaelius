@@ -296,7 +296,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
                 # the item private; otherwise it inherits the workspace audience unless
                 # the person's or the workspace's default makes it private.
                 private,requested,_=self._ingest_privacy(db,ctx,visibility,
-                    {'sharing':visibility,'project':value['project']})
+                    {'sharing':visibility,'project':value['project'],'conversation':value.get('session')})
                 db.execute("""INSERT INTO enterprise_sources(id,tenant,owner,external_project,internal_project,
                     external_id,enrollment,payload_hash,visibility,raw_visibility,occurred_at,created,
                     occurred_precision,occurred_timezone,sharing,sharing_requested,private)

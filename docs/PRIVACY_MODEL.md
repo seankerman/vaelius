@@ -254,7 +254,9 @@ top, unchanged. Reviewed releases (operator `policy` action,
 - **Who it belongs to.** A writer's or admin's capture joins the workspace. A
   reader's, or a non-member's, capture in the same folder is stored as **their
   personal memory only** (owner-private, `_ingest_privacy` reason `not_a_writer`),
-  decided on the current role at every capture; the client cannot change it.
+  decided on the current role at every capture; the client cannot change it. A
+  capture naming a chat registered private is stored owner-private too (reason
+  `private_session`, below), whatever it asks for.
 
 ## The predicate, in three layers
 
@@ -313,7 +315,8 @@ A captured Claude Code session takes a fixed label when it starts: the workspace
 its starting folder. There is no explicit narrowing (`session use` and the MCP tool
 `use_workspace` were removed; a `narrowed` list recorded by an older client is still
 honored, since it only narrows). The session is **personal** (its audience is only
-the person) when the person is not a writer there, or the person's
+the person) when the person is not a writer there, when the chat or its folder is
+private (`session private`, `capture = "private"`), or the person's
 `contributions_default`, the workspace's `item_default` or a private request says
 so, or the backstop below fires. Sessions that are read-only, off or outside every
 workspace have no label and capture nothing.
@@ -346,10 +349,22 @@ preferences and private "always load" remembered items follow the same rule: onl
 a private session receives them (organization-required preferences always arrive).
 Requests without a label (older clients) keep today's behavior. The label
 replaces the cross-project `scope = "all"` option: recall reaches every workspace in
-`S`: current-workspace results first, then org workspaces the session may read, and
-the person's own private items only in a private session. A read-only chat's label
+`S`, and the person's own private items only in a private session. Results are
+ordered by relevance across all of it: no workspace is ranked ahead of another (the
+earlier current-workspace-first tier is gone), and results from other workspaces
+keep their `from <workspace> · <author> · <date>` line. A read-only chat's label
 is treated as private for recall: it writes nothing, so it may recall everything the
 person can read.
+
+**Recall filter (`read`).** A label may carry a `read` list of workspace names (the
+folder's `.vaelius` or `.vaelius.local`), and one search may carry a `workspaces`
+list instead. It is a convenience, never a permission, and is not part of the
+predicate above: `WorkspaceAccessMixin._recall_workspaces` resolves the names,
+intersects them with `S` (with every workspace the person reads, for a private
+session or a request without a label), always keeps the session's own workspace,
+and the result is one more `AND` predicate over the already authorized candidate
+query. A name the session may not read is dropped silently, so a filter can only
+narrow what recall returns. Without a list recall is unfiltered.
 
 **Read rule.** The client caches an advisory descriptor (the service's `S` for the
 session) in its profile and the PreToolUse guardrail hook denies reads of scoped
@@ -366,6 +381,26 @@ write route and tool for a connection that says read-only and for a session id
 registered as read-only (`read_only_sessions`, migration 053, digests of tenant,
 principal and session id). A registration only narrows; there is no route that
 removes one.
+
+**Private chats.** A chat switched to private (`vaelius-client session private`, or
+the MCP tool `private_session` when the person asks; one-way) and a chat in a
+`capture = "private"` folder are captured into the person's personal memory only.
+The client asks for owner-private captures and sends a private label; the service
+does not rely on that: for a session id registered private (`private_sessions`,
+migration 056, the same digests and one-way rule) it stores every later capture
+owner-private whatever the client sends. Captures made before the switch stay
+where they were until the person deletes them.
+
+**No scope file.** A folder no scope file governs is neither captured nor recalled.
+The person may set `default_capture = "read-only"` in their client profile to
+recall there as a read-only chat; their prompts in those folders then reach the
+service as recall queries and nothing is saved. The setting cannot be `on` or
+`private`: capture is only ever turned on by a scope file in the folder.
+
+**Personal notes.** `remember` stores an owner-private item under an active
+workspace and needs `ingest`, not the writer role: a reader, a non-member, and
+anyone in a private chat or folder can keep a personal note where they work. It
+never joins the workspace's memory, and a read-only chat still cannot write one.
 
 ## Provenance labels
 

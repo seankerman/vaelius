@@ -864,9 +864,10 @@ class ScopedFolderTest(unittest.TestCase):
             ('Documents despite ~/Documents/.vaelius', home / 'Documents/taxes.pdf', 'private', 'personal_content', []),
             ('loose file in a Documents workspace', ws / 'loose.md', 'private', 'personal_content', []),
             ('Desktop', home / 'Desktop/todo.txt', 'private', 'personal_content', []),
-            # Non-Git scoped folder covers its subtree, including repos without a scope file; nested overrides.
+            # A non-Git scoped folder covers its subtree, but never a repository nested in it:
+            # a path inside a Git repository is governed only at or below that repository's root.
             ('non-git scoped folder', home / 'work/readme.md', 'organization', None, []),
-            ('repo inside scoped folder', home / 'work/repo-a/a.py', 'organization', None, []),
+            ('repo inside scoped folder', home / 'work/repo-a/a.py', 'private', 'other_project', []),
             ('nested override', home / 'work/nested/n.py', 'team', 'other_project', ['inner']),
             # Credentials stay private, even inside the project.
             ('.env in repo', repo / '.env', 'private', 'credential_file', []),
@@ -925,7 +926,8 @@ class ScopedFolderTest(unittest.TestCase):
             (self.repo / 'src/app.py', 'project', str(self.repo), 'same', 'team'),
             (self.ws / 'sib/s.py', 'project', str(self.ws / 'sib'), 'same', 'private'),
             (self.ws / 'diff/d.py', 'scoped', str(self.ws / 'diff'), 'other', 'team'),
-            (self.home / 'work/repo-a/a.py', 'project', str(self.home / 'work'), 'same', 'team'),
+            (self.home / 'work/readme.md', 'project', str(self.home / 'work'), 'same', 'team'),
+            (self.home / 'work/repo-a/a.py', 'unscoped_repo', str(self.home / 'work/repo-a'), None, None),
             (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'tool-results/r1.txt', 'claude_state',
              str(self.ws / 'diff'), 'other', 'team'),
             (self.home / '.claude/projects' / origin.slug(self.ws / 'diff') / 'memory/MEMORY.md', 'claude_memory',

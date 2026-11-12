@@ -106,6 +106,27 @@ class ReadOnlyEnforcementTests(unittest.TestCase):
         self.assertFalse(self.tool('remember', writes['remember'], MCP).get('isError'))
         self.assertEqual(self.store.writes, ['remember'])
 
+    def test_private_session_tool_registers_the_connection_and_is_not_a_refused_write(self):
+        headers = {**MCP, 'X-AgentNetwork-Session': 'mcp-connection-1'}
+        result = self.tool('private_session', {}, headers)
+        self.assertFalse(result.get('isError'))
+        value = json.loads(result['content'][0]['text'])
+        self.assertIs(value['vaelius_session_private'], True)
+        self.assertIn('personal memory only', value['status'])
+        self.assertEqual(self.store.writes, ['mark_private'], 'registered with the service, nothing else written')
+        # Registration only narrows, so a read-only connection may still ask for it.
+        self.assertFalse(self.tool('private_session', {}, {**headers, 'X-Vaelius-Read-Only': '1'}).get('isError'))
+        self.assertFalse(is_write(route_rule('POST', '/enterprise/v3/sessions/private'), '/enterprise/v3/sessions/private'))
+
+    def test_a_read_only_connection_without_a_project_may_search(self):
+        bare = {key: value for key, value in MCP.items() if key != 'X-AgentNetwork-Project'}
+        self.assertTrue(self.tool('search_memory', {'query': 'anything'}, bare)['isError'], 'a project is required')
+        result = self.tool('search_memory', {'query': 'anything'}, {**bare, 'X-Vaelius-Read-Only': '1'})
+        self.assertFalse(result.get('isError'), 'the person\'s read-only default: recall without a workspace')
+        self.assertTrue(self.tool('remember', {'text': 'x', 'request_key': 'k', 'confirm': False},
+                                  {**bare, 'X-Vaelius-Read-Only': '1'})['isError'])
+        self.assertEqual(self.store.writes, [])
+
     def test_http_write_routes_answer_403_with_the_message(self):
         headers = {'Authorization': 'Bearer synthetic', 'X-Vaelius-Read-Only': '1'}
         for path, body in (('/enterprise/v3/remember', {'text': 'x'}), ('/enterprise/v1/lifecycle',

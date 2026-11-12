@@ -30,6 +30,11 @@ read rule from local state only, never a network call:
 A read-only chat (`vaelius-client session read-only`, or the MCP tool
 `read_only_session`) captures nothing, so none of these rules apply to it.
 
+A private chat (`vaelius-client session private`, the MCP tool `private_session`, or
+a `capture = "private"` folder) is captured to the person's personal memory only, so
+it is a personal session: it follows the personal-session rules above. Like
+read-only it is one-way until `/clear` or a new chat.
+
 The descriptor comes from the service (`POST /enterprise/v3/workspaces/descriptor`)
 at SessionStart, after `refresh_after` (15 minutes) at the next prompt, and when a
 search reports a newer epoch. It is cached in the client profile, never in the
@@ -58,6 +63,10 @@ UNSCOPED = ('unscoped_repo', 'unknown')
 READ_ONLY_STATUS = 'vaelius: read-only — nothing from this chat is saved'
 READ_ONLY_FORGET = (" (what was saved before stays; run 'vaelius-client forget --session current' in a terminal "
                     "to delete it)")
+PRIVATE_STATUS = 'vaelius: private — this chat is saved to your personal memory only'
+PRIVATE_FORGET = (" (what was saved before stays where it was; run 'vaelius-client forget --session current' in a "
+                  "terminal to delete it)")
+PRIVATE_ROUTE = '/enterprise/v3/sessions/private'
 # Durable record of chats that ran read-only (push-session refuses them), kept after /clear.
 READ_ONLY_STATE = 'read-only-sessions.json'
 READ_ONLY_DAYS = 400
@@ -128,7 +137,10 @@ class SessionLabels:
                          'scope_file': scope.get('scope_file'), 'sharing': scope.get('sharing', 'organization'),
                          'allowed_paths': list(scope.get('allowed_paths') or ()),
                          'allowed_mcp_servers': list(scope.get('allowed_mcp_servers') or ()),
-                         'narrowed': [], 'private': False, 'descriptor': None, 'announce': None,
+                         'narrowed': [], 'private': bool(scope.get('private')), 'descriptor': None,
+                         'announce': None,
+                         # The folder's recall filter (`read`), fixed with the label; None: no filter.
+                         'read': list(scope['read']) if isinstance(scope.get('read'), list) else None,
                          'short': str(session)[:8], 'started': time.time()}
                 state[key] = entry
             entry['updated'] = time.time()
@@ -183,9 +195,12 @@ def descriptor_path(home, workspace):
 
 
 def request_label(entry):
-    """The wire session label: {workspace, narrowed, private, sharing}."""
+    """The wire session label: {workspace, narrowed, private, sharing, read}."""
     label = {'workspace': entry['workspace'], 'narrowed': list(entry.get('narrowed') or []),
              'private': bool(entry.get('private'))}
+    if isinstance(entry.get('read'), list):
+        # A recall filter only: the service intersects it with what this label may read.
+        label['read'] = [n for n in entry['read'] if isinstance(n, str) and NAME.fullmatch(n)][:32]
     if entry.get('sharing') in ('private', 'team', 'organization'):
         label['sharing'] = entry['sharing']
     if entry.get('read_only'):
@@ -286,12 +301,12 @@ def status_line(entry, *, private=False):
         return None
     if entry.get('read_only'):
         return READ_ONLY_STATUS
+    if entry.get('private'):
+        return PRIVATE_STATUS + ' (' + display(entry) + ')'
     if not writes_workspace(entry):
         role = (entry.get('descriptor') or {}).get('role')
         return ('vaelius: you are ' + ('a reader' if role == 'reader' else 'not a member') + ' in ' + display(entry)
                 + ' — ' + PERSONAL)
-    if entry.get('private'):
-        return 'vaelius: session ' + display(entry) + ' is private (you only) — capture limited to you'
     if entry.get('narrowed'):
         return 'vaelius: session uses ' + display(entry) + ' — capture limited to people in ' + \
             ('both' if len(entry['narrowed']) == 1 else 'all of them')
@@ -555,6 +570,15 @@ def resolve_session(home, cwd, session=None, names=('.vaelius',)):
 
 def read_only_result(response):
     """True when an MCP read_only_session result says the service registered it."""
+    return _tool_flag(response, 'vaelius_session_read_only')
+
+
+def private_result(response):
+    """True when an MCP private_session result says the service registered it."""
+    return _tool_flag(response, 'vaelius_session_private')
+
+
+def _tool_flag(response, flag):
     found = [False]
     def walk(value, depth=0):
         if depth > 6 or found[0]:
@@ -568,7 +592,7 @@ def read_only_result(response):
             for item in value[:20]:
                 walk(item, depth + 1)
         elif isinstance(value, dict):
-            if value.get('vaelius_session_read_only') is True:
+            if value.get(flag) is True:
                 found[0] = True
                 return
             for item in list(value.values())[:20]:
@@ -645,7 +669,7 @@ def compose(folder, recorded, *, now=None):
     if extra:
         label['narrowed'] = list(dict.fromkeys([*(folder.get('narrowed') or []), *extra]))[:16]
     if recorded.get('private') is True or folder.get('private'):
-        label['private'] = True
+        label['private'] = True  # a personal session: its capture stays with the person
     if recorded.get('read_only') is True or folder.get('read_only'):
         label['read_only'] = True  # only ever narrows: nothing from the chat is written
     return label
@@ -760,3 +784,65 @@ def read_only(home, config, *, cwd=None, session=None):
     from agentclient.scope_file import scope_names
     key, entry = resolve_session(home, cwd or os.getcwd(), session, scope_names(config))
     return apply_read_only(home, config, key, entry, keyed=True)
+
+
+# Private chats -----------------------------------------------------------------------
+#
+# `vaelius-client session private` (or the MCP tool `private_session`, applied by the
+# PostToolUse hook) makes the rest of a labelled chat private: the hooks ask for
+# owner-private captures, the label says `private` (a personal session: recall and file
+# reads follow the personal-session rules), and the service is told the chat's session
+# id and the folder's recent MCP connection ids, so it stores every later capture
+# naming them owner-private whatever the client sends (agenthub.read_only, migration
+# 056). One-way: only /clear or a new chat resets it; there is no command or tool to
+# switch back. What was captured before the switch stays where it was.
+
+def apply_private(home, config, session, entry, *, keyed=False, mid_session=True, register=True):
+    """Make a labelled chat private (one-way) and tell the service; returns the status."""
+    labels = SessionLabels(home)
+    status = PRIVATE_STATUS + (PRIVATE_FORGET if mid_session else '')
+    key = session if keyed else _key(session)
+    def change(state):
+        current = state.get(key)
+        if not isinstance(current, dict):
+            return None
+        if current.get('read_only'):
+            return dict(current, already=True)  # read-only is narrower still: nothing changes
+        already = bool(current.get('private'))
+        current.update(private=True, updated=time.time())
+        if not already:
+            current['announce'] = status
+        return dict(current, already=already)
+    result = labels._locked(change)
+    if result is None:
+        raise UseRefused('the session ended')
+    if result.get('read_only'):
+        return {'session': result.get('short'), 'private': False, 'read_only': True, 'already': True,
+                'registered_with_service': False, 'status': READ_ONLY_STATUS}
+    try:
+        record_mcp_label(home, None, result, key=key)
+    except OSError:
+        pass
+    registered = False
+    if register:
+        sessions = [s for s in [result.get('session_id')] if s]
+        sessions += recent_connections(home, result.get('root') or result.get('cwd'))
+        sessions = list(dict.fromkeys(sessions))[:8]
+        if sessions:
+            from agentclient.transport import enterprise_client
+            try:
+                enterprise_client(config, timeout=5).request(PRIVATE_ROUTE, {'sessions': sessions})
+                registered = True
+            except Exception:
+                registered = False  # the hooks still ask for owner-private on every capture
+    if registered:
+        labels._locked(lambda state: isinstance(state.get(key), dict) and state[key].update(private_registered=True))
+    return {'session': result.get('short'), 'private': True, 'already': result['already'],
+            'registered_with_service': registered, 'status': status}
+
+
+def private(home, config, *, cwd=None, session=None):
+    """`vaelius-client session private`: the chat active in this folder (or --session)."""
+    from agentclient.scope_file import scope_names
+    key, entry = resolve_session(home, cwd or os.getcwd(), session, scope_names(config))
+    return apply_private(home, config, key, entry, keyed=True)

@@ -665,14 +665,14 @@ def select_supported_cards(query,candidates,ctx,*,policy='facets_v1'):
 def rank_scoped_candidates(db,query,*,prefix='',scope_join='',ranked_where='TRUE',
                            prefix_args=(),ranked_args=(),filter_join='',limit=20,
                            lexical=True,vector=True,embedder=None,model_key=MODEL_KEY,
-                           lexical_weight=1,vector_weight=1,indexed_lexical=False,current_project=None):
+                           lexical_weight=1,vector_weight=1,indexed_lexical=False):
     """Shared PostgreSQL scoring/fusion after caller-established authorization.
 
     Production supplies its compiled policy scope. Historical evaluation may
     supply connection-local temporary tables only after canonical batch source
     validation. This function grants no permissions and does not cache them.
-    With `current_project`, lexical candidates from that project fill the
-    candidate limit first, so other projects never crowd them out.
+    Candidates are ordered by score alone, across everything the caller's scope
+    admits: no workspace is ranked ahead of another.
     """
     match=' OR '.join('"'+w.replace('"','""')+'"' for w in lexical_terms(query))
     # Only the service's restricted transaction uses the fixed database entry
@@ -680,9 +680,7 @@ def rank_scoped_candidates(db,query,*,prefix='',scope_join='',ranked_where='TRUE
     text_relation='search_lexical_matches(?)' if indexed_lexical else 'knowledge_fts'
     text_score='f.score' if indexed_lexical else "ts_rank_cd(to_tsvector('simple',f.body),websearch_to_tsquery('simple',?))"
     text_match='TRUE' if indexed_lexical else "to_tsvector('simple',f.body) @@ websearch_to_tsquery('simple',?)"
-    tier='ed.source_project IS DISTINCT FROM ?,' if current_project is not None else ''
-    tier_args=(current_project,) if current_project is not None else ()
-    text_args=(*prefix_args,match,*ranked_args,*(() if indexed_lexical else (match,)),*tier_args,limit)
+    text_args=(*prefix_args,match,*ranked_args,*(() if indexed_lexical else (match,)),limit)
     with span('lexical_sql'):
         lexical=db.execute(prefix+'''SELECT ranked.document_id,ranked.revision_id,r.claim_json,ranked.score,
             ranked.source_project
@@ -691,7 +689,7 @@ def rank_scoped_candidates(db,query,*,prefix='',scope_join='',ranked_where='TRUE
             JOIN '''+text_relation+''' f ON f.document_id=d.document_id AND f.revision_id=d.active_revision_id
             JOIN enterprise_documents ed ON ed.id=d.document_id
             '''+filter_join+scope_join+' WHERE '+ranked_where+' AND '+text_match+'''
-            ORDER BY '''+tier+'''score DESC,d.document_id LIMIT ?) ranked
+            ORDER BY score DESC,d.document_id LIMIT ?) ranked
             JOIN knowledge_revisions r ON r.revision_id=ranked.revision_id
             ORDER BY ranked.score DESC,ranked.document_id''',text_args).fetchall() if match and lexical else []
     semantic=[]
@@ -731,13 +729,6 @@ def rank_scoped_candidates(db,query,*,prefix='',scope_join='',ranked_where='TRUE
             item['rrf']+=weight/(60+position+1);item['channels'].append(name)
             if name=='vector':item['cosine']=row['score']
     return sorted(fused.values(),key=lambda x:(-x['rrf'],x['document_id']))[:limit]
-
-def current_project_first(rows, project):
-    """Stable partition: the current project's candidates, then other projects' (relevance kept within each)."""
-    if project is None:
-        return rows
-    return sorted(rows, key=lambda row: row.get('source_project') != project)
-
 
 class HybridRetrievalMixin:
     # Direct algorithm callers may inspect retained derived records. The service
@@ -858,12 +849,16 @@ class HybridRetrievalMixin:
     @timed('candidates')
     def candidates(self, ctx, query, *, project=None, filters=None, limit=10, vector=True, lexical=True,
                    scope='project'):
-        """Authorized ranked candidates, the current project's first.
+        """Authorized candidates ranked by score across everything the request may read.
 
-        `scope` narrows retrieval, never authorization. With a project, 'project'
-        (the default) returns that project's documents and, after them, documents
-        from other projects shared with the whole organization; 'all' adds every
-        other project the reader may read. Without a project nothing is narrowed.
+        No workspace is ranked ahead of another: the current workspace's items
+        compete on score with the rest. `scope` narrows retrieval, never
+        authorization. With a project, 'project' (the default) reaches that
+        project's documents and documents from other projects shared with the whole
+        organization; 'all' adds every other project the reader may read. Without a
+        project nothing is narrowed. `filters['workspaces']` (the `read` filter of a
+        session label, or a one-off list) keeps only items of those workspaces,
+        after `_recall_workspaces` capped it by what the request may read.
         """
         self._need(ctx, 'read')
         if scope not in ('project', 'all'):
@@ -884,6 +879,12 @@ class HybridRetrievalMixin:
                     self.current_identity(state.db, ctx)
                     return []
             from agenthub.search_reader import restrict
+            # The `read` filter (a convenience, capped by what the request may read):
+            # resolved before the restricted reader role is set, applied below as one
+            # more predicate over the already authorized candidate query. Without a
+            # filter this runs no statement; `restrict` then checks current identity
+            # before anything is read.
+            keep = self._recall_workspaces(state.db, ctx, filters.get('workspaces'), project)
             # A session label decides which workspaces recall reaches (its superset
             # list), so it replaces the cross-project `scope` option of #28.
             labelled = ctx.get('session_label') or ctx.get('session_label_request')
@@ -907,6 +908,9 @@ class HybridRetrievalMixin:
                 if entity_ids is not None:
                     predicates.append('d.document_id=ANY(?::text[])')
                     args.append(entity_ids)
+                if keep is not None:
+                    predicates.append('ed.source_project=ANY(?::text[])')
+                    args.append(keep)
                 for key in ('domain', 'knowledge_type'):
                     if filters.get(key):
                         predicates.append("r.claim_json::jsonb->>'" + key + "'=?")
@@ -919,9 +923,9 @@ class HybridRetrievalMixin:
                 prefix, scope_join, ranked_where, prefix_args, ranked_args = '', '', where, (), args
                 exact = state.db.execute(prefix + 'SELECT d.document_id,r.revision_id,r.claim_json,ed.source_project FROM knowledge_documents d\n                    JOIN knowledge_revisions r ON r.revision_id=d.active_revision_id\n                    JOIN enterprise_documents ed ON ed.id=d.document_id ' + scope_join + ' WHERE ' + ranked_where + '\n                    AND d.document_id=ANY(?::text[])\n                    ORDER BY d.document_id LIMIT ?', (*prefix_args, *ranked_args, exact_ids, limit)).fetchall() if exact_ids else []
                 if exact:
-                    return current_project_first([dict(row, rrf=1, channels=['exact']) for row in exact], project)
+                    return [dict(row, rrf=1, channels=['exact']) for row in exact]
                 filter_join = ' JOIN knowledge_revisions r ON r.revision_id=d.active_revision_id ' if any((filters.get(k) for k in ('domain', 'knowledge_type', 'subject'))) else ''
-                return current_project_first(rank_scoped_candidates(state.db, query, prefix=prefix, scope_join=scope_join, ranked_where=ranked_where, prefix_args=prefix_args, ranked_args=ranked_args, filter_join=filter_join, limit=limit, lexical=lexical, vector=vector, embedder=self.semantic_embedder, model_key=self.semantic_model_key, lexical_weight=self.retrieval_lexical_weight, vector_weight=self.retrieval_vector_weight,indexed_lexical=True,current_project=project), project)
+                return rank_scoped_candidates(state.db, query, prefix=prefix, scope_join=scope_join, ranked_where=ranked_where, prefix_args=prefix_args, ranked_args=ranked_args, filter_join=filter_join, limit=limit, lexical=lexical, vector=vector, embedder=self.semantic_embedder, model_key=self.semantic_model_key, lexical_weight=self.retrieval_lexical_weight, vector_weight=self.retrieval_vector_weight,indexed_lexical=True)
 
     def _compound_references(self,ctx,location_query,reason_query,location):
         """Resolve only explicit single-actor, source-backed compound references."""
@@ -972,6 +976,9 @@ class HybridRetrievalMixin:
             value['as_of']=filters['event_day']
         from agentclient.enterprise_contract import validate_search
         validate_search(value)
+        if value.get('workspaces') is not None:
+            # A one-off recall filter for this search (see `_recall_workspaces`).
+            filters['workspaces']=list(value['workspaces'])
         if self.retrieval_corpus=='sources':
             from agenthub.source_index import search
             return search(self,ctx,value,filters,candidate_pool=candidate_pool)

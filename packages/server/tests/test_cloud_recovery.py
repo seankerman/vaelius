@@ -72,69 +72,6 @@ class LogicalRecoveryPostgresTests(unittest.TestCase):
         with self.assertRaises(Denied):documents.fetch(alice,self.obsolete['source_id'])
         with self.assertRaises(Denied):documents.fetch(bob,corrected['source_id'])
 
-    def test_populated_claim_temporal_and_episode_history_survive_offline_reconcile(self):
-        from agentclient.enterprise_contract import VERSION
-        from agenthub.processing.episode_pipeline import _record_episode_revision
-        from agenthub.processing.temporal import record_assertion
-        from agenthub.project_history import project_overview
-        event=self.source.ingest(self.ctx,{'version':VERSION,'external_id':'recovery-decision',
-            'session':'recovery-chat','turn':'1','project':'recovery-fixture','kind':'Stop',
-            'body':'On 2026-09-25 the synthetic dataset moved to /synthetic/decision.tsv because TSV keeps headers. It is still there.',
-            'occurred_at':'2026-09-25T12:00:00Z','visibility':'team'})['source_id']
-        note=self.source.accept_reviewed_note(self.ctx,event,'Synthetic dataset decision',
-            'On 2026-09-25 the synthetic dataset moved to /synthetic/decision.tsv because TSV keeps headers. It is still there.')
-        with self.source.open() as state,state.db:
-            db=state.db
-            scope=db.execute('SELECT internal_project FROM enterprise_sources WHERE id=?',(event,)).fetchone()[0]
-            session=db.execute('SELECT session FROM memories WHERE id=?',(event,)).fetchone()[0]
-            db.execute('''INSERT INTO knowledge_generations
-                (generation_id,curator_version,status,source_policy,config_hash,created)
-                VALUES('recovery-populated-fixture','synthetic','active','synthetic','fixed',1)''')
-            db.execute('''INSERT INTO curation_episode_jobs
-                (id,generation_id,episode_id,project,session,turn,source_ids,source_hash,
-                 created,updated,version,status)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,'done')''',
-                ('recovery-decision-job','recovery-populated-fixture','recovery-decision-episode',
-                 scope,session,'1',json.dumps([event]),'recovery-decision-hash',1,1,'fixture'))
-            row={'id':'recovery-decision-job','generation_id':'recovery-populated-fixture',
-                'project':scope,'session':session,'turn':'1','source_hash':'recovery-decision-hash',
-                'source_ids':json.dumps([event])}
-            text='On 2026-09-25 the synthetic dataset moved to /synthetic/decision.tsv because TSV keeps headers. It is still there.'
-            _record_episode_revision(db,row,{'episode_disposition':'learning'},
-                [{'atom_key':'recovery-decision','record':{'title':'Dataset moved','text':text,
-                    'subject':'synthetic dataset','facets':['location','reason'],
-                    'actors':['alice'],'state':'adopted','attribution':'source',
-                    'occurred_date':'2026-09-25'},
-                  'evidence':[{'source_id':event,'version':'1','start':0,'end':len(text),
-                               'quote':text,'segment_id':'recovery-decision'}],
-                  'operation':'AUTHORED_FIXED'}],[],{},1)
-            assertion=record_assertion(db,revision_id=note['revision_id'],
-                subject='synthetic dataset',predicate='location',value='/synthetic/decision.tsv',
-                actor='alice',evidence_source_ids=[event],
-                validity={'from':'2026-09-25','to_status':'ongoing','precision':'day',
-                          'timezone':'UTC','basis':'explicit_source'})
-        baseline=project_overview(self.source,self.ctx,'recovery-fixture',page_limit=10)
-        baseline_occurrences=[item['episode_id'] for item in baseline['episodes']]
-        self.assertEqual(len(baseline_occurrences),1)
-        snapshot=self.root/'populated-before';backup(self.source,self.source_objects,snapshot)
-        self.ingest('post-backup',b'# Later original\nThis version was added after the populated snapshot.\n')
-        self.assertFalse(restore_snapshot(snapshot,self.target,self.target_objects,
-            admin_dsn=self.admin_dsn)['ready'])
-        with self.assertRaises(ValueError):self.target.require_ready()
-        reconciled=reconcile_restore(snapshot,self.target,self.source,self.target_objects,
-            self.source_objects,admin_dsn=self.admin_dsn,destination=self.root/'populated-latest')
-        self.assertTrue(reconciled['ready']);self.target.require_ready()
-        restored_ctx=self.target.authenticate(self.tokens['alice'])
-        with self.target.open() as state:
-            self.assertEqual(state.db.execute('SELECT count(*) FROM episode_occurrences').fetchone()[0],1)
-            self.assertEqual(state.db.execute('SELECT count(*) FROM knowledge_temporal_assertions WHERE assertion_id=?',
-                (assertion['assertion_id'],)).fetchone()[0],1)
-            self.assertEqual(state.db.execute('SELECT count(*) FROM enterprise_dependencies WHERE document_id=?',
-                (note['document_id'],)).fetchone()[0],1)
-        self.assertEqual(self.target.detail(restored_ctx,note['document_id'])['id'],note['document_id'])
-        restored=project_overview(self.target,restored_ctx,'recovery-fixture',page_limit=10)
-        self.assertEqual([item['episode_id'] for item in restored['episodes']],baseline_occurrences)
-
     def test_corrupt_object_restore_stays_held(self):
         snapshot=self.root/'before';manifest=backup(self.source,self.source_objects,snapshot)
         (snapshot/manifest['objects'][0]['file']).write_bytes(b'corrupt original')

@@ -58,16 +58,6 @@ class SearchReader(CompletePolicyEquivalence):
             with self.assertRaises(Denied), self.store.search_reader(ctx):
                 pass
 
-    def test_operator_review_cannot_expand_to_unselected_documents(self):
-        source, selected=self.note('review-selected')
-        self.note('review-unselected')
-        from agenthub.draft_review import review_session
-        with self.store.open() as state:
-            revision=state.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?',(selected,)).fetchone()[0]
-        with review_session(self.store,self.contexts['alice'],{selected:revision},source_ids=[source]):
-            with self.store.search_reader(self.contexts['alice']) as state:
-                self.assertEqual({r[0] for r in state.db.execute('SELECT document_id FROM knowledge_documents')},{selected})
-
     def test_context_is_removed_on_same_connection_and_rls_cannot_be_disabled(self):
         from agenthub.search_reader import restrict
         from psycopg.errors import InsufficientPrivilege

@@ -24,7 +24,6 @@ class OperatorTenantTests(unittest.TestCase):
         state.db.execute.return_value.fetchone.return_value = [0]
         state.db.execute.return_value.__iter__.return_value = iter([])
         with patch('agenthub.cloud_local.runtime', return_value=({}, registry)), \
-             patch('agenthub.backend_worker.Worker.status', return_value={}), \
              patch('agenthub.cloud_ops.Meter.status', return_value={}):
             result = status('/tmp/owned-profile')
         self.assertEqual(set(result['tenants']), {'org_72ce', 'org_archived'})

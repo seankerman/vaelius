@@ -9,7 +9,7 @@ import unittest
 
 from agenthub.cloud_retrieval import supported_answer
 
-FIXTURE = Path(__file__).parents[1]/'tools/fixtures/local_staging_readiness_v1/retrieval_lane.json'
+FIXTURE = Path(__file__).parent/'fixtures/local_staging_readiness_v1/retrieval_lane.json'
 
 
 def claim(title, body, owner='alice', **extra):

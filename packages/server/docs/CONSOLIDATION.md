@@ -1,15 +1,12 @@
 # Supported service boundary
 
 The 0.3 package has one PostgreSQL API/worker path. AgentHub owns processing,
-model execution (operator-allowlisted providers, no default model), continuous contexts, embeddings,
-identity, policy, source objects, curation, retrieval and lifecycle.
+embeddings, identity, policy, source objects, retrieval and lifecycle.
 
 `agenthub doctor --profile PROFILE` checks local configuration;
 `python -m agenthub.cloud_runtime --profile PROFILE` starts the API;
 `agenthub worker-run --profile PROFILE --tenant TENANT` runs a finite source-index
-and local-embedding batch. Curation/consolidation are disabled by default;
-explicit enrichment also requires `processing.curation_enabled: true` and `--live`.
-See [source-first defaults and rollback](SOURCE_FIRST.md).
+and local-embedding batch. See [source-first defaults and rollback](SOURCE_FIRST.md).
 `python -m agenthub.cloud_recovery --help` exposes real offline restore/reconcile
 operations. Rehearsals and research runners are in `research/` and are not wheels.
 

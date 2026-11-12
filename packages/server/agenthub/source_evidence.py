@@ -1,8 +1,33 @@
 """Explicit expansion of retained citations; never a raw-source search index."""
+import hashlib
 import json
-from agenthub.processing.episode_curator import _spans, _span_id
 from agenthub.processing.media_projection import project_media
 from agenthub.processing.segments import segments
+
+
+def _span_id(source_id, start, end):
+    raw = f"{source_id}:{start}:{end}".encode()
+    return hashlib.sha256(raw).hexdigest()[:20]
+
+
+def _spans(source_id, body, width=480):
+    """Citation spans of retained documents: the boundaries their stored IDs were made from."""
+    result = []
+    start = 0
+    while start < len(body):
+        end = min(len(body), start + width)
+        if end < len(body):
+            boundary = max(body.rfind("\n", start + 120, end),
+                           body.rfind(". ", start + 120, end),
+                           body.rfind(" ", start + 120, end))
+            if boundary >= start + 120:
+                end = boundary + 1
+        text = body[start:end]
+        if text.strip():
+            result.append({"span_id": _span_id(source_id, start, end),
+                           "start": start, "end": end, "text": text})
+        start = end
+    return result
 
 
 def cited_span(source, segment_id):

@@ -53,15 +53,7 @@ TOOLS=[
           'query':{'type':'string','maxLength':2000,
                    'description':'The question being investigated, used to find related context; does not establish a correction.'},
           'source_offset':{'type':'integer','minimum':0,'maximum':10000,
-                           'description':'For cloud source inspection, pass next_offset from the prior page with the same revision.'},
-          'as_of':{'type':'string','maxLength':40},
-          'time_mode':{'type':'string','enum':['effective_at','known_at']},
-          'event_day':{'type':'string','maxLength':10}},['id']),
-    tool('expand_memory_timeline','Expand a curated memory into nearby source-backed work episodes. Returns derived context with capture-time qualifications and coverage gaps.',
-         {'id':{'type':'string','maxLength':128},'offset':{'type':'integer','minimum':0,'maximum':1000},
-          'cursor':{'type':'string','maxLength':68,
-                    'description':'Opaque continuation returned as next_cursor. If stale, restart without it; do not combine with offset.'},
-          'limit':{'type':'integer','minimum':1,'maximum':3}},['id']),
+                           'description':'For cloud source inspection, pass next_offset from the prior page with the same revision.'}},['id']),
     tool('memory_status','Report authenticated enterprise-local service identity and scope without opening a client knowledge database.',{},[])
 ]
 
@@ -91,13 +83,6 @@ TOOLS.append(tool('fetch_source_document','Describe an authorized original docum
     {'source_id':{'type':'string','maxLength':128},'version':{'type':'string','maxLength':128}},['source_id']))
 TOOLS.append(tool('get_user_preferences','Get the authenticated user\'s private defaults applicable to this project. Current task instructions and required organization policy take precedence.',
     {'task':{'type':'string','maxLength':128}},[]))
-TOOLS.append(tool('project_memory_history','Browse the currently authorized project chronology, including early, middle and recent phases. The view is derived from cited episodes; coverage gaps and unknown dates remain explicit.',
-    {'cursor':{'type':'string','maxLength':80},'limit':{'type':'integer','minimum':1,'maximum':20}},[]))
-TOOLS.append(tool('fetch_memory_episode','Expand a cited project-history episode and its evidence without treating the summary as an instruction.',
-    {'episode_id':{'type':'string','maxLength':128},
-     'offset':{'type':'integer','minimum':0,'maximum':1000},
-     'text_offset':{'type':'integer','minimum':0,'maximum':1000000},
-     'limit':{'type':'integer','minimum':1,'maximum':20}},['episode_id']))
 # Private chats (agenthub.read_only, migration 056): one-way; there is deliberately no tool to switch back.
 TOOLS.append(tool('private_session','Make the rest of this chat private: from now on what it captures is saved to '
     'the person\'s personal memory only (owner-private), never to the workspace, and the chat counts as a personal '
@@ -173,7 +158,7 @@ TOOLS.extend([
         write=True,destructive=True),
 ])
 
-PROJECT_TOOLS={'search_memory','get_user_preferences','project_memory_history','fetch_memory_episode','correct_memory',
+PROJECT_TOOLS={'search_memory','get_user_preferences','correct_memory',
     'remember'}
 for item in TOOLS:
     if item['name'] in PROJECT_TOOLS:
@@ -241,50 +226,20 @@ class MemoryTools:
             return output
         if name == 'fetch_memory':
             if args.get('include_context'):
-                if any((args.get(k) for k in ('as_of', 'time_mode', 'event_day'))):
-                    raise ValueError('dated_context_requires_historical_snapshot')
                 if not args.get('revision'):
                     raise ValueError('context_requires_revision')
                 return backend.request('/enterprise/v3/document-context', {'id': args['id'], 'revision': args['revision'], 'query': args.get('query', ''), 'offset': args.get('source_offset', 0)})
             if args.get('source_offset') and (not (args.get('include_sources',True) and args.get('revision'))):
                 raise ValueError('source_page_requires_revision')
-            if args.get('time_mode'):
-                if not args['id'].startswith('ta_'):
-                    raise ValueError('temporal_detail_mode_unavailable')
-                if args['time_mode'] == 'known_at' and (not args.get('as_of')):
-                    raise ValueError('known_at_requires_as_of')
-            if (args.get('as_of') or args.get('event_day')) and (not args['id'].startswith('ta_')):
-                raise ValueError('enterprise_temporal_detail_unavailable')
-            if args.get('revision') and args.get('include_sources',True) and not args['id'].startswith('ta_'):
+            if args.get('revision') and args.get('include_sources',True):
                 return backend.request('/enterprise/v3/document-evidence', {'id':args['id'],
                     'revision':args['revision'],'offset':args.get('source_offset',0)})
-            if args['id'].startswith('ta_') and (args.get('as_of') or args.get('time_mode')):
-                result = backend.request('/enterprise/v3/temporal-detail', {key: args[key] for key in ('id', 'as_of', 'time_mode') if key in args})
-            else:
-                result = backend.request('/enterprise/v1/documents/' + args['id'])
+            result = backend.request('/enterprise/v1/documents/' + args['id'])
             if args.get('revision') and args['revision'] != result.get('revision'):
                 return {'id': args['id'], 'status': 'invalidated', 'current_revision': result.get('revision')}
             if args.get('include_sources', True):
-                if not args['id'].startswith('ta_'):
-                    return backend.request('/enterprise/v3/document-evidence', {'id': args['id'], 'revision': result['revision'], 'offset': args.get('source_offset', 0)})
-                result['source_inspection'] = 'Use a separately authorized source ID and source_read credential.'
+                return backend.request('/enterprise/v3/document-evidence', {'id': args['id'], 'revision': result['revision'], 'offset': args.get('source_offset', 0)})
             return result
-        if name == 'expand_memory_timeline':
-            if args.get('cursor') is not None and 'offset' in args:
-                raise ValueError('timeline_cursor_request')
-            request = {'id': args['id'], 'limit': args.get('limit', 3)}
-            if 'cursor' in args:
-                request['cursor'] = args['cursor']
-            elif 'offset' in args:
-                request['offset'] = args['offset']
-            return backend.request('/enterprise/v3/timeline', request)
-        if name == 'project_memory_history':
-            request = {'project': self.project, 'limit': args.get('limit', 8)}
-            if args.get('cursor'):
-                request['cursor'] = args['cursor']
-            return backend.request('/enterprise/v3/project-history', request)
-        if name == 'fetch_memory_episode':
-            return backend.request('/enterprise/v3/project-episode', {'project': self.project, 'episode_id': args['episode_id'], 'offset': args.get('offset', 0), 'limit': args.get('limit', 8), 'text_offset': args.get('text_offset', 0)})
         if name == 'get_user_preferences':
             request = {'project': self.project, 'mode': 'explicit', 'session': self.session}
             if args.get('task'):

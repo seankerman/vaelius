@@ -14,7 +14,7 @@ backend authorization. The service never trusts the project header as permission
 
 Each MCP HTTP request authenticates, including initialization and tool listing.
 Each operation resolves current identity again. Search rechecks permissions and
-revisions before and after optional model reranking. Host/origin checks apply
+revisions before delivery. Host/origin checks apply
 before dispatch; query-string credentials are unsupported. Errors omit private
 source text. Responses are marked `no-store`.
 

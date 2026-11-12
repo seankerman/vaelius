@@ -60,12 +60,8 @@ Where it appears:
   `search_memory` tool carry it per card.
 - `/enterprise/v3/document-evidence` and `/enterprise/v3/document-context`: each
   cited span or context chunk (MCP `fetch_memory`).
-- `/enterprise/v3/timeline` and `/enterprise/v3/temporal-detail`: one block for the
-  document (MCP `expand_memory_timeline`, dated `fetch_memory`).
 - `/enterprise/v1/documents/{id}` when reached through MCP `fetch_memory` with
   `include_sources=false`.
-- Project history episodes and episode detail (MCP `project_memory_history`,
-  `fetch_memory_episode`).
 
 The v1 `/enterprise/v1/search` and HTTP `/enterprise/v1/documents/{id}` envelopes are
 unchanged, because older clients validate them strictly. Clients that need

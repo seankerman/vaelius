@@ -238,7 +238,7 @@ class GovernancePostgresTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(detail['provenance']['author'], 'alice')
         self.assertTrue(detail['instruction_like'])
         revision = detail['revision']
-        from agenthub.processing.episode_curator import _spans
+        from agenthub.source_evidence import _spans
         with self.store.open() as state, state.db:
             state.db.execute('DELETE FROM knowledge_support WHERE revision_id=?', (revision,))
             for span in _spans(source, POISON):

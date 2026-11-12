@@ -83,9 +83,8 @@ class WorkspaceFixture(PostgresFixture):
 
     def drain(self):
         from agenthub.source_index import SourceIndex
-        with patch('agenthub.cloud_execution.execution_from_config', side_effect=AssertionError('no LLM')):
-            while SourceIndex(self.store).run(max_sources=50, max_seconds=30)['completed_sources']:
-                pass
+        while SourceIndex(self.store).run(max_sources=50, max_seconds=30)['completed_sources']:
+            pass
 
     def documents(self, raw=True):
         with self.store.open() as state:
@@ -933,7 +932,7 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
 
     def setUp(self):
         self.workspace_setup()
-        # Derived documents and temporal assertions are only searched in the curated corpus.
+        # Derived documents are only searched in the curated corpus.
         self.store.retrieval_corpus = 'all'
         self.store.retrieval_selection_policy = 'baseline'
         self.items = {name: self.capture(name) for name in ('maple', 'birch', 'oak')}
@@ -957,9 +956,8 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
 
     def derive(self, names, subject):
         """One curated document over several of alice's sources, registered by the
-        ordinary document refresh, with a dated location assertion for temporal recall."""
+        ordinary document refresh."""
         from agenthub.processing.knowledge import accept_local_candidate
-        from agenthub.processing.temporal import record_assertion
         sources = [self.items[name] for name in names]
         path = '/synthetic/ledger/' + subject.lower() + '.csv'
         lesson = 'The ' + subject + ' ledger is saved at ' + path + ' effective 2026-09-01.'
@@ -975,11 +973,6 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
             note = accept_local_candidate(db, ident, partition, 'ledger-notes', subject + ' ledger location',
                                           lesson, sources)
             self.store.refresh_documents(db=db, document_id=note['document_id'])
-            note['assertion'] = record_assertion(
-                db, revision_id=note['revision_id'], subject=subject + ' ledger', predicate='location', value=path,
-                actor='alice', evidence_source_ids=sources, recorded_at=1788264000.0,
-                validity={'from': '2026-09-01', 'to_status': 'ongoing', 'precision': 'day', 'timezone': 'UTC',
-                          'basis': 'explicit_source'})['assertion_id']
         self.store.refresh_documents()
         return note
 
@@ -991,15 +984,6 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
         rows = self.store.candidates(ctx, 'ledger location', project=project, limit=50,
                                      filters={'workspaces': workspaces} if workspaces is not None else None)
         return {self.derived[row['document_id']] for row in rows if row['document_id'] in self.derived}
-
-    def dated(self, ctx, subject, project=None, **request):
-        """Names of the derived documents a dated (curated temporal) search answers from."""
-        query = dict({'version': 'enterprise-local-1', 'as_of': '2026-09-10', 'time_mode': 'effective_at',
-                      'query': 'Where was the ' + subject + ' ledger as of 2026-09-10?', 'project': project},
-                     **request)
-        query = {key: value for key, value in query.items() if value is not None}
-        assertions = {note['assertion']: name for name, note in self.notes.items()}
-        return {assertions[card['id']] for card in self.store.search(ctx, query)['results']}
 
     def visible(self, ctx, keep=None):
         """Document ids row-level security shows a request, with or without a recall filter."""
@@ -1018,34 +1002,6 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
         with patch.object(PostgresConnection, 'execute', counted):
             result = call()
         return result, len(sent)
-
-    def test_curated_temporal_recall_honours_the_filter(self):
-        personal = lambda **extra: self.label(self.alice, 'maple', private=True, **extra)
-        self.assertEqual(self.dated(personal(), 'Oak', 'maple'), {'oak'}, 'unfiltered: everything the session reads')
-        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple'), set(), 'oak is not searched')
-        self.assertEqual(self.dated(personal(read=['oak']), 'Oak', 'maple'), {'oak'})
-        self.assertEqual(self.dated(personal(read=['birch']), 'Maple', 'maple'), {'maple'},
-                         'the current workspace always stays in')
-        # A one-off list replaces the folder's; without a label it is capped by what the person reads.
-        self.assertEqual(self.dated(personal(read=['oak']), 'Oak', 'maple', workspaces=['birch']), set())
-        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple', workspaces=['oak']), {'oak'})
-        self.assertEqual(self.dated(self.alice, 'Oak', 'maple', workspaces=['birch']), set())
-        self.assertEqual(self.dated(self.alice, 'Oak', 'maple', workspaces=['oak']), {'oak'})
-        # The current-state form of the same path.
-        current = dict(as_of=None, time_mode='current', query='Where is the Oak ledger?')
-        self.assertEqual(self.dated(personal(), 'Oak', 'maple', **current), {'oak'})
-        self.assertEqual(self.dated(personal(read=['birch']), 'Oak', 'maple', **current), set())
-        # A document over maple and oak sources is searched when either is listed.
-        birch = lambda **extra: self.label(self.alice, 'birch', **extra)
-        self.assertEqual(self.dated(birch(), 'Joint', 'birch'), {'both'})
-        self.assertEqual(self.dated(birch(read=['oak']), 'Joint', 'birch'), {'both'})
-        self.assertEqual(self.dated(birch(read=['maple']), 'Joint', 'birch'), {'both'})
-        self.assertEqual(self.dated(birch(read=[]), 'Joint', 'birch'), set(), 'neither source is in birch')
-        # Never a permission: erin reads oak only, whatever the list names.
-        self.assertEqual(self.dated(self.erin, 'Oak', workspaces=['maple', 'oak']), {'oak'})
-        self.assertEqual(self.dated(self.erin, 'Maple', workspaces=['maple', 'oak']), set())
-        self.assertEqual(self.dated(self.erin, 'Joint', workspaces=['oak']), set(), 'its maple source is not hers')
-        self.assertEqual(self.dated(self.erin, 'Oak', workspaces=['maple']), set())
 
     def test_a_document_over_several_workspaces_is_kept_when_one_of_them_is_listed(self):
         with self.store.open() as state:
@@ -1079,7 +1035,6 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
         what the same request sees unfiltered, which is exactly what the read predicate
         admits in all three layers; and it is exactly the documents with a source in a
         kept workspace."""
-        from agenthub.workspace_access import RECALL_FILTER_SQL
         sessions = {
             'alice, shared maple': (self.label(self.alice, 'maple'), 'maple'),
             'alice, shared birch': (self.label(self.alice, 'birch'), 'birch'),
@@ -1103,30 +1058,23 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
                     indexed = set(self.store._authorized_documents(state, ctx)) & set(workspaces)
             unfiltered = self.visible(ctx)
             self.assertEqual((oracle, indexed), (unfiltered, unfiltered), (name, 'the three layers agree'))
-            everything = {subject: self.dated(ctx, subject, project) for subject in ('Oak', 'Joint')}
             for wanted in self.FILTERS:
                 with self.subTest(session=name, filter=wanted):
                     with self.store.open() as state:
                         keep = self.store._recall_workspaces(state.db, ctx, wanted, project)
-                        by_sql = {r[0] for r in state.db.execute(
-                            'SELECT ed.id FROM enterprise_documents ed WHERE ed.id=ANY(?::text[]) AND '
-                            + RECALL_FILTER_SQL.format(document='ed.id'), (sorted(unfiltered), keep))}
                     filtered = self.visible(ctx, keep)
                     self.assertLessEqual(filtered, unfiltered, 'row-level security: only ever a subset')
                     self.assertEqual(filtered, {d for d in unfiltered if workspaces[d] & set(keep)},
                                      'exactly the documents with a source in a kept workspace')
-                    self.assertEqual(by_sql, filtered, 'the temporal path applies the same rule')
                     candidates = {row['document_id'] for row in self.store.candidates(
                         ctx, 'ledger location', project=project, limit=50, filters={'workspaces': wanted})}
                     self.assertLessEqual(candidates, filtered, 'candidates')
-                    for subject, answers in everything.items():
-                        self.assertLessEqual(self.dated(ctx, subject, project, workspaces=wanted), answers, subject)
                     narrowed += filtered != unfiltered
         self.assertGreater(narrowed, 10, 'the lists did narrow something')
 
     def test_the_filter_costs_only_its_own_resolution(self):
         """SQL-count regression: a filter adds the statements that resolve it and nothing
-        per document, on the candidate path and on the temporal path."""
+        per document, on the candidate path."""
         ctx = self.label(self.alice, 'birch')
         with self.store.open() as state:
             keep, resolution = self.statements(
@@ -1136,11 +1084,3 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
         listed = self.statements(lambda: self.found(ctx, 'birch', ['oak']))
         self.assertEqual((plain[0], listed[0]), ({'maple', 'birch', 'oak', 'both'}, {'birch', 'oak', 'both'}))
         self.assertEqual(listed[1], plain[1] + resolution, 'candidates: the multi-workspace rule runs inside the query')
-        plain = self.statements(lambda: self.dated(ctx, 'Joint', 'birch'))
-        listed = self.statements(lambda: self.dated(ctx, 'Joint', 'birch', workspaces=['oak']))
-        self.assertEqual((plain[0], listed[0]), ({'both'}, {'both'}))
-        self.assertLessEqual(listed[1], plain[1] + resolution,
-                             'temporal: one condition in the selection, and fewer documents to authorize')
-        skipped = self.statements(lambda: self.dated(ctx, 'Joint', 'birch', workspaces=[]))
-        self.assertEqual(skipped[0], set())
-        self.assertLess(skipped[1], plain[1], 'documents outside the filter are never authorized')

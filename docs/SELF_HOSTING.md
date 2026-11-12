@@ -15,8 +15,8 @@ remain available for inspection or explicit deletion. Do not commit them.
 
 The API uses application credentials; migration/provisioning credentials remain
 in a separate operator file. `runtime.json` must be mode 0600 or 0400. Runtime and
-worker configuration are explicit. Startup does not enable model calls, source
-collection or curation. Finite workers consume PostgreSQL jobs; repeat them as needed.
+worker configuration are explicit. Startup does not enable source collection.
+Finite workers consume PostgreSQL jobs; repeat them as needed.
 `runtime.json` also sets per-principal and per-tenant write limits (`ingest_limits`)
 and the organization's capture notice (`capture_notice`); operators quarantine or
 bulk-withdraw a principal's content with `vaelius principal-*` commands. See
@@ -54,9 +54,9 @@ without `127.0.0.1`, needs the same override (see HTTPS below). Released images 
 
 For production, mount secrets or use workload identity for S3; configure HTTPS
 (below), [provider OAuth](ENTERPRISE_AUTH.md), tenant routing and lifecycle policies. The backend MCP endpoint
-uses those same identity and permission controls. [Provider configuration and
-hosting seams](../packages/server/docs/MODEL_PROVIDERS.md) document API models,
-local Codex-login execution and explicit source-object adapters.
+uses those same identity and permission controls. The service calls no model
+provider; `processing.curation_enabled: true`, `reranking.enabled: true` and a
+`models` section are refused at startup.
 
 ## HTTPS and production transport
 
@@ -114,8 +114,7 @@ control-plane migrations, then reapply application-role grants, before starting 
 new release. For example, `043_action_grants.sql` keeps existing credentials'
 feedback and curation abilities, and `044_control_login_requests.sql` adds a control
 table the control role must be able to insert into and delete from. Stop old workers
-before changing provider identities or processing configuration; reconstruct
-authorized observer context when checkpoints cannot be resumed.
+before changing processing configuration.
 
 `python -m agenthub.cloud_recovery --help` exposes restore/reconciliation operations.
 Recovery must retain denial/deletion journals and recheck permissions; a restored

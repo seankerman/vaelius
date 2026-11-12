@@ -239,32 +239,24 @@ def canonical_evidence(store, ctx, card):
     with store.open() as state:
         db = state.db
         doc = store._document_allowed(db, ctx, ident)
-        temporal = None
         if not doc:
-            temporal = store._temporal_allowed(db, ctx, ident)
-            if not temporal:
-                return {"allowed": False, "source_ids": [], "spans": [], "claim": {}}
-            ident = temporal["document_id"]
+            return {"allowed": False, "source_ids": [], "spans": [], "claim": {}}
         row = db.execute("SELECT claim_json FROM knowledge_revisions WHERE document_id=? AND revision_id=?",
                          (ident, revision)).fetchone()
         if not row:
             return {"allowed": False, "source_ids": [], "spans": [], "claim": {}}
-        if not temporal and doc["active_revision_id"] != revision:
+        if doc["active_revision_id"] != revision:
             return {"allowed": False, "source_ids": [], "spans": [], "claim": {}}
         claim = json.loads(row[0])
         dependencies = [r[0] for r in db.execute(
             "SELECT source_id FROM enterprise_dependencies WHERE document_id=?", (ident,))]
-        if temporal:
-            dependencies = [r[0] for r in db.execute(
-                "SELECT source_memory_id FROM knowledge_temporal_evidence WHERE assertion_id=?",
-                (temporal["assertion_id"],))]
         refs = [dict(r) for r in db.execute(
             "SELECT source_memory_id,source_segment_id FROM knowledge_support WHERE revision_id=?", (revision,))]
         spans = [dict(r) for r in db.execute(
             'SELECT source_id,start,"end" FROM backend_native_spans WHERE document_id=?', (ident,))]
         native_document = bool(spans)
         revisions, owners = {}, {}
-        from agenthub.processing.episode_curator import _spans
+        from agenthub.source_evidence import _spans
         for source_id in dependencies:
             owner = db.execute("SELECT owner FROM enterprise_sources WHERE id=?", (source_id,)).fetchone()
             if owner:
@@ -279,8 +271,7 @@ def canonical_evidence(store, ctx, card):
                         spans.append({"source_id": source_id, "start": span["start"], "end": span["end"]})
         return {"allowed": True, "source_ids": dependencies, "spans": spans,
                 "source_revisions": revisions, "source_owners": owners, "claim": claim,
-                "native_document": native_document,
-                "temporal": dict(temporal) if temporal else None}
+                "native_document": native_document, "temporal": None}
 
 
 def authorized_evidence_oracle(store, ctx, expected, source_map):
@@ -300,12 +291,7 @@ def authorized_evidence_oracle(store, ctx, expected, source_map):
             FROM knowledge_documents d JOIN enterprise_dependencies e ON e.document_id=d.document_id
             WHERE e.source_id=ANY(?::text[]) ORDER BY d.document_id""", (ids,))]
         permitted = [row for row in documents if store._document_allowed(state.db, ctx, row["document_id"])]
-        assertions = [dict(r) for r in state.db.execute("""SELECT DISTINCT a.assertion_id,a.revision_id
-            FROM knowledge_temporal_assertions a JOIN knowledge_temporal_evidence e ON e.assertion_id=a.assertion_id
-            WHERE e.source_memory_id=ANY(?::text[]) ORDER BY a.assertion_id""", (ids,))]
-        allowed_assertions = [row for row in assertions if store._temporal_allowed(state.db, ctx, row["assertion_id"])]
     cards = [{"id": row["document_id"], "revision": row["active_revision_id"]} for row in permitted]
-    cards += [{"id": row["assertion_id"], "revision": row["revision_id"]} for row in allowed_assertions]
     return {"documents": cards, "source_ids_present": present,
             "denied_document_count": len(documents) - len(permitted)}
 

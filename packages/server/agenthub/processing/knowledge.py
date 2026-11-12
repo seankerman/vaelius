@@ -275,10 +275,8 @@ def ingest_observation(db, memory_id, project, session, observation, now=None, *
                    (doc_id,memory_id,"attached_exact",now))
         _support_rows(db,rev_id,observation,"unknown")
         _decision(db,"attach_exact_support",[rev_id],doc_id,"exact_identity_same_project_support_added")
-        from agenthub.processing.temporal import admit_curated_assertion
-        temporal=admit_curated_assertion(db,rev_id,observation)
         return {"action":"attach_exact_support","document_id":doc_id,"revision_id":rev_id,
-                "related_candidates":0,"temporal":temporal}
+                "related_candidates":0}
     doc_id=_identifier("doc_",memory_id)
     rev_id=_identifier("rev_",memory_id+":1")
     db.execute("""INSERT INTO knowledge_documents VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -294,12 +292,10 @@ def ingest_observation(db, memory_id, project, session, observation, now=None, *
         refresh_index(db,doc_id)
         return {'action':'source_passage','document_id':doc_id,'revision_id':rev_id}
     _decision(db,"create_singleton",[],doc_id,"one_supported_claim_from_curated_observation")
-    from agenthub.processing.temporal import admit_curated_assertion
-    temporal=admit_curated_assertion(db,rev_id,observation)
     candidates=_possible_relations(db,project,doc_id,rev_id,claim)
     refresh_index(db,doc_id)
     return {"action":"create_singleton","document_id":doc_id,"revision_id":rev_id,
-            "related_candidates":candidates,"temporal":temporal}
+            "related_candidates":candidates}
 
 
 def apply_resolved_observation(db, memory_id, project, session, observation, operation,
@@ -359,15 +355,12 @@ def apply_resolved_observation(db, memory_id, project, session, observation, ope
             updated=? WHERE document_id=? AND active_revision_id=?""",
             (revision_id,now,target_document_id,previous_id)).rowcount
         if changed!=1:raise ValueError("stale_resolution_revision")
-        from agenthub.processing.temporal import admit_curated_assertion
-        temporal=admit_curated_assertion(db,revision_id,observation,
-            operation=operation,previous_revision_id=previous_id)
         refresh_index(db,target_document_id)
         _decision(db,"resolver_"+operation.casefold(),[previous_id],target_document_id,
                   "model_resolved_immutable_revision","model_resolved")
         return {"action":"resolver_"+operation.casefold(),"document_id":target_document_id,
                 "revision_id":revision_id,"previous_revision_id":previous_id,
-                "related_candidates":0,"temporal":temporal}
+                "related_candidates":0}
     created=ingest_observation(db,memory_id,project,session,observation,now,force_new=True)
     relation={"CONTRADICT":"contradicts","CONDITIONAL_VARIANT":"conditional_variant",
               "RELATED":"related"}[operation]

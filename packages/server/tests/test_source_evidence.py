@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from agenthub.processing.episode_curator import _spans
+from agenthub.source_evidence import _spans
 from vaelius_test_support.fixtures.enterprise import EnterpriseStore
 from agenthub.enterprise import Denied
 

@@ -351,12 +351,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         with self.open() as state, state.db:
             db=state.db;epoch=str(current_epoch(db,receiver)['epoch'])
             for card in value['cards']:
-                if card['id'].startswith('ta_'):
-                    doc=self._temporal_allowed(db,ctx,card['id'])
-                    revision=doc['revision_id'] if doc else None
-                else:
-                    doc=self._document_allowed(db,ctx,card['id'])
-                    revision=doc['active_revision_id'] if doc else None
+                doc=self._document_allowed(db,ctx,card['id'])
+                revision=doc['active_revision_id'] if doc else None
                 if not doc or revision!=card['revision']:raise Denied()
             for card in value['cards']:
                 ident=_digest(json.dumps([receiver,epoch,value.get('request_id',ctx['request_id']),
@@ -375,9 +371,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             JOIN knowledge_generations g ON g.generation_id=gd.generation_id
             WHERE gd.document_id=? AND g.status='active' LIMIT 1''',(document_id,)).fetchone()
         mapped=db.execute('SELECT 1 FROM knowledge_generation_documents WHERE document_id=? LIMIT 1',(document_id,)).fetchone()
-        if mapped and not generation:
-            from agenthub.draft_review import allowed_revision
-            if not allowed_revision(self,ctx,document_id,doc['active_revision_id']):return None
+        if mapped and not generation:return None
         dependencies=db.execute("""SELECT s.* FROM enterprise_dependencies x
             JOIN enterprise_sources s ON s.id=x.source_id WHERE x.document_id=?""",(document_id,)).fetchall()
         if not dependencies:return None
@@ -410,9 +404,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         # one transaction. Missing/inactive/cross-scope provenance keeps
         # the entire document unregistered, rather than dropping links.
         target_clause='AND d.document_id=%s' if document_id is not None else ''
-        from agenthub.draft_review import selected_documents
-        review=selected_documents(self)
-        review_clause=(' AND gd.document_id NOT IN ('+','.join('%s' for _ in review)+')') if review else ''
         row=db.execute(f"""WITH eligible AS MATERIALIZED (
             SELECT d.document_id,d.project,d.active_revision_id
             FROM knowledge_documents d WHERE d.lifecycle='active'
@@ -421,7 +412,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             AND EXISTS(SELECT 1 FROM knowledge_document_members m WHERE m.document_id=d.document_id)
             AND NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd
                 JOIN knowledge_generations g ON g.generation_id=gd.generation_id
-                WHERE gd.document_id=d.document_id AND g.status!='active'{review_clause})
+                WHERE gd.document_id=d.document_id AND g.status!='active')
         ), jobs AS MATERIALIZED (
             SELECT e.document_id,c.job_id FROM eligible e
             JOIN episode_candidates c ON c.document_id=e.document_id
@@ -475,26 +466,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             ON CONFLICT DO NOTHING RETURNING document_id
         ) SELECT (SELECT count(*) FROM registered) AS registered,
             (SELECT count(*) FROM linked) AS linked""",
-            (*([document_id] if document_id is not None else []),*(review or []),time.time())).fetchone()
+            (*([document_id] if document_id is not None else []),time.time())).fetchone()
         return row['registered']
-
-    def process_once(self, internal_project, config, runner):
-        """Advance the canonical AgentClient episode pipeline in one policy cell.
-
-        The caller supplies the authorized/accounted runner. No provider call is
-        initiated by profile creation or the HTTP listener.
-        """
-        from agenthub.processing.episode_pipeline import run_once
-        if not isinstance(internal_project,str) or not internal_project.startswith('enterprise:'):
-            raise ValueError('enterprise_curation_scope_required')
-        if config.get('knowledge_backend',{}).get('mode')!='enterprise_local':
-            raise ValueError('enterprise_config_required')
-        path=self.home/'config.json'
-        path.write_text(json.dumps(config,sort_keys=True));path.chmod(0o600)
-        with self.open() as state:
-            advanced=run_once(state,config,runner,project_scope=internal_project)
-        self.refresh_documents()
-        return advanced
 
     def accept_reviewed_note(self, ctx, source_id, title, lesson):
         """Explicit owner review for a source-backed note; never raw auto-indexing."""
@@ -535,13 +508,9 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         return result
 
 
-    def detail(self, ctx, document_id, *, as_of=None, time_mode=None):
+    def detail(self, ctx, document_id):
         self._need(ctx,"read")
         with self.open() as state:
-            if document_id.startswith('ta_'):
-                return self.temporal_detail(state,ctx,document_id,as_of=as_of,time_mode=time_mode)
-            if as_of is not None or time_mode is not None:
-                raise ValueError('temporal_detail_requires_assertion')
             db=state.db;doc=self._document_allowed(db,ctx,document_id)
             if not doc:raise Denied()
             row=db.execute("SELECT claim_json FROM knowledge_revisions WHERE revision_id=?",
@@ -554,30 +523,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
     def document_evidence(self, ctx, document_id, *, revision, offset=0):
         from agenthub.source_evidence import document_evidence
         return document_evidence(self, ctx, document_id, revision=revision, offset=offset)
-
-    def timeline(self, ctx, document_id):
-        self._need(ctx,"read")
-        from agenthub.processing.knowledge import active_generation_id
-        from agenthub.processing.episode_pipeline import episode_links_for_document
-        with self.open() as state:
-            db=state.db;doc=self._document_allowed(db,ctx,document_id)
-            if not doc:raise Denied()
-            generation=active_generation_id(db)
-            if not generation:return {"id":document_id,"episodes":[],"coverage_gaps":["generation_unavailable"]}
-            linked=episode_links_for_document(db,generation,doc["internal_project"],document_id,limit=3)
-            # The summary is derived context from the same policy cell. Raw
-            # source inspection is a separate action and is never in this view.
-            episodes=[]
-            for entry in linked.get("episodes",[]):
-                item={"summary":entry.get("summary",""),"summary_revision":entry.get("summary_revision"),
-                    "source_range":entry.get("source_range"),"coverage_gaps":entry.get("coverage_gaps",[])}
-                if len(json.dumps(item,ensure_ascii=True))<1200:episodes.append(item)
-            result={"id":document_id,"revision":doc["active_revision_id"],
-                    "episodes":episodes,"coverage_gaps":linked.get("coverage_gaps",[]),
-                    "has_more":linked.get("has_more",False)}
-            while episodes and len(json.dumps(result,ensure_ascii=True))>4000:episodes.pop()
-            if not self._document_allowed(db,ctx,document_id):raise Denied()
-            return result
 
     def source(self, ctx, source_id):
         self._need(ctx,"source_read")

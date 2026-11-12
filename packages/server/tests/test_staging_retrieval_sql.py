@@ -18,7 +18,7 @@ from agenthub.enterprise import Denied
 from agenthub.source_objects import FileSourceObjects
 from test_cloud_postgres import PostgresFixture, SERVICES
 
-FIXTURE = Path(__file__).resolve().parent.parent / 'tools/fixtures/local_staging_readiness_v1/retrieval_lane.json'
+FIXTURE = Path(__file__).resolve().parent / 'fixtures/local_staging_readiness_v1/retrieval_lane.json'
 
 
 class FrozenFixtureTests(unittest.TestCase):

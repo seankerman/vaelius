@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from agentclient.capture_outbox import Outbox
 from agentclient.enterprise_capture import normalize_capture
@@ -32,9 +31,7 @@ class StagingTransportTests(unittest.TestCase):
         self.fixture = json.loads(FIXTURE.read_text())
         self.temp = tempfile.TemporaryDirectory()
         self.home = Path(self.temp.name)
-        with patch("agenthub.processing.harness.run_structured", side_effect=AssertionError("client inference")), \
-             patch("agenthub.processing.harness.run_structured_session", side_effect=AssertionError("client inference")):
-            self.event = normalize_capture(self.fixture["event"], "maple", "staging-agent")
+        self.event = normalize_capture(self.fixture["event"], "maple", "staging-agent")
         self.box = Outbox(self.home)
         self.ident = self.box.put(self.event)
 

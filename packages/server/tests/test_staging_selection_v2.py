@@ -35,7 +35,7 @@ class BalancedSelectorTests(unittest.TestCase):
             'Alice chose Jasper because the pilot had lower error rates.'))
 
     def test_when_modifier_does_not_require_calendar_evidence(self):
-        from agenthub.processing.durable_memory import VERSION
+        from agenthub.cloud_retrieval import DURABLE_POLICY as VERSION
         body='I chose to check Jasper permissions at delivery because cached grants can outlive a revocation.'
         memory=dict(policy=VERSION,facets=['decision'],actors=['user'],reason_actor='user',reason_quote=body)
         self.assertTrue(self.answer('Why do I check Jasper permissions when delivering results?',body,memory_context=memory))

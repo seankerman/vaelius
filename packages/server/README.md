@@ -1,8 +1,8 @@
 # Vaelius server
 
 The canonical PostgreSQL knowledge service: identity, ingestion, source indexing,
-hybrid retrieval, cited evidence, original documents and lifecycle. Continuous
-curation and LLM reranking are optional backend processing stages.
+hybrid retrieval, cited evidence, original documents and lifecycle. It runs no
+language model.
 
 Install the client contract and server from the same release:
 

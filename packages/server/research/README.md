@@ -18,8 +18,3 @@ are accepted only when loading existing runtime configuration and normalize to
 the compiled implementation; they no longer select competing SQL implementations.
 Do not present old multi-shape experiments as a new comparison without updating
 the experiment definition and recording the actual selected runtime.
-
-The deterministic continuous-observer rehearsal uses an in-process fake session
-handle. Actual Codex mode still verifies the native session checkpoint and
-reconstructs context when that checkpoint is unavailable. A fake-session test is
-not evidence of live provider cache reuse.

@@ -35,7 +35,7 @@ actions answer `404`, the same as a missing resource.
 | Route | Requires |
 |---|---|
 | `GET /enterprise/v1/status` (MCP `memory_status`) | `read` |
-| Search, document detail, evidence, context, timeline, project history, preferences, original-document describe/list/download | `read` (originals also need `source_read` and ownership or a raw grant) |
+| Search, document detail, evidence, context, preferences, original-document describe/list/download | `read` (originals also need `source_read` and ownership or a raw grant) |
 | `GET /enterprise/v1/sources/*`, `GET /enterprise/v2/sources/*` | `source_read` |
 | `GET /enterprise/v1/explain/*` | `read` or `settings` |
 | `POST /enterprise/v1/sources`, `/v2/parts`, original-document upload | `ingest` |

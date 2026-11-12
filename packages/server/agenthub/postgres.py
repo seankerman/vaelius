@@ -223,11 +223,6 @@ class PostgresEnterpriseStore(HybridRetrievalMixin, CloudIdentityMixin, CloudPre
 
     @contextmanager
     def open(self):
-        from agenthub.draft_review import borrowed_state
-        borrowed=borrowed_state(self)
-        if borrowed is not None:
-            yield borrowed
-            return
         if not self._connections.acquire(timeout=5):
             raise TimeoutError("tenant_connection_limit")
         connection = None

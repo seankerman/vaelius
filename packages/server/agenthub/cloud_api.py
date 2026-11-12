@@ -75,10 +75,6 @@ ROUTE_ACTIONS={
     ('POST','/enterprise/v3/search'):READ,
     ('POST','/enterprise/v3/document-evidence'):READ,
     ('POST','/enterprise/v3/document-context'):READ,
-    ('POST','/enterprise/v3/temporal-detail'):READ,
-    ('POST','/enterprise/v3/timeline'):READ,
-    ('POST','/enterprise/v3/project-history'):READ,
-    ('POST','/enterprise/v3/project-episode'):READ,
     ('POST','/enterprise/v3/source-documents/describe'):READ,
     ('POST','/enterprise/v3/source-documents/list'):READ,
     ('POST','/enterprise/v3/source-documents/download'):READ,
@@ -147,7 +143,6 @@ ROUTE_ACTIONS={
 # Path-parameter routes (the identifier follows the prefix).
 PREFIX_ACTIONS={
     ('GET','/enterprise/v1/documents/'):READ,
-    ('GET','/enterprise/v1/timeline/'):READ,
     ('GET','/enterprise/v1/sources/'):(('source_read',),),
     ('GET','/enterprise/v2/sources/'):(('source_read',),),
     ('GET','/enterprise/v1/explain/'):(('read',),('settings',)),
@@ -230,34 +225,7 @@ def limits_apply(path,data):
     return path in CONTENT_WRITES or (path=='/enterprise/v1/lifecycle' and isinstance(data,dict)
         and data.get('operation')=='correct')
 
-def pack_search_result(request,result):
-    """Pack exact evidence after selection; partial useful evidence stays explicit."""
-    output={key:value for key,value in result.items()
-        if key in ('results','answerable','support','coverage_gaps')}
-    bound=1500 if request.get('mode')=='automatic' else 4000
-    selected=[];omitted=False
-    for card in output['results']:
-        if card.get('evidence_status')=='discovery_only' and len(json.dumps(card,ensure_ascii=True))>1300:
-            # A selected original can be read in full through its revision-bound
-            # evidence tool. Deliver an exact prefix, never a generated summary.
-            card=dict(card,excerpt_truncated=True);omitted=True
-            while card.get('lesson') and len(json.dumps(card,ensure_ascii=True))>1300:
-                card['lesson']=card['lesson'][:-64]
-        if len(selected)>=request.get('limit',8) or len(json.dumps(card,ensure_ascii=True))>1300:
-            omitted=True;continue
-        trial=dict(output,results=[*selected,card],answerable=False,support='partial',
-            coverage_gaps=list(dict.fromkeys([*output.get('coverage_gaps',[]),'delivery_evidence_omitted'])))
-        if len(json.dumps(trial,ensure_ascii=True))>bound:omitted=True;continue
-        selected.append(card)
-    output['results']=selected
-    if omitted:
-        output['answerable']=False
-        output['coverage_gaps']=list(dict.fromkeys([*output.get('coverage_gaps',[]),'delivery_evidence_omitted']))
-    if not selected:output['answerable']=False
-    if 'support' in output:
-        output['support']='complete' if output['answerable'] else ('partial' if selected else 'none')
-    if len(json.dumps(output,ensure_ascii=True))>bound:raise ValueError('search_response_bound')
-    return output
+
 
 
 # Default actions of an interactive enrollment. 'feedback' keeps the outcome
@@ -345,8 +313,7 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 and hasattr(store,'validate_search_delivery')):
             # Ranking/embedding uses MVCC without holding up policy writers.
             # Serialize only the final current-identity/card authorization check.
-            ranker=getattr(store,'serving_reranker',None)
-            result=store.search(ctx,data,candidate_pool=True) if ranker is not None else store.search(ctx,data)
+            result=store.search(ctx,data)
             def checked(value):
                 with ExitStack() as stack:
                     with span('delivery_lock_wait'):stack.enter_context(store.delivery_read_lock())
@@ -354,31 +321,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                         _,current=authenticate(request)
                         return store.validate_search_delivery(labelled(current),data,value)
             result=checked(result)
-            if ranker is not None and result.get('results'):
-                previous_gaps=result.get('coverage_gaps',[])
-                candidate_pool=result.get('_candidate_pool',False)
-                with span('rerank'):
-                    selected=ranker.rerank(data['query'],result['results'],context={
-                        'actor':ctx['actor'],**{k:data[k] for k in ('project','as_of','time_mode') if k in data}})
-                if selected.get('reranking',{}).get('status') in {'busy','invalid','unavailable'}:
-                    # Operational failure is not evidence that knowledge is absent.
-                    # Reuse the canonical deterministic policy as a bounded fallback.
-                    result=store.search(ctx,data)
-                    result['coverage_gaps']=list(dict.fromkeys([*result.get('coverage_gaps',[]),
-                        *selected.get('coverage_gaps',[]),'deterministic_ranking_fallback']))
-                else:
-                    prior_answerable=result.get('answerable',False)
-                    result={key:value for key,value in selected.items()
-                        if key in ('results','answerable','support','coverage_gaps')}
-                    # Typed historical routing retains its independent validity gate.
-                    if not candidate_pool and not prior_answerable:
-                        result['answerable']=False
-                        result['support']='partial' if result['results'] else 'none'
-                    gaps=list(dict.fromkeys([*previous_gaps,*result.get('coverage_gaps',[])]))
-                    if gaps:result['coverage_gaps']=gaps
-                result=checked(result)
-            result.pop('_candidate_pool',None)
-            if ranker is not None:result=pack_search_result(data,result)
             if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
             if label is not None:result=dict(result,session_epoch=epoch())
             meter_search(store,ctx,result)
@@ -407,11 +349,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                     return document_context(store,ctx,data.get('id'),revision=data.get('revision'),
                         query=data.get('query',''),offset=data.get('offset',0))
                 except PermissionError:raise Denied()
-            if method=='POST' and path=='/enterprise/v3/temporal-detail':
-                if set(data)-{'id','as_of','time_mode'} or not isinstance(data.get('id'),str):
-                    raise ValueError('invalid_temporal_detail')
-                return provenance(store,path,store.detail(ctx,data['id'],as_of=data.get('as_of'),time_mode=data.get('time_mode')))
-            if method=='GET' and path.startswith('/enterprise/v1/timeline/'):return store.timeline(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v1/sources/'):return store.source(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v2/sources/'):return store.general_source(ctx,path.rsplit('/',1)[1])
             if method=='GET' and path.startswith('/enterprise/v1/explain/'):return store.explain(ctx,path.rsplit('/',1)[1])
@@ -420,25 +357,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 if path=='/enterprise/v3/search':result=provenance(store,path,result,data)
                 if label is not None:result=dict(result,session_epoch=epoch())
                 meter_search(store,ctx,result);return result
-            if method=='POST' and path=='/enterprise/v3/timeline':
-                if set(data)-{'id','offset','limit','cursor'} or not isinstance(data.get('id'),str):
-                    raise ValueError('invalid_timeline_request')
-                if 'cursor' in data and 'offset' in data:raise ValueError('timeline_cursor_request')
-                return provenance(store,path,store.timeline(ctx,data['id'],offset=data.get('offset',0),
-                    limit=data.get('limit',3),cursor=data.get('cursor'),
-                    cursor_mode=('offset' not in data)))
-            if method=='POST' and path=='/enterprise/v3/project-history':
-                if set(data)-{'project','cursor','limit'} or not isinstance(data.get('project'),str):
-                    raise ValueError('invalid_project_history_request')
-                return store.project_history(ctx,data['project'],cursor=data.get('cursor'),
-                    limit=data.get('limit',8))
-            if method=='POST' and path=='/enterprise/v3/project-episode':
-                if set(data)-{'project','episode_id','offset','limit','text_offset'} or not all(
-                        isinstance(data.get(key),str) for key in ('project','episode_id')):
-                    raise ValueError('invalid_project_episode_request')
-                return store.project_episode(ctx,data['project'],data['episode_id'],
-                    offset=data.get('offset',0),limit=data.get('limit',8),
-                    text_offset=data.get('text_offset',0))
             if method=='POST' and path=='/enterprise/v3/source-documents/describe':
                 return document_store(store).describe(ctx,data['source_id'],version=data.get('version'))
             if method=='POST' and path=='/enterprise/v3/source-documents/list':

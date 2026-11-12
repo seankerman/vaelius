@@ -3,8 +3,9 @@
 - Client code lives in `packages/client`; service code lives in `packages/server`.
   The client captures, redacts and transports data. It has no model execution or
   searchable corpus. PostgreSQL is the service's sole knowledge authority.
-- Source-first indexing is the default. Curation and LLM reranking are optional
-  operator-configured enrichment. API startup and installation must not run models.
+- Source-first indexing is the only pipeline: the service captures raw chats and
+  recalls them. It runs no language model (model curation and reranking were
+  removed; see CHANGELOG.md). The local embedding model is the only model it loads.
 - Reuse `agenthub.search_permissions` for indexed authorization and batch checks.
   Recheck current permissions when delivering evidence. Preserve provenance,
   original-document integrity, withdrawal/deletion and historical cutoffs.

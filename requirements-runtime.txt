@@ -27,13 +27,13 @@ authlib==1.9.2 \
     --hash=sha256:4a39f59fa7b94160859cc447514caf199e133b7ca64a351fb4065bf5006d5a40 \
     --hash=sha256:83271024b7d3b9992f0d928abd87c5f6e89cfb5aaada294972b860aa807ddafc
     # via -r requirements-runtime.in
-boto3==1.43.118 \
-    --hash=sha256:ab8f3d2c622ef039338b4f228d97ea55f1abd573d84bb9b9a5ee8cb6780c0ccd \
-    --hash=sha256:c0620f799e0f0c222ba42c337b65cdbcd3da38a3121187f634d8926cbbb28a9c
+boto3==1.43.125 \
+    --hash=sha256:101fe3ee99664e671efb9af65c8e98ec0bceddf6de922ea89685da4adc8c6907 \
+    --hash=sha256:5a635a0fbbd51f319e465b809cf043668705defbb9dddaf26ae66747f70b2a49
     # via -r requirements-runtime.in
-botocore==1.43.123 \
-    --hash=sha256:80948cb9b1cdf1a1a25809089a42e3a1bc4af0258d198222db6e97dcc660dd0c \
-    --hash=sha256:e30580f9c1282c321529238ff8ff75066096a2adbd0a293c8ae592c21d1733a3
+botocore==1.43.127 \
+    --hash=sha256:93bae360fb3a6f1b8e36593faa8bbbfa05b19866f7a37e9606a98f13394156f8 \
+    --hash=sha256:aa0e3188679a2164a2098a14ea9b59520520cb573aaee9999d852480691e134a
     # via
     #   boto3
     #   s3transfer

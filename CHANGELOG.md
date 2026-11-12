@@ -129,7 +129,9 @@ The release workflow publishes the section whose heading matches the tag.
   CVE-2026-115557), and `joserfc` to 1.7.6 (GHSA-9pg5-8c7x-5hfx).
 - Runtime base image digest moved to the 2026-11-08 rebuild of the same tag
   (`python:3.12.16-slim-trixie`), which carries the fixed Debian `apt` 3.0.4
-  (CVE-2026-109518) and `zlib1g` (CVE-2026-76844, CVE-2026-85091).
+  (CVE-2026-109518). That rebuild predates the `zlib1g` fix (CVE-2026-76844,
+  CVE-2026-85091), so the image installs exactly `1:1.3.dfsg+really1.3.1-1+deb13u1`
+  from the Debian security archive until a base image carries it.
 - Claude Code's built-in auto memory (`~/.claude/projects/<project>/memory/`) is
   switched off in captured repositories: `install --claude-code` writes
   `autoMemoryEnabled: false` into each enrolled or scoped project's

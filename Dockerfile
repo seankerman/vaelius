@@ -10,6 +10,13 @@ COPY packages/server/ /src/server/
 RUN python -m pip wheel --no-cache-dir --no-deps --no-build-isolation --wheel-dir /wheels /src/client /src/server
 
 FROM public.ecr.aws/docker/library/python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
+# The base image above (rebuilt 2026-11-08) predates Debian's zlib1g security update
+# (CVE-2026-76844, CVE-2026-85091). Install exactly the fixed version from
+# trixie-security (apt verifies the archive signature). Remove this step when the
+# pinned base image carries it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade 'zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1' \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /wheels /wheels
 COPY requirements-runtime.txt /requirements-runtime.txt
 # Third-party packages come only from the hash-locked file. The project wheels are

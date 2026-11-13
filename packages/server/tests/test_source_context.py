@@ -9,9 +9,20 @@ from test_cloud_retrieval import HybridPolicyTests
 
 
 class SourceContextTests(HybridPolicyTests):
+    def reviewed_notes(self):
+        """One owner-private reviewed note each for alice and bob, opened by id below."""
+        notes=[]
+        for who in ('alice','bob'):
+            owner=self.store.authenticate(self.tokens[who]);body=who+' private keeps the dataset at /synthetic/'+who+'.csv.'
+            source=self.store.ingest(owner,{'version':VERSION,'external_id':who+'private-note','session':'old','turn':'1',
+                'project':'maple','kind':'Stop','body':body,'visibility':'private','occurred_at':100})['source_id']
+            notes.append((source,self.store.accept_reviewed_note(owner,source,who+' private dataset',body)['document_id']))
+        return notes
+
     def test_parent_related_context_current_permissions_and_query_bound(self):
         ctx=self.store.authenticate(self.tokens['alice'])
-        source,doc=self.documents[0]
+        notes=self.reviewed_notes()
+        source,doc=notes[0]
         with self.store.open() as st:
             rev=st.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?',(doc,)).fetchone()[0]
             body=st.db.execute('SELECT body FROM memories WHERE id=?',(source,)).fetchone()[0]
@@ -39,7 +50,7 @@ class SourceContextTests(HybridPolicyTests):
         self.assertLessEqual(len(calls),len(before))
         self.assertLessEqual(len(json.dumps(result)),4000)
         self.assertIn(source,{s['source_id'] for s in result['sources']})
-        self.assertNotIn(self.documents[1][0],{s['source_id'] for s in result['sources']})
+        self.assertNotIn(notes[1][0],{s['source_id'] for s in result['sources']})
         self.assertTrue(any(s['context_relation']=='related_later_message' for s in result['sources']))
         from starlette.testclient import TestClient
         from agenthub.cloud_api import create_app

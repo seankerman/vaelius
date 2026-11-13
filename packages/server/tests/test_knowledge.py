@@ -5,7 +5,6 @@ from pathlib import Path
 
 from agenthub.processing.knowledge import (
     accept_local_candidate,
-    compatibility,
     initialize,
     ingest_observation,
     retire_memory,
@@ -79,19 +78,6 @@ class KnowledgeTests(unittest.TestCase):
         rows = self.state.db.execute("SELECT source_memory_id,independence FROM knowledge_support WHERE revision_id=?",
             (first["revision_id"],)).fetchall()
         self.assertEqual([(row[0], row[1]) for row in rows], [("src-shared", "unknown")])
-
-    def test_explicit_version_platform_unit_date_and_scope_conflicts_are_excluded(self):
-        conditions={"versions":["2.4"],"platforms":["macOS"],"date_ranges":["2024-01-01 to 2024-12-31"],
-            "units":["USD"],"project_scope":["project-a"]}
-        value=claim();value["applicability_constraints"]=conditions
-        self.assertEqual(compatibility(value,"Version 3.0 retry behavior","project-a")[0],"incompatible")
-        self.assertEqual(compatibility(value,"Linux retry behavior","project-a")[0],"incompatible")
-        self.assertEqual(compatibility(value,"Retry costs in EUR","project-a")[0],"incompatible")
-        self.assertEqual(compatibility(value,"Retry behavior in 2025","project-a")[0],"incompatible")
-        self.assertEqual(compatibility(value,"Retry behavior","project-b")[0],"incompatible")
-        unknown=claim();unknown["applicability_constraints"]={}
-        self.assertEqual(compatibility(unknown,"Version 99 retry behavior","project-a")[0],"unknown")
-
 
     def test_correction_adds_immutable_revision_and_reactivates_document(self):
         prior_claim = claim()

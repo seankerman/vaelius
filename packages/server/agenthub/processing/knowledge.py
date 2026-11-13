@@ -5,7 +5,6 @@ from agenthub.processing.storage import table_exists, begin_write, create_fullte
 
 import hashlib
 import json
-import re
 import time
 
 
@@ -540,67 +539,6 @@ def accept_local_candidate(db, memory_id, project, session, title, evidence, sou
 
 
 
-
-
-def compatibility(claim, query, project):
-    """Hard-reject only explicit conflicts; missing conditions remain unknown."""
-    query_lower=query.casefold();constraints=claim.get("applicability_constraints") or {}
-    if not isinstance(constraints,dict):constraints={}
-    unknown=[]
-    versions=constraints.get("versions") or []
-    requested=re.findall(r"\b(?:version\s*|v)(\d+(?:\.\d+){0,2})\b",query,re.I)
-    if requested:
-        stated={version for value in versions for version in re.findall(r"\d+(?:\.\d+){0,2}",str(value))}
-        if not stated:unknown.append("version_condition_unspecified")
-        elif not set(requested)&stated:
-            return "incompatible",["version_mismatch"]
-    platforms=constraints.get("platforms") or []
-    platform_aliases={"macos":("macos","mac os","darwin"),"windows":("windows","win32"),
-                      "linux":("linux",),"ios":("ios","iphone","ipad"),"android":("android",)}
-    requested_platform={name for name,aliases in platform_aliases.items() if any(alias in query_lower for alias in aliases)}
-    if requested_platform:
-        if not platforms:unknown.append("platform_condition_unspecified")
-        else:
-            stated=" ".join(map(str,platforms)).casefold()
-            compatible={name for name,aliases in platform_aliases.items() if any(alias in stated for alias in aliases)}
-            if compatible and not requested_platform&compatible:return "incompatible",["platform_mismatch"]
-    requested_project=constraints.get("project_scope") or []
-    if requested_project and project not in {str(value) for value in requested_project}:
-        return "incompatible",["project_scope_mismatch"]
-    query_dates=re.findall(r"\b20\d{2}(?:-\d{2}(?:-\d{2})?)?\b",query)
-    date_ranges=constraints.get("date_ranges") or []
-    if query_dates:
-        if not date_ranges:unknown.append("date_condition_unspecified")
-        else:
-            query_points={_date_bounds(value)[0] for value in query_dates}
-            ranges=[_date_bounds(value) for value in date_ranges]
-            ranges=[item for item in ranges if item]
-            if ranges and not any(start<=point<=end for point in query_points for start,end in ranges):
-                return "incompatible",["date_range_mismatch"]
-            if not ranges:unknown.append("date_range_uninterpretable")
-    units=constraints.get("units") or []
-    query_units={value.casefold() for value in re.findall(r"(?<!\w)(?:USD|EUR|GBP|CAD|AUD|kg|g|mg|lb|lbs|km|mi|m/s|ms|s|%)(?!\w)",query,re.I)}
-    if query_units and units:
-        stated={str(value).casefold() for value in units}
-        if not query_units&stated:return "incompatible",["unit_mismatch"]
-    elif query_units and not units:unknown.append("unit_condition_unspecified")
-    return ("unknown",unknown) if unknown else ("compatible",[])
-
-
-def _date_bounds(value):
-    """Parse explicit ISO year/month/day or a two-endpoint ISO range."""
-    if isinstance(value,dict):value=" ".join(str(value.get(key,"")) for key in ("start","end"))
-    found=re.findall(r"20\d{2}(?:-\d{2}(?:-\d{2})?)?",str(value))
-    if not found:return None
-    def bounds(token):
-        parts=token.split("-")
-        if len(parts)==1:return parts[0]+"-01-01",parts[0]+"-12-31"
-        if len(parts)==2:
-            month=int(parts[1]);last=31 if month in (1,3,5,7,8,10,12) else (29 if month==2 else 30)
-            return f"{parts[0]}-{month:02d}-01",f"{parts[0]}-{month:02d}-{last:02d}"
-        return token,token
-    first=bounds(found[0]);last=bounds(found[-1])
-    return first[0],last[1]
 
 
 def rebuild_index(db, *, dry_run=True, batch_size=200, max_batches=None):

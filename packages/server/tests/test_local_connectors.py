@@ -48,14 +48,15 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(self.connector.sync(self.ctx,'docs')['upserts'],1)
         self.assertEqual(self.connector.sync(self.ctx,'docs')['upserts'],0)
         query={'version':'enterprise-local-1','query':'Maple importing CSV header'}
-        self.assertTrue(self.store.search(self.store.authenticate(self.tokens['bob']),query)['answerable'])
+        # Search is discovery over source passages: found or not, never `answerable`.
+        self.assertTrue(self.store.search(self.store.authenticate(self.tokens['bob']),query)['results'])
         policy.write_text(json.dumps({'visibility':'private','reader_ids':['alice']}))
         self.assertTrue(self.connector.sync(self.ctx,'docs')['policy_changed'])
-        self.assertFalse(self.store.search(self.store.authenticate(self.tokens['bob']),query)['answerable'])
+        self.assertEqual(self.store.search(self.store.authenticate(self.tokens['bob']),query)['results'],[])
         file.unlink();self.assertEqual(self.connector.sync(self.ctx,'docs')['deletions'],1)
         file.write_text('# Maple importing\nCSV retains a stable header. Dataset restored.\n')
         self.assertEqual(self.connector.sync(self.ctx,'docs')['upserts'],1)
-        self.assertTrue(self.store.search(self.ctx,query)['answerable'])
+        self.assertTrue(self.store.search(self.ctx,query)['results'])
         with self.store.open() as state:
             self.assertEqual(state.db.execute('SELECT count(*) FROM model_calls').fetchone()[0],0)
             self.assertEqual(state.db.execute('SELECT count(*) FROM memory_fts').fetchone()[0],0)
@@ -99,11 +100,11 @@ class ConnectorTests(unittest.TestCase):
     def test_records_and_threads_preserve_fields_and_edits(self):
         records=self.root/'records.json';records.write_text(json.dumps({'records':[{'id':'MAP-1','revision':'1','fields':{'status':'Resolved','owner':'alice'},'comments':['Stable CSV header verified.'],'history':[{'status':'Open'},{'status':'Resolved'}]}]}))
         self.connector.enroll(self.ctx,'records','records',records,'maple');self.connector.sync(self.ctx,'records')
-        self.assertTrue(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'MAP-1 Resolved'})['answerable'])
+        self.assertTrue(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'MAP-1 Resolved'})['results'])
         threads=self.root/'threads.json';threads.write_text(json.dumps({'threads':[{'id':'thread','revision':'1','participants':['alice','bob'],'messages':[{'id':'message','revision':'1','role':'user','actor':'alice','text':'Use CSV because it retains a stable header.'}]}]}))
         self.connector.enroll(self.ctx,'threads','conversations',threads,'maple');result=self.connector.sync(self.ctx,'threads')
         self.assertEqual(result['upserts'],2)
-        self.assertFalse(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'thread'})['answerable'])
+        self.assertEqual(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'thread'})['results'],[])
         data=json.loads(threads.read_text());data['threads'][0]['revision']='2';data['threads'][0]['messages'][0].update(revision='2',text='Correction: TSV is required.')
         threads.write_text(json.dumps(data));self.assertEqual(self.connector.sync(self.ctx,'threads')['upserts'],2)
 

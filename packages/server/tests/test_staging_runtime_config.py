@@ -18,7 +18,8 @@ class RuntimeConfigurationTests(unittest.TestCase):
              patch('agenthub.cloud_runtime.TenantRegistry', Registry):
             home = Path(directory)
             settings = {'control_dsn': 'synthetic', 'processing': {'curation_enabled': False},
-                        'reranking': {'enabled': False}}
+                        'reranking': {'enabled': False},
+                        'retrieval': {'corpus': 'sources', 'selection_policy': 'baseline', 'require_prose': False}}
             store = registry_from_settings(settings, home).store_factory(home, 'synthetic', 'org')
             self.assertFalse(hasattr(store, 'serving_reranker'))
             self.assertFalse(hasattr(store, 'curation_enabled'))
@@ -27,6 +28,11 @@ class RuntimeConfigurationTests(unittest.TestCase):
                     ({'processing': {'curation_enabled': True}}, 'curation_removed_delete_processing_curation_enabled'),
                     ({'reranking': {'enabled': True, 'worker_config': '/unused'}}, 'reranking_removed_delete_the_reranking_section'),
                     ({'models': {'allowed_providers': ['codex']}}, 'model_execution_removed_delete_the_models_section'),
+                    ({'retrieval': {'corpus': 'all'}}, 'curated_corpus_removed_delete_retrieval_corpus'),
+                    ({'retrieval': {'selection_policy': 'facets_v1'}}, 'card_selection_removed_delete_retrieval_selection_policy'),
+                    ({'retrieval': {'selection_policy': 'facets_v2'}}, 'card_selection_removed_delete_retrieval_selection_policy'),
+                    ({'retrieval': {'require_prose': True}}, 'card_selection_removed_delete_retrieval_require_prose'),
+                    ({'retrieval': {'corpus': 'curated'}}, 'runtime_retrieval_configuration'),
                     ({'processing': {'observer': True}}, 'runtime_processing_configuration')):
                 with self.subTest(change=change), self.assertRaisesRegex(ValueError, error):
                     registry_from_settings(dict(settings, **change), home)
@@ -35,7 +41,7 @@ class RuntimeConfigurationTests(unittest.TestCase):
         from agenthub.cloud_runtime import registry_from_settings
         from agenthub.retrieval_embedding_cache import CampaignEmbedder
         # Config4 was admitted before semantic implementation or measured search.
-        config = {'authorization_shape': 'authorized_cte', 'selection_policy': 'facets_v1',
+        config = {'authorization_shape': 'authorized_cte', 'selection_policy': 'baseline',
                   'numeric_mode': 'typed', 'candidate_limit': 20, 'lexical_weight': 1,
                   'vector_weight': 1, 'require_prose': False, 'vector': True}
         made = []
@@ -51,7 +57,7 @@ class RuntimeConfigurationTests(unittest.TestCase):
             registry = registry_from_settings({'control_dsn': 'synthetic', 'retrieval': config}, Path(directory))
             store = registry.store_factory(Path(directory)/'tenant', 'synthetic', 'org-73', registry)
             self.assertEqual(store.retrieval_authorization_shape, 'compiled')
-            self.assertEqual(store.retrieval_selection_policy, 'facets_v1')
+            self.assertFalse(hasattr(store, 'retrieval_selection_policy'))
             self.assertEqual(store.retrieval_numeric_mode, 'typed')
             self.assertEqual(store.retrieval_candidate_limit, 20)
             self.assertFalse(store.hybrid_enabled)  # No model enabled merely by policy configuration.

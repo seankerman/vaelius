@@ -31,7 +31,6 @@ def main():
     fixture.postgres_setup()
     try:
         store = CloudStore(fixture.store.home, fixture.dsn, 'acme')
-        store.retrieval_corpus = 'sources'
         store.enroll_connection(fixture.ctx, 'measure', 'synthetic', 'maple', ['agent'], visibility='team')
         for number in range(40):
             text = ('The Maple importer retains the stable CSV header. '

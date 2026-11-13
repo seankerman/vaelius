@@ -40,7 +40,6 @@ class WorkspaceFixture(PostgresFixture):
     def workspace_setup(self):
         self.postgres_setup()
         self.store = CloudStore(self.store.home, self.dsn, 'acme')
-        self.store.retrieval_corpus = 'sources'
         for name in ('carol', 'dave', 'erin', 'quinn', 'frank'):
             self.store.create_principal('acme', name)
         self.store.set_membership('acme', 'maple', 'quinn', True)
@@ -921,9 +920,9 @@ class SessionLabelTests(ParityItems, unittest.TestCase):
 
 @unittest.skipUnless(SERVICES, 'explicit disposable PostgreSQL schema required')
 class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
-    """The `read` filter on every search path, over the curated corpus as well.
+    """The `read` filter on the search path, over captured passages.
 
-    The filter is a convenience: each path applies it on top of the unchanged read
+    The filter is a convenience: the path applies it on top of the unchanged read
     predicate, and a document is kept when at least one of the sources it depends on
     is in a kept workspace. Audiences as in SessionLabelTests (nobody is quarantined
     here): maple {alice, bob, quinn, carol, dave}; birch {alice, bob}; oak: everyone."""
@@ -932,55 +931,50 @@ class RecallFilterPathTests(WorkspaceFixture, unittest.TestCase):
 
     def setUp(self):
         self.workspace_setup()
-        # Derived documents are only searched in the curated corpus.
-        self.store.retrieval_corpus = 'all'
-        self.store.retrieval_selection_policy = 'baseline'
         self.items = {name: self.capture(name) for name in ('maple', 'birch', 'oak')}
+        # A fourth message, captured in maple, that also carries the oak message as a source.
+        self.items['both'] = self.capture('maple', 'joint')
         self.drain()
-        self.notes = {name: self.derive([name], name.capitalize()) for name in ('maple', 'birch', 'oak')}
-        # One document over a maple source and an oak source: source_project is NULL.
-        self.notes['both'] = self.derive(['maple', 'oak'], 'Joint')
+        self.notes = {name: {'document_id': self.passage(source)} for name, source in self.items.items()}
+        # One passage over a maple source and an oak source: source_project is NULL.
+        self.span('both', 'oak')
         self.derived = {note['document_id']: name for name, note in self.notes.items()}
 
     def tearDown(self):
         self.postgres_teardown()
 
-    def capture(self, workspace):
-        """One of alice's shared sources in `workspace`, with a dated, ongoing location."""
-        text = ('The ' + workspace.capitalize() + ' ledger and the Joint ledger are saved under /synthetic/ledger/'
-                + workspace + ' effective 2026-09-01; ongoing.')
-        event = normalize_capture({'hook_event_name': 'UserPromptSubmit', 'event_id': 'ledger:' + workspace,
-            'session_id': 'ledger-' + workspace, 'turn_id': 'ledger', 'timestamp': '2026-09-01T10:00:00Z',
+    def capture(self, workspace, message=None):
+        """One of alice's shared chat messages in `workspace`, with a dated, ongoing location."""
+        message = message or workspace
+        text = ('The ' + message.capitalize() + ' ledger and the Joint ledger are saved under /synthetic/ledger/'
+                + message + ' effective 2026-09-01; ongoing.')
+        event = normalize_capture({'hook_event_name': 'UserPromptSubmit', 'event_id': 'ledger:' + message,
+            'session_id': 'ledger-' + message, 'turn_id': 'ledger', 'timestamp': '2026-09-01T10:00:00Z',
             'prompt': text, 'revision': '1'}, workspace, 'a-' + workspace, sharing='organization')
         return self.store.ingest_general(self.alice, event)['source_id']
 
-    def derive(self, names, subject):
-        """One curated document over several of alice's sources, registered by the
-        ordinary document refresh."""
-        from agenthub.processing.knowledge import accept_local_candidate
-        sources = [self.items[name] for name in names]
-        path = '/synthetic/ledger/' + subject.lower() + '.csv'
-        lesson = 'The ' + subject + ' ledger is saved at ' + path + ' effective 2026-09-01.'
+    def passage(self, source):
+        with self.store.open() as state:
+            return state.db.execute("""SELECT ed.id FROM enterprise_documents ed
+                JOIN enterprise_dependencies x ON x.document_id=ed.id
+                WHERE x.source_id=? AND ed.representation='raw' AND ed.active=1""", (source,)).fetchone()[0]
+
+    def span(self, name, other):
+        """Make the `other` message a further source of the `name` passage, registered by
+        the ordinary document refresh: the passage now depends on two workspaces."""
+        document = self.notes[name]['document_id']
         with self.store.delivery_lock(), self.store.open() as state, state.db:
             db = state.db
-            # The curated observation is its own memory (as a reviewed release is), in the
-            # partition its sources share; the document's sources are its support rows.
-            partition = db.execute('SELECT internal_project FROM enterprise_sources WHERE id=?',
-                                   (sources[0],)).fetchone()[0]
-            ident = 'ledger-note-' + subject.lower()
-            db.execute('INSERT INTO memories(id,session,project,body,kind,created,turn) VALUES(?,?,?,?,?,?,?)',
-                       (ident, 'ledger-notes', partition, lesson, 'Observation', 1788264000.0, ''))
-            note = accept_local_candidate(db, ident, partition, 'ledger-notes', subject + ' ledger location',
-                                          lesson, sources)
-            self.store.refresh_documents(db=db, document_id=note['document_id'])
-        self.store.refresh_documents()
-        return note
+            member = db.execute('SELECT memory_id FROM knowledge_document_members WHERE document_id=?',
+                                (document,)).fetchone()[0]
+            db.execute('INSERT INTO observation_sources(memory_id,source_id) VALUES(?,?)', (member, self.items[other]))
+            self.store.refresh_documents(db=db, document_id=document)
 
     def label(self, ctx, workspace, **extra):
         return self.store.session_filter(ctx, dict(workspace=workspace, **extra))
 
     def found(self, ctx, project=None, workspaces=None):
-        """Names of the derived documents the candidate query returns."""
+        """Names of the passages the candidate query returns."""
         rows = self.store.candidates(ctx, 'ledger location', project=project, limit=50,
                                      filters={'workspaces': workspaces} if workspaces is not None else None)
         return {self.derived[row['document_id']] for row in rows if row['document_id'] in self.derived}

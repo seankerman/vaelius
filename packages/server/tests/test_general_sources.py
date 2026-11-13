@@ -76,7 +76,7 @@ class GeneralSourceTests(unittest.TestCase):
 
     def test_stale_permissions_refresh_only_by_enrolled_owner(self):
         with self.store.open() as state,state.db:state.db.execute('UPDATE backend_connections SET permission_observed=0')
-        self.assertFalse(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'Maple'})['answerable'])
+        self.assertEqual(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'Maple'})['results'],[])
         self.store.connection_policy(self.ctx,'agent-one')
         self.assertEqual(self.store.ingest_general(self.ctx,self.event())['disposition'],'accepted')
 

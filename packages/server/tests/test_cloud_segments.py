@@ -82,7 +82,7 @@ class SegmentPostgresTests(PostgresFixture,unittest.TestCase):
             self.assertEqual(state.db.execute('SELECT count(*) FROM cloud_conversation_segments').fetchone()[0],0)
             self.assertEqual(state.db.execute('SELECT status FROM cloud_segment_uploads').fetchone()[0],'failed')
             self.assertEqual(state.db.execute('SELECT count(*) FROM cloud_metrics').fetchone()[0],0)
-        self.assertFalse(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'maple.csv'})['answerable'])
+        self.assertEqual(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'maple.csv'})['results'],[])
 
     def test_db_failure_after_upload_keeps_reservation_then_retry_reuses_object(self):
         with patch.object(self.store,'_audit',side_effect=RuntimeError('synthetic commit failure after upload')):

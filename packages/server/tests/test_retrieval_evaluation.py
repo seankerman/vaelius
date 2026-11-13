@@ -66,7 +66,6 @@ class Embedder:
 
 
 class Store:
-    answerability_judge = None
     semantic_embedder = Embedder()
     def __init__(self, result=None, candidates=None, error=None):
         self.result = result if result is not None else {"answerable": True, "results": [copy.deepcopy(CARD)]}
@@ -189,12 +188,6 @@ class EvaluationTests(unittest.TestCase):
         self.assertTrue(result["answerable"])
         self.assertEqual(len(trace["candidate_calls"]), 1)
         self.assertEqual(store.candidate_calls, 1)
-
-    def test_model_judge_denied(self):
-        store = Store()
-        store.answerability_judge = lambda *args: "NONE"
-        with self.assertRaisesRegex(ValueError, "no_judge"):
-            self.evaluate(store)
 
     def test_one_part_of_multisource_answer_does_not_count_as_recalled(self):
         case = question()
@@ -462,7 +455,9 @@ class CanonicalEvaluationPostgres(PostgresFixture, unittest.TestCase):
         report = evaluate_questions({"acme": self.store}, [case],
             contexts={("acme", "alice"): self.ctx}, source_map={"source-a": self.source}, sources=SOURCES)
         self.assertNotIn("error", report["rows"][0], report["rows"][0])
-        self.assertTrue(report["rows"][0]["complete_supported_answer"], report["rows"][0])
+        # Source discovery delivers the supporting passage without claiming an answer.
+        self.assertTrue(report["rows"][0]["delivered_facet_coverage"]["complete"], report["rows"][0])
+        self.assertFalse(report["rows"][0]["answerable"])
         self.assertEqual(len(report["rows"][0]["trace"]["candidate_calls"]), 1)
         self.assertTrue(report["rows"][0]["exact_authorized_oracle"]["documents"])
         card = report["rows"][0]["result"]["results"][0]
@@ -494,7 +489,8 @@ class CanonicalEvaluationPostgres(PostgresFixture, unittest.TestCase):
         report = evaluate_questions({"acme": self.store}, [case],
             contexts={("acme", "alice"): self.ctx}, source_map={"source-a": source}, sources=sources)
         self.assertNotIn("error", report["rows"][0], report["rows"][0])
-        self.assertTrue(report["rows"][0]["complete_supported_answer"], report["rows"][0])
+        self.assertTrue(report["rows"][0]["delivered_facet_coverage"]["complete"], report["rows"][0])
+        self.assertFalse(report["rows"][0]["answerable"])
 
     def test_original_delivery_fetches_actual_discovered_individual_object(self):
         case = question()

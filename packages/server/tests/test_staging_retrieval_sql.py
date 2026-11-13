@@ -57,6 +57,20 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         self.postgres_teardown()
 
     def note(self, key, *, owner='alice', visibility='private', project='maple'):
+        """A captured chat passage with the audience the test names: owner-private, the
+        workspace's ('team'), or everyone's (a workspace with an organization entry).
+        Returns (source, passage document), the probe of these policy tests."""
+        ctx = self.contexts[owner]
+        body = 'The ' + key + ' gauge reference is /synthetic/' + key + '.csv.'
+        source = self.capture(body, ctx=ctx, key=key, conversation=key, workspace=project,
+                              sharing='private' if visibility == 'private' else 'organization')
+        document = self.passages(source)[0]
+        self.docs.add(document)
+        return source, document
+
+    def reviewed_note(self, key, *, owner='alice', visibility='private', project='maple'):
+        """A reviewed note over a legacy source, for the rules of derived documents
+        (release, correction in place). It is opened by id, never returned by search."""
         ctx = self.contexts[owner]
         body = 'The ' + key + ' gauge reference is /synthetic/' + key + '.csv.'
         source = self.store.ingest(ctx, {'version': VERSION, 'external_id': key, 'session': key,
@@ -156,7 +170,7 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         self.compare_full(expected={'alice': set(), 'bob': set(), 'admin': set()})
 
     def test_reviewed_release_exact_policy_binding_and_delegation(self):
-        source, private = self.note('reviewed-private')
+        source, private = self.reviewed_note('reviewed-private')
         with self.store.open() as state:
             revision = state.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?', (private,)).fetchone()[0]
         release = self.store.reviewed_release(self.ctx, private, revision, 'maple', ['bob'], 'release-once')['document_id']
@@ -184,7 +198,7 @@ class CompletePolicyEquivalence(PostgresFixture, unittest.TestCase):
         self.compare_full(expected={'alice': set(), 'bob': set(), 'admin': set()})
 
     def test_correction_changes_the_compared_active_revision_set(self):
-        source, document = self.note('corrected-gauge', visibility='team')
+        source, document = self.reviewed_note('corrected-gauge', visibility='team')
         with self.store.open() as state:
             old = state.db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?', (document,)).fetchone()[0]
         replacement = {'version': VERSION, 'external_id': 'gauge-correction', 'session': 'corrected-gauge', 'turn': '2', 'project': 'maple', 'kind': 'Stop', 'body': 'The corrected gauge reference is /synthetic/updated-gauge.csv.', 'visibility': 'team', 'occurred_at': 200}

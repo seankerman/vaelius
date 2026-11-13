@@ -136,6 +136,15 @@ def registry_from_settings(settings,home):
             or any(type(configuration.get(key, 1)) not in (int, float)
                    or not 0 < configuration.get(key, 1) <= 3 for key in ('lexical_weight', 'vector_weight'))):
         raise ValueError('runtime_retrieval_configuration')
+    # The curated corpus and its card selection were removed (CHANGELOG.md): source
+    # passages are the only corpus. A profile that still selects the removed path is
+    # refused, never started on a different corpus than it asked for.
+    if configuration.get('corpus','sources')!='sources':
+        raise ValueError('curated_corpus_removed_delete_retrieval_corpus')
+    if configuration.get('selection_policy','baseline')!='baseline':
+        raise ValueError('card_selection_removed_delete_retrieval_selection_policy')
+    if configuration.get('require_prose',False):
+        raise ValueError('card_selection_removed_delete_retrieval_require_prose')
     processing=settings.get('processing',{})
     if (not isinstance(processing,dict) or set(processing)-{'curation_enabled'}
             or type(processing.get('curation_enabled',False)) is not bool):
@@ -192,8 +201,8 @@ def registry_from_settings(settings,home):
         store.hybrid_enabled = store.hybrid_enabled and configuration.get('vector', True)
         store.semantic_embedder=model
         for key, default in [('candidate_limit', 20), ('numeric_mode', 'legacy'),
-                             ('lexical_weight', 1), ('vector_weight', 1), ('require_prose', False),
-                             ('authorization_shape', 'compiled'), ('selection_policy', 'baseline')]:
+                             ('lexical_weight', 1), ('vector_weight', 1),
+                             ('authorization_shape', 'compiled')]:
             # Old profiles remain readable, but serving cannot select diagnostic
             # predicates that bypass the restricted PostgreSQL reader role.
             setattr(store, 'retrieval_'+key, 'compiled' if key=='authorization_shape' else configuration.get(key, default))

@@ -29,7 +29,6 @@ class OwnerControlTests(PostgresFixture, unittest.TestCase):
     def setUp(self):
         self.postgres_setup()
         self.store = CloudStore(self.store.home, self.dsn, 'acme')
-        self.store.retrieval_corpus = 'sources'
         self.store.create_project('acme', 'birch')
         for name in ('carol', 'dave'):
             self.store.create_principal('acme', name)

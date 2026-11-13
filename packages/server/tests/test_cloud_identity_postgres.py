@@ -159,17 +159,19 @@ class IdentityPostgresTests(unittest.TestCase):
         fixture=json.loads((Path(__file__).resolve().parents[1]/'tests/fixtures/service/cloud_preference_race_v1.json').read_text())
         source=self.source(self.alice,fixture['source'],visibility=fixture['visibility'])
         selected=self.store.accept_reviewed_note(self.ctx[self.alice],source,'User preference',fixture['canonical_claim'])
+        opened=lambda person:self.client.get('/enterprise/v1/documents/'+selected['document_id'],
+            headers={'Authorization':'Bearer '+self.tokens[person]}).status_code
+        self.assertEqual(opened(self.alice),200)
+        # The observer that marked candidates was removed with model curation. The read
+        # predicate still withholds a document that carries a pending marker, so one
+        # left behind (planted here) delivers the derived claim to nobody.
         with self.store.open() as state,state.db:
-            marked=self.store.mark_observed_preference_candidates(state.db,self.ctx[self.alice],
-                [source],[selected['document_id']])
-            self.assertEqual(marked,1)
+            state.db.execute('''INSERT INTO cloud_preference_candidates
+                (document_id,source_id,owner,candidate_json,status,created) VALUES(%s,%s,%s,'[]','pending',%s)''',
+                (selected['document_id'],source,self.alice,time.time()))
         for person in (self.alice,self.bob):
-            response=self.client.get('/enterprise/v1/documents/'+selected['document_id'],
-                headers={'Authorization':'Bearer '+self.tokens[person]})
-            self.assertEqual(response.status_code,404)
-        result=self.store.curate_observed_preferences(self.ctx[self.alice],source,[selected['document_id']])
-        self.assertEqual(len(result),1)
-        self.assertEqual(self.post(self.alice,'preferences',{'project':self.modern}).json()['values'],{'test_runner':'pytest'})
+            self.assertEqual(opened(person),404)
+        self.assertEqual(self.post(self.alice,'preferences',{'project':self.modern}).json()['values'],{})
         self.assertEqual(self.post(self.bob,'preferences',{'project':self.modern}).json()['values'],{})
 
     def test_same_session_suppression_then_compaction_restores(self):

@@ -852,20 +852,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         return {'project':project,'before':before,'candidate_count':len(candidates),
                 'applied':completed,'dry_run':False,'truncated':len(rows)==limit,'held':held}
 
-    def processing_status(self, ctx):
-        self._need(ctx,'audit')
-        with self.open() as state:
-            db=state.db;scopes=self._readable_scopes(db,ctx)
-            marks=','.join('?' for _ in scopes)
-            sources=db.execute('''SELECT count(*) FROM enterprise_sources
-                WHERE tenant=? AND active=1 AND internal_project IN ('''+marks+')',
-                (ctx['tenant'],*scopes)).fetchone()[0]
-            jobs=[dict(row) for row in db.execute('''SELECT status,count(*) count FROM curation_episode_jobs
-                WHERE project IN ('''+marks+') GROUP BY status ORDER BY status',scopes)]
-            return {'tenant':ctx['tenant'],'principal':ctx['principal'],
-                'visible_active_sources':sources,'jobs':jobs,
-                'scope_count':len(scopes)}
-
     def audit(self, ctx, limit=30):
         self._need(ctx,"audit")
         with self.open() as state:

@@ -70,7 +70,6 @@ ROUTE_ACTIONS={
     ('GET','/enterprise/v1/status'):READ,
     ('GET','/enterprise/v3/service-status'):(('audit',),('settings',)),
     ('GET','/enterprise/v3/auth/credential'):ANY_CREDENTIAL,
-    ('GET','/enterprise/v1/processing-status'):(('audit',),),
     ('POST','/enterprise/v1/search'):READ,
     ('POST','/enterprise/v3/search'):READ,
     ('POST','/enterprise/v3/document-evidence'):READ,
@@ -334,7 +333,6 @@ def create_app(registry,*,allowed_hosts=('127.0.0.1','localhost'),allowed_origin
                 if not {'audit','settings'}&set(ctx['actions']):raise Denied()
                 return {'service':'Vaelius','models':'idle','build_ids':build_ids}
             if method=='GET' and path=='/enterprise/v3/auth/credential':return store.credential_status(ctx)
-            if method=='GET' and path=='/enterprise/v1/processing-status':return store.processing_status(ctx)
             if method=='GET' and path.startswith('/enterprise/v1/documents/'):
                 detail=store.detail(ctx,path.rsplit('/',1)[1])
                 return provenance(store,path,detail) if mcp else detail

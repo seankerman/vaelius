@@ -1,11 +1,11 @@
 # Local usage, volume and logical recovery
 
-`Meter` reserves stable backend attempts before dispatch, enforces tenant admission
-under a row lock, distinguishes genuine retries, and retains reported input,
-output, cache-read, cache-write and reasoning counters. A confirmed duplicate
-completion does not charge again. An uncertain return can be reconciled into the
-same attempt. Versioned price estimates are separate from a bill; missing reported
-usage is unknown. Metrics accept only a content-free field allowlist.
+`Meter` records content-free counters (retrieval requests, delivered cards,
+embedded documents, accepted original documents) and reports their sums per tenant
+(`usage`). Metrics accept only a content-free field allowlist. Model-attempt
+accounting (tenant admission, attempt reservation, usage reconciliation and price
+estimates) was removed with model execution, together with the `admission` and
+`reconcile-usage` maintenance commands.
 
 Original-document acceptance records bytes, source revisions, completed logical
 parsing attempts/status and native passage counts against stable upload IDs. An

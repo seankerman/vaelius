@@ -147,13 +147,11 @@ def validate_response(path, value):
     route=path.removeprefix('/enterprise/v1/').split('/',1)[0]
     spec={
         'status':({'service','version','tenant','principal','acting_for','enrollment','actions','schema'},set()),
-        'processing-status':({'tenant','principal','visible_active_sources','jobs','scope_count'},set()),
         'search':({'results','answerable'},{'coverage_gaps'}),
         'sources':(({'id','body','kind','occurred_at','precision','timezone','visibility','source_version'}
                     if '/' in path.removeprefix('/enterprise/v1/sources') else
                     {'source_id','disposition'}),set()),
         'documents':({'id','revision','claim'},set()),
-        'timeline':({'id','revision','episodes','coverage_gaps','has_more'},set()),
         'lifecycle':({'target_id','operation','source_version','dependent_documents_blocked'},
                      {'replacement_source_id'}),
         'boundary':({'applied','epoch'},set()),
@@ -180,7 +178,4 @@ def validate_response(path, value):
             raise ValueError('invalid_enterprise_answerability')
     elif route=='documents' and not isinstance(value['claim'],dict):
         raise ValueError('invalid_enterprise_document')
-    elif route=='timeline' and (not isinstance(value['episodes'],list) or
-                                not isinstance(value['coverage_gaps'],list)):
-        raise ValueError('invalid_enterprise_timeline')
     return value

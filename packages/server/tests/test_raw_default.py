@@ -16,7 +16,6 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
     def setUp(self):
         self.postgres_setup()
         self.store=CloudStore(self.store.home,self.dsn,'acme')
-        self.store.retrieval_corpus='sources'
         self.store.enroll_connection(self.ctx,'raw-test','test','maple',['agent'],visibility='team')
         self.fixture=json.loads((Path(__file__).parent/'fixtures/raw_default_v1.json').read_text())
 
@@ -109,7 +108,9 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
 
     def test_source_delivery_checks_are_constant_for_one_and_many_cards(self):
         self.ingest(text=('Orchard dataset evidence. '*300));self.drain()
-        cards=self.store.search(self.ctx,{'version':'enterprise-local-1','query':self.fixture['query']},candidate_pool=True)['results']
+        # Every passage of the long message, as cards (delivered search returns one per message).
+        cards=[{'id':row['document_id'],'revision':row['revision_id'],'title':'','lesson':'','evidence_status':'discovery_only'}
+            for row in self.store.candidates(self.ctx,self.fixture['query'],vector=False,limit=20)]
         self.assertGreater(len(cards),1)
         counts=[];execute=PostgresConnection.execute
         for selected in (cards[:1],cards):

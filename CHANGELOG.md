@@ -33,9 +33,40 @@ The release workflow publishes the section whose heading matches the tag.
   true` (`reranking_removed_delete_the_reranking_section`) and a `models` section
   (`model_execution_removed_delete_the_models_section`). `curation_enabled: false`
   and `reranking.enabled: false` are still accepted.
-- No migration drops anything: tables that only curation wrote stay, unused.
-  Cards an earlier curator wrote are no longer returned by search, and deleting or
-  withdrawing a source still purges everything derived from it.
+- **The curated corpus and its card selection.** Search reads captured source
+  passages only. Removed: `retrieval.corpus: all` with its answer selection
+  (`supported_answer`, `facets_v1`/`facets_v2`, compound location-and-reason
+  questions, the prose guard) and the applicability filter; the internal
+  `candidate_pool` and `answerability_judge` hooks; model-attempt accounting in
+  `Meter` (admission, reservations, usage reconciliation, price estimates) with the
+  `admission` and `reconcile-usage` maintenance commands, so `usage` reports the
+  metric counters only; `GET /enterprise/v1/processing-status`; and the client
+  response validators for routes that no longer exist. Reviewed notes, remembered
+  items and preferences are unchanged: they were never search results in the
+  default configuration and are still listed by their owner, opened by id and
+  delivered as preferences and "always load" items.
+- **A profile that still selects the removed corpus is refused at startup**:
+  `retrieval.corpus: all` (`curated_corpus_removed_delete_retrieval_corpus`), a
+  `retrieval.selection_policy` other than `baseline`
+  (`card_selection_removed_delete_retrieval_selection_policy`) and
+  `retrieval.require_prose: true`
+  (`card_selection_removed_delete_retrieval_require_prose`).
+- **The tables nothing writes any more** (migration 058): curation jobs and the
+  worker (`backend_jobs`, `backend_observers`, `backend_provider_returns`,
+  `backend_worker_receipts`, `backend_model_input_snapshots`,
+  `backend_observer_dependencies`, `backend_processing_dependencies`,
+  `curation_episode_jobs`, `curation_episode_receipts`, `enterprise_model_inputs`),
+  episodes (`episode_candidates`, `episode_candidate_history`,
+  `episode_occurrences`, `episode_revisions`, `episode_revision_evidence`,
+  `episode_revision_claim_links`, `memory_metadata`), curated temporal assertions
+  (`knowledge_temporal_assertions`, `_evidence`, `_relations`), Slack
+  (`backend_slack_connectors`, `_events`, `_items`, `_limits`), and model calls and
+  usage (`model_calls`, `cloud_admission`, `cloud_usage_attempts`,
+  `cloud_usage_reconciliations`), with the purge and refresh SQL that read them.
+  The read predicate and every row-level-security policy are unchanged;
+  `cloud_preference_candidates`, `knowledge_generations` and
+  `knowledge_generation_documents` stay because the read predicate reads them.
+  Deleting or withdrawing a source still purges everything derived from it.
 - `docs/TESTS_TO_REWRITE.md` lists the tests turned off by this change.
 
 ### Added

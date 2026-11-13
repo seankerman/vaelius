@@ -40,19 +40,6 @@ class MaintenanceTests(PostgresFixture,unittest.TestCase):
             'session':'chat','turn':'1','project':'maple','kind':'Stop','body':'The synthetic dataset is saved at /tmp/maple.csv.',
             'occurred_at':12345,'visibility':'team'})['source_id']
 
-    def test_unknown_usage_reconciles_one_attempt_and_admission_is_backend_owned(self):
-        meter=Meter(self.store);meter.configure();meter.reserve('uncertain-attempt','job','curation');meter.dispatched('uncertain-attempt')
-        meter.finish('uncertain-attempt','uncertain')
-        value={'attempt_id':'uncertain-attempt','usage':{'input_tokens':32,'cached_input_tokens':16,'output_tokens':4},
-            'result_digest':hashlib.sha256(b'synthetic provider result').hexdigest()}
-        self.assertTrue(self.maintenance.reconcile(value)['reconciled'])
-        self.assertTrue(self.maintenance.reconcile(value)['duplicate'])
-        self.assertEqual(meter.status()['attempts'],1)
-        self.assertEqual(meter.status()['reported_tokens']['cached_input_tokens'],16)
-        self.maintenance.admission({'max_parallel':2,'max_attempts':10,'enabled':False})
-        from agenthub.cloud_ops import AdmissionExhausted
-        with self.assertRaises(AdmissionExhausted):meter.reserve('next','job','curation')
-
     def test_actual_metric_sum_is_an_integer_json_counter(self):
         path=Path(__file__).resolve().parent.parent/'tests/fixtures/service/cloud_usage_json_v1.json'
         raw=path.read_bytes()

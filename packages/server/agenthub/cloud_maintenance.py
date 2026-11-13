@@ -303,21 +303,6 @@ class Maintenance:
         store.require_ready()
         self.store=store
 
-    def admission(self,value):
-        if set(value)-{'max_parallel','max_attempts','enabled'}:raise ValueError('invalid_admission_fields')
-        if any(type(value.get(k,default)) is not int for k,default in [('max_parallel',4),('max_attempts',100000)]) or type(value.get('enabled',True)) is not bool:
-            raise ValueError('invalid_admission_types')
-        Meter(self.store).configure(**value)
-        return {'tenant':self.store.tenant_id,'admission':value,'provider_calls':0}
-
-    def reconcile(self,value):
-        if set(value)-{'attempt_id','usage','result_digest','latency','price'}:raise ValueError('invalid_reconciliation_fields')
-        digest=value['result_digest']
-        if not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):
-            raise ValueError('confirmed_result_digest_required')
-        return Meter(self.store).reconcile(value['attempt_id'],usage=value['usage'],
-            result={'sha256':digest},latency=value.get('latency'),price=value.get('price'))|{'provider_calls':0}
-
     def lifecycle(self,ctx,value):
         result=self.store.lifecycle(ctx,value)
         # No reason, source contents or correction text enters the audit receipt.
@@ -420,11 +405,8 @@ def retire(profile,tenant,*,expected_database,objects,apply=False,max_objects=10
         from agenthub.postgres import PostgresEnterpriseStore
         store=PostgresEnterpriseStore(profile/'operator-state'/tenant,item['admin_dsn'],tenant)
         with store.delivery_lock(),store.open() as state,state.db:
-            state.db.execute('UPDATE cloud_admission SET enabled=0 WHERE tenant=?',(tenant,))
             state.db.execute('UPDATE enterprise_credentials SET active=0 WHERE tenant=?',(tenant,))
             state.db.execute('UPDATE enterprise_refresh_tokens SET active=0')
-            state.db.execute("UPDATE backend_jobs SET status='held',fence=?,lease_until=0,last_error='tenant_retired'",(uuid.uuid4().hex,))
-            state.db.execute("UPDATE backend_observers SET status='invalidated',provider_session=NULL,pending_session=NULL")
         for key in sorted(keys):
             if time.monotonic()>=deadline:raise TimeoutError('tenant_retirement_deadline')
             objects.delete(key)
@@ -487,9 +469,7 @@ def execute(profile,tenant,command,*,value=None,token_file=None,output=None,job_
         else:raise ValueError('invalid_maintenance_command')
     else:
         maintenance=Maintenance(store)
-        if command=='admission':result=maintenance.admission(value)
-        elif command=='reconcile-usage':result=maintenance.reconcile(value)
-        elif command=='usage':result=Meter(store).status()
+        if command=='usage':result=Meter(store).status()
         elif command=='export':
             if not output:raise ValueError('new_export_destination_required')
             result=maintenance.export(objects_from_settings(settings),output,**value)
@@ -564,7 +544,7 @@ def lifecycle_command(store,command,value,objects,*,apply=False,token_file=None,
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['admission','reconcile-usage','usage',
+    parser.add_argument('command',choices=['usage',
         'source','connection','export','tenant-retire','index-reconcile','index-status',
         'index-run','index-retry',*LIFECYCLE_COMMANDS])
     parser.add_argument('--profile',required=True);parser.add_argument('--tenant',required=True)

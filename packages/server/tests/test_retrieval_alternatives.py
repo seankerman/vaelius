@@ -17,11 +17,11 @@ class Alternatives(PostgresFixture, unittest.TestCase):
     def tearDown(self):
         self.postgres_teardown()
 
-    def note(self, external, title, body):
-        source = self.store.ingest(self.ctx, {'version': VERSION, 'external_id': external,
-            'session': 'synthetic', 'turn': external, 'project': 'maple', 'kind': 'Stop',
-            'body': body, 'visibility': 'private', 'occurred_at': 100})['source_id']
-        return self.store.accept_reviewed_note(self.ctx, source, title, body)['document_id']
+    def note(self, external, title, body, index=True):
+        """One owner-private captured chat message as an indexed passage (the title is unused:
+        a passage is titled by its workspace, speaker and time)."""
+        source = self.capture(body, key=external, conversation='synthetic-' + external, sharing='private', index=index)
+        return self.passages(source)[0] if index else source
 
     def test_amount_is_not_mandatory_identifier_but_typed_record_remains_one(self):
         evidence = self.note('amount', 'Allowance arithmetic',
@@ -38,21 +38,18 @@ class Alternatives(PostgresFixture, unittest.TestCase):
     def test_larger_candidate_budget_remains_delivery_bounded_and_scope_safe(self):
         for index in range(27):
             self.note(str(index), 'Atlas operation '+str(index),
-                      'The Atlas operation requires a checksum check and approval before recovery. Step '+str(index)+'.')
+                      'The Atlas operation requires a checksum check and approval before recovery. Step '+str(index)+'.',
+                      index=False)
+        self.index_captures()
         self.store.retrieval_candidate_limit = 50
+        self.assertEqual(len(self.store.candidates(self.ctx, 'Atlas operation', vector=False, limit=50)), 27)
         result = self.store.search(self.ctx, {'version': VERSION, 'query': 'Atlas operation', 'mode': 'explicit'})
+        self.assertTrue(result['results'])
         self.assertLessEqual(len(result['results']), 8)
         import json
         self.assertLessEqual(len(json.dumps(result, ensure_ascii=True)), 4000)
         bob = self.store.authenticate(self.tokens['bob'])
         self.assertEqual(self.store.search(bob, {'version': VERSION, 'query': 'Atlas operation'})['results'], [])
-
-    def test_heading_only_passage_is_not_a_fact_when_prose_guard_enabled(self):
-        self.note('heading', 'Atlas checklist', '# Atlas checklist with extended provenance heading\n\n')
-        self.store.retrieval_require_prose = True
-        result = self.store.search(self.ctx, {'version': VERSION, 'query': 'Atlas checklist'})
-        self.assertFalse(result['answerable'])
-        self.assertEqual(result['results'], [])
 
 
 if __name__ == '__main__':

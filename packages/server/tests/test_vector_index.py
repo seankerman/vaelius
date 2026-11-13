@@ -39,11 +39,9 @@ class VectorIndexTests(PostgresFixture, unittest.TestCase):
         for actor in ('alice', 'bob'):
             ctx = self.store.authenticate(self.tokens[actor])
             body = actor + ' keeps a synthetic geometry report.'
-            source = self.store.ingest(ctx, dict(version=VERSION, external_id=actor,
-                session='geometry', turn='1', project='maple', kind='Stop', body=body,
-                visibility='private', occurred_at=100))['source_id']
-            document = self.store.accept_reviewed_note(ctx, source, actor + ' geometry', body)['document_id']
-            self.seeds[actor] = (source, document)
+            # An owner-private captured chat passage each; `populate` multiplies them.
+            source = self.capture(body, ctx=ctx, key=actor, conversation='geometry', sharing='private')
+            self.seeds[actor] = (source, self.passages(source)[0])
 
     def populate(self, count):
         with self.store.open() as state, state.db:
@@ -59,9 +57,10 @@ class VectorIndexTests(PostgresFixture, unittest.TestCase):
                     identity_json,identity_hash,previous_revision_id,reason,schema_version,created
                     FROM knowledge_revisions CROSS JOIN generate_series(1,?) n
                     WHERE document_id=? AND ''' + condition, (count, document))
-                state.db.execute('''INSERT INTO enterprise_documents
+                state.db.execute('''INSERT INTO enterprise_documents(id,tenant,internal_project,revision,
+                    active,policy_version,created,blocked_reason,representation,raw_owner,raw_shared,source_project)
                     SELECT 'geometry-'||n,tenant,internal_project,'geometry-revision-'||n,
-                    active,policy_version,created,blocked_reason
+                    active,policy_version,created,blocked_reason,representation,raw_owner,raw_shared,source_project
                     FROM enterprise_documents CROSS JOIN generate_series(1,?) n
                     WHERE id=? AND ''' + condition, (count, document))
                 state.db.execute('''INSERT INTO enterprise_dependencies

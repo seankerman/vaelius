@@ -18,4 +18,4 @@ class CloudTransportTests(PostgresFixture,unittest.TestCase):
         duplicate=self.store.ingest_part(self.ctx,parts[0]);self.assertTrue(duplicate['complete']);self.assertEqual(duplicate['disposition'],'duplicate')
         retained=self.store.general_source(self.ctx,result['source_id'])['payload']
         self.assertEqual(retained,event)
-        self.assertFalse(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'maple.csv'})['answerable'])
+        self.assertEqual(self.store.search(self.ctx,{'version':'enterprise-local-1','query':'maple.csv'})['results'],[])

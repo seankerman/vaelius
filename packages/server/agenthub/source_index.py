@@ -131,7 +131,7 @@ class SourceIndex:
             0 if int(row.get('private') or 0) else 1,row['external_project'],doc))
 
 
-def search(store,ctx,value,filters,*,candidate_pool=False):
+def search(store,ctx,value,filters):
     """Source discovery through the existing authorized hybrid candidate query."""
     rows=store.candidates(ctx,value['query'],project=value.get('project'),scope=value.get('scope','project'),
         filters=dict(filters,source_as_of=value.get('as_of'),time_mode=value.get('time_mode')),
@@ -150,10 +150,6 @@ def search(store,ctx,value,filters,*,candidate_pool=False):
                 FROM enterprise_receipts WHERE session=? AND epoch=? AND status='offered'
                 AND document_id=ANY(?::text[])''',(receiver,epoch,[c['id'] for c in cards]))}
             cards=[c for c in cards if (c['id'],c['revision']) not in seen]
-    if candidate_pool:
-        return {'results':[{'id':c['id'],'revision':c['revision'],'title':c['title'],
-            'lesson':c['text'],'evidence_status':'discovery_only'} for c in cards],
-            'answerable':False,'_candidate_pool':True}
     output=discovery_cards(cards,limit=value.get('limit',5),max_chars=1500 if value.get('mode')=='automatic' else 3800)
     output['results']=output.pop('records')
     output['support']='partial' if output['results'] else 'none'

@@ -49,16 +49,6 @@ def purge_retained_derivatives(db, source_id, documents):
     for document in documents:
         db.execute('DELETE FROM cloud_document_vectors WHERE document_id=?', (document,))
         db.execute('DELETE FROM knowledge_candidate_keys WHERE document_id=?', (document,))
-        db.execute('''DELETE FROM memory_metadata WHERE memory_id IN
-            (SELECT origin_memory_id FROM knowledge_documents WHERE document_id=?)''', (document,))
-    db.execute('DELETE FROM memory_metadata WHERE memory_id=?', (source_id,))
-    # An episode summary derives from every source of its curation job, not
-    # only the cited ones; both links are indexed (migration 037).
-    db.execute('''UPDATE episode_revisions SET payload_json='{}' WHERE payload_json!='{}' AND
-        (revision_id IN (SELECT revision_id FROM episode_revision_evidence WHERE source_id=?)
-         OR job_id IN (SELECT id FROM curation_episode_jobs WHERE position(? in source_ids)>0)
-         OR job_id IN (SELECT episode_job FROM backend_processing_dependencies WHERE source_id=?))''',
-               (source_id, source_id, source_id))
     revision = db.execute('SELECT connection,external_id,revision FROM backend_source_revisions WHERE source_id=?',
                           (source_id,)).fetchone()
     if revision:
@@ -108,10 +98,7 @@ def inventory(db, tenant, *, owner=None, source_ids=None):
           (SELECT count(*) FROM knowledge_fts WHERE document_id IN (SELECT document_id FROM docs)) AS derived_text_index,
           (SELECT count(*) FROM cloud_document_vectors WHERE document_id IN (SELECT document_id FROM docs)) AS vectors,
           (SELECT count(*) FROM knowledge_embeddings WHERE document_id IN (SELECT document_id FROM docs)) AS legacy_vectors,
-          (SELECT count(*) FROM knowledge_temporal_assertions WHERE document_id IN (SELECT document_id FROM docs)) AS temporal_assertions,
           (SELECT count(*) FROM knowledge_candidate_keys WHERE document_id IN (SELECT document_id FROM docs)) AS candidate_keys,
-          (SELECT count(DISTINCT e.revision_id) FROM episode_revision_evidence e JOIN episode_revisions r
-              ON r.revision_id=e.revision_id WHERE e.source_id IN (SELECT id FROM selected) AND r.payload_json!='{{}}') AS episode_summaries,
           (SELECT count(*) FROM cloud_conversation_segments WHERE source_id IN (SELECT id FROM selected) AND status='active') AS conversation_originals,
           (SELECT count(*) FROM backend_document_versions WHERE source_id IN (SELECT id FROM selected)) AS document_originals,
           (SELECT count(*) FROM cloud_migrated_source_objects WHERE source_id IN (SELECT id FROM selected)) AS migrated_originals,
@@ -124,7 +111,7 @@ def inventory(db, tenant, *, owner=None, source_ids=None):
 
 CONTENT_STORES = ('active_sources', 'source_text', 'source_text_index', 'event_payloads', 'source_revisions',
                   'searchable_documents', 'derived_revisions', 'derived_text', 'derived_text_index', 'vectors',
-                  'legacy_vectors', 'temporal_assertions', 'candidate_keys', 'episode_summaries',
+                  'legacy_vectors', 'candidate_keys',
                   'conversation_originals', 'document_originals', 'migrated_originals', 'pending_object_deletes')
 
 

@@ -62,6 +62,9 @@ class FeedbackTests(PostgresFixture,unittest.TestCase):
         from starlette.testclient import TestClient
         from agenthub.cloud_api import create_app
         store=self.store
+        # Recall reads captured passages: search finds the message, fetch opens it and the
+        # outcome is reported on that same passage and revision.
+        passage=self.passages(self.capture('Cedar export is saved in /synthetic/cedar.csv.',sharing='private'))[0]
         class Registry:
             def store_for_token(self,token):return store
         headers={'Authorization':'Bearer '+self.tokens['alice'],
@@ -73,16 +76,17 @@ class FeedbackTests(PostgresFixture,unittest.TestCase):
                     'clientInfo':{'name':'test','version':'1'}}})
             self.assertEqual(init.status_code,200,init.text)
             results=[]
-            for number,(name,args) in enumerate([
-                ('search_memory',{'query':'Where is the Cedar export?'}),
-                ('fetch_memory',{'id':self.doc,'revision':self.revision,'include_sources':False}),
-                ('report_memory_outcome',self.value)],2):
-                response=client.post('/mcp',headers=headers,json={'jsonrpc':'2.0','id':number,
+            def call(name,args):
+                response=client.post('/mcp',headers=headers,json={'jsonrpc':'2.0','id':len(results)+2,
                     'method':'tools/call','params':{'name':name,'arguments':args}})
                 self.assertEqual(response.status_code,200,response.text)
                 result=response.json()['result'];self.assertFalse(result.get('isError'),result)
-                results.append(json.loads(result['content'][0]['text']))
+                results.append(json.loads(result['content'][0]['text']));return results[-1]
+            found=call('search_memory',{'query':'Where is the Cedar export?'})
             self.assertTrue(results[0]['records'])
+            card=found['records'][0];self.assertEqual(card['id'],passage)
+            call('fetch_memory',{'id':card['id'],'revision':card['revision'],'include_sources':False})
+            call('report_memory_outcome',dict(self.value,id=card['id'],revision=card['revision']))
             self.assertFalse(results[-1]['independently_verified'])
         with store.open() as state:
             self.assertEqual(state.db.execute('SELECT count(*) FROM memory_feedback_reports').fetchone()[0],1)

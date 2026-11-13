@@ -611,8 +611,6 @@ def evaluate_questions(stores, questions, *, contexts, source_map, sources,
         ctx = contexts[(question["tenant"], question["principal"])]
         if ctx["tenant"] != question["tenant"] or ctx["actor"] != question["principal"]:
             raise ValueError("evaluation_principal_mismatch")
-        if store.answerability_judge is not None:
-            raise ValueError("provider_free_evaluation_requires_no_judge")
         request = {"version": "enterprise-local-1", "query": question["query"],
                    "project": question["project"], "mode": question.get("mode", "explicit"), "limit": 8,
                    **question.get("filters", {})}

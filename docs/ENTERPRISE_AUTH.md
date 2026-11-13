@@ -54,7 +54,6 @@ actions answer `404`, the same as a missing resource.
 | `POST /enterprise/v3/tenant-policy` | `settings` and the tenant settings administrator flag |
 | `POST /enterprise/v2/release` | `policy` and `read` |
 | Directory events and SCIM | `settings` (and the tenant administrator flag) |
-| `GET /enterprise/v1/processing-status` | `audit` |
 | `GET /enterprise/v3/service-status` | `audit` or `settings` |
 | Access review | `audit` or `policy` (and the tenant administrator flag) |
 

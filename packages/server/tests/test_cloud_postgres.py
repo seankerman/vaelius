@@ -68,6 +68,47 @@ class PostgresFixture:
             for name in ("alice", "bob", "admin")}
         self.ctx = self.store.authenticate(self.tokens["alice"])
 
+    # Raw captured chat passages: the visibility probe of the access and privacy tests.
+    # Search reads source passages only, so a test that asks "who can recall this?"
+    # captures a chat message and indexes it, exactly as the service does.
+    def capture(self, text, *, ctx=None, key=None, workspace='maple', sharing='organization', role='assistant',
+                revision='1', when='2026-09-01T10:00:00Z', conversation='probe', index=True):
+        """Capture one chat message as `ctx` (default alice) and index it.
+
+        Shared with the workspace audience by default; `sharing='private'` keeps it
+        owner-private. Returns the source id; `passages(source)` lists its documents."""
+        from agentclient.enterprise_capture import normalize_capture
+        ctx = ctx or self.ctx
+        key = key or uuid.uuid4().hex
+        connection = 'probe-' + workspace + '-' + ctx['enrollment']
+        with self.store.open() as state:
+            enrolled = state.db.execute('SELECT 1 FROM backend_connections WHERE id=?', (connection,)).fetchone()
+        if not enrolled:
+            self.store.enroll_connection(ctx, connection, connection, workspace, ['agent'], visibility='organization')
+        event = normalize_capture({'hook_event_name': 'UserPromptSubmit' if role == 'user' else 'Stop',
+            'event_id': key, 'session_id': conversation, 'turn_id': key, 'timestamp': when, 'prompt': text,
+            'last_assistant_message': text, 'revision': revision}, workspace, connection, sharing=sharing)
+        source = self.store.ingest_general(ctx, event)['source_id']
+        if index:
+            self.index_captures()
+        return source
+
+    def index_captures(self):
+        from agenthub.source_index import SourceIndex
+        while SourceIndex(self.store).run(max_sources=50, max_seconds=30)['completed_sources']:
+            pass
+
+    def passages(self, source):
+        """Active passage documents of one captured source."""
+        with self.store.open() as state:
+            return [row[0] for row in state.db.execute('''SELECT ed.id FROM enterprise_documents ed
+                JOIN enterprise_dependencies x ON x.document_id=ed.id
+                WHERE x.source_id=? AND ed.representation='raw' AND ed.active=1 ORDER BY ed.id''', (source,))]
+
+    def recall(self, ctx, query, **request):
+        """Passage documents a search returns to `ctx`."""
+        return [card['id'] for card in self.store.search(ctx, {'version': VERSION, 'query': query, **request})['results']]
+
     def postgres_teardown(self):
         from psycopg import sql
         with connect(self.services["tenants"]["acme"]["admin_dsn"]) as db:
@@ -103,18 +144,23 @@ class CanonicalPostgresTests(PostgresFixture, unittest.TestCase):
         self.assertEqual(self.ingest()["disposition"], "duplicate")
         with self.assertRaises(Conflict):
             self.ingest(body="A conflicting immutable revision.")
+        # Recall reads captured passages: the same private text as a chat capture.
+        passage = self.capture("The dataset is saved at /tmp/synthetic/maple.csv.", sharing="private")
         for name in ("bob", "admin"):
             ctx = self.store.authenticate(self.tokens[name])
             with self.assertRaises(Denied):
                 self.store.detail(ctx, document)
             self.assertEqual(self.store.search(ctx, {"version": VERSION, "query": "Maple dataset location"})["results"], [])
-        self.assertEqual(len(self.store.search(self.ctx, {"version": VERSION, "query": "Maple dataset location"})["results"]), 1)
+        found = self.store.search(self.ctx, {"version": VERSION, "query": "Maple dataset location"})["results"]
+        self.assertEqual(len(found), 1)
+        self.assertEqual([card["id"] for card in found], self.passages(passage))
         self.assertEqual(list(Path(self.temp.name).rglob("*.sqlite")), [])
 
     def test_a_retained_model_curated_card_is_no_longer_returned_by_search(self):
         document = self.note(self.ingest()["source_id"])
         query = {"version": VERSION, "query": "Maple dataset location"}
-        self.assertEqual([card["id"] for card in self.store.search(self.ctx, query)["results"]], [document])
+        # Search reads source passages only: a reviewed note is opened by id, never returned.
+        self.assertEqual(self.store.search(self.ctx, query)["results"], [])
         # A card an earlier curator wrote carries its policy; the note's own text is unchanged.
         with self.store.open() as state, state.db:
             state.db.execute('''UPDATE knowledge_revisions SET claim_json=(claim_json::jsonb ||
@@ -138,14 +184,20 @@ class CanonicalPostgresTests(PostgresFixture, unittest.TestCase):
 
     def test_correction_withdrawal_and_temporal_unknown_interval(self):
         source = self.ingest()["source_id"]; document = self.note(source)
+        # The same text as a captured chat message of 2026-09-01: the recall probe.
+        captured = self.capture("The dataset is saved at /tmp/synthetic/maple.csv.", when="2026-09-01T10:00:00Z")
         query = {"version": VERSION, "query": "Where was the Maple dataset as of 2026-09-01?"}
         self.assertFalse(self.store.search(self.ctx, query)["answerable"])
+        # A dated question before the message existed finds nothing; no validity is invented.
+        self.assertEqual(self.recall(self.ctx, "Maple dataset location", as_of="2026-08-31"), [])
+        self.assertEqual(self.recall(self.ctx, "Maple dataset location"), self.passages(captured))
         value = {"version": VERSION, "target_id": source, "expected_revision": "1",
             "idempotency_key": "withdraw-dataset", "reason": "fixture owner withdrew source", "operation": "withdraw"}
         self.store.lifecycle(self.ctx, value)
         self.assertEqual(self.store.lifecycle(self.ctx, value)["operation"], "withdraw")
         with self.assertRaises(Denied):
             self.store.detail(self.ctx, document)
+        self.store.lifecycle(self.ctx, dict(value, target_id=captured, idempotency_key="withdraw-captured"))
         self.assertEqual(self.store.search(self.ctx, {"version": VERSION, "query": "Maple dataset location"})["results"], [])
 
     def test_correction_reuses_document_and_invalidates_old_revision(self):

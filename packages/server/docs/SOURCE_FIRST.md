@@ -1,8 +1,9 @@
 # Source-first service defaults
 
-The runtime defaults to `retrieval.corpus: sources`. Model curation and model
-reranking were removed: `processing.curation_enabled: true`, `reranking.enabled:
-true` and a `models` section are refused at startup.
+Search reads source passages only: `retrieval.corpus` accepts just `sources`, its
+default. Model curation and model reranking were removed:
+`processing.curation_enabled: true`, `reranking.enabled: true` and a `models`
+section are refused at startup.
 The client is unchanged: deterministic secret cleaning, capture, transport and
 delivery. Permitted person/location facts remain in the private authority; this
 is not blanket PII anonymization. Raw chat passages are redacted text visible only
@@ -50,10 +51,16 @@ was ingested by that cutoff. This is chronological evidence, not an inferred
 validity period. Unknown timestamps cannot satisfy a dated filter. Native original
 documents and private-preference tools remain available.
 
-To explicitly inspect retained reviewed notes and preferences, set
-`retrieval.corpus: all`. Cards an earlier model curator wrote stay in their tables
-(no migration drops them) but search no longer returns them, and dated search
-(`as_of`, `time_mode`) needs the source corpus.
+The curated corpus and its card selection were removed. A profile that still
+selects them is refused at startup, never started on a different corpus than it
+asked for: `retrieval.corpus: all`
+(`curated_corpus_removed_delete_retrieval_corpus`), a `retrieval.selection_policy`
+other than `baseline` (`card_selection_removed_delete_retrieval_selection_policy`)
+and `retrieval.require_prose: true`
+(`card_selection_removed_delete_retrieval_require_prose`). Reviewed notes,
+remembered items and preferences are not search results: their owner lists them
+(`list_remembered`), opens one by id (`fetch_memory`) and receives preferences and
+"always load" items at session start, under the same audience rules as before.
 
 Migration 031 is additive and tightens raw-passage RLS for the restricted reader.
 Migration 032 supplies a fixed full-text lookup so PostgreSQL can use its GIN

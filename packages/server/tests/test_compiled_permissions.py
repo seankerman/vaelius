@@ -25,6 +25,13 @@ class CompiledPermissions(CompletePolicyEquivalence):
     def test_same_policy_history_compacts_and_mixed_source_revokes(self):
         source, document = self.note('compact', visibility='team')
         with self.store.open() as state, state.db:
+            # The same capture connection as the accepted source (linked first, so each
+            # source is projected once): an identical policy.
+            state.db.execute("""INSERT INTO backend_source_revisions
+                (source_id,connection,external_id,revision,digest,payload,received,disposition,policy_version)
+                SELECT 'compact-noise-' || n::text,connection,'noise-' || n::text,revision,digest,'{}',
+                 received,disposition,policy_version
+                FROM backend_source_revisions CROSS JOIN generate_series(1,20000) n WHERE source_id=?""", (source,))
             state.db.execute("""INSERT INTO enterprise_sources
                 (id,tenant,owner,external_project,internal_project,external_id,
                  enrollment,payload_hash,visibility,raw_visibility,active,

@@ -274,7 +274,6 @@ class RawContentPostgresTests(PostgresFixture, unittest.TestCase):
         from agenthub.source_objects import FileSourceObjects
         self.postgres_setup()
         self.store = CloudStore(self.store.home, self.dsn, 'acme')
-        self.store.retrieval_corpus = 'sources'
         self.objects_root = Path(self.temp.name) / 'objects'
         self.objects = FileSourceObjects(self.objects_root)
         self.store.conversation_segments = ConversationSegments(self.store, self.objects)

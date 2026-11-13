@@ -69,23 +69,6 @@ def validate_response(path,value):
                 if (not isinstance(source['text'],str) or type(source['start']) is not int or
                     type(source['end']) is not int or source['start']<0 or source['end']-source['start']!=len(source['text'])):
                     raise ValueError('invalid_source_evidence_span')
-    elif route=='timeline':
-        if not {'id','episodes','coverage_gaps','has_more'}<=set(value):raise ValueError('invalid_cloud_timeline')
-        if 'next_cursor' in value and (value['next_cursor'] is not None and
-                (not isinstance(value['next_cursor'],str) or len(value['next_cursor'])!=68 or
-                 not value['next_cursor'].startswith('tc1_'))):
-            raise ValueError('invalid_cloud_timeline_cursor')
-    elif route=='temporal-detail':
-        if not {'id','revision','claim'}<=set(value) or not str(value['id']).startswith('ta_'):
-            raise ValueError('invalid_cloud_temporal_detail')
-    elif route=='project-history':
-        if not {'project','summary_revision','phase_anchors','episodes','coverage_gaps','has_more','next_cursor'}<=set(value):
-            raise ValueError('invalid_cloud_project_history')
-        if not isinstance(value['episodes'],list) or len(value['episodes'])>20:
-            raise ValueError('invalid_cloud_project_history')
-    elif route=='project-episode':
-        if not {'episode_id','assertions','coverage_gaps'}<=set(value):
-            raise ValueError('invalid_cloud_project_episode')
     elif route.startswith('source-documents/'):
         if route.endswith('describe'):
             if not {'source_id','version'}<=set(value) or len(json.dumps(value))>8000:raise ValueError('invalid_source_descriptor')

@@ -110,8 +110,10 @@ inference:
   source and blocks the note. Each add, version and removal is audited
   (`operation = 'remember'`).
 - **Delivery.** "Always load" items are delivered like preferences, under the
-  session label; others are recalled like any item. Delivered text is reference
-  data, framed and labelled like every card; `instruction_like` applies to it too.
+  session label; the others are listed (`list_remembered`) and opened by id
+  (`fetch_memory`). Search reads captured passages and does not return remembered
+  items. Delivered text is reference data, framed and labelled like every card;
+  `instruction_like` applies to it too.
 - **Import.** `vaelius-client import-memory` reads a Claude Code auto-memory folder:
   `user` and `feedback` entries become "always load" items, `project` and
   `reference` entries ordinary ones, each in the workspace of the repository the

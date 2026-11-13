@@ -46,17 +46,20 @@ class NativeHistoryTests(PostgresFixture,unittest.TestCase):
 
     def test_current_grant_revocation_denies_search_detail_and_bytes(self):
         sources=self.upload_history();query='What is the Leaf dryer moisture threshold?'
-        before=self.search(query);self.assertTrue(before['answerable'])
+        # Search is discovery over source passages: found or not, never `answerable`.
+        before=self.search(query);self.assertTrue(before['results']);self.assertFalse(before['answerable'])
         self.store.connection_policy(self.alice,'native-history',reader_ids=['alice'])
-        self.assertFalse(self.search(query)['answerable'])
+        self.assertEqual(self.search(query)['results'],[])
         with self.assertRaises(Denied):self.store.detail(self.bob,before['results'][0]['id'])
         with self.assertRaises(Denied):self.service.fetch(self.bob,sources[0]['source_id'])
 
     def test_explicit_withdrawal_denies_asof_and_original(self):
         sources=self.upload_history();current=sources[-1]
+        query='What was the Leaf dryer moisture threshold as of 2026-09-15?'
+        self.assertTrue(self.search(query)['results'])
         self.store.lifecycle(self.alice,{'version':VERSION,'target_id':current['source_id'],'expected_revision':'1',
             'idempotency_key':'withdraw-current-dryer','reason':'synthetic explicit withdrawal','operation':'withdraw'})
-        self.assertFalse(self.search('What was the Leaf dryer moisture threshold as of 2026-09-15?')['answerable'])
+        self.assertEqual(self.search(query)['results'],[])
         for source in sources:
             with self.assertRaises(Denied):self.service.fetch(self.bob,source['source_id'])
 

@@ -1,6 +1,6 @@
 """Versioned, redacted source intake in the PostgreSQL authority."""
 
-from agenthub.processing.storage import table_exists, begin_write
+from agenthub.processing.storage import begin_write
 import base64
 import hashlib
 import json
@@ -286,19 +286,6 @@ class GeneralSourcesMixin:
             db.execute('''INSERT INTO backend_source_heads VALUES(?,?,?,?) ON CONFLICT(connection,external_id)
                 DO UPDATE SET revision=excluded.revision,source_id=excluded.source_id''',(*key,source_id))
             if kind=='gap': db.execute('INSERT INTO backend_capture_gaps VALUES(?,?,?,?)',(source_id,value['connection'],value['disposition'],now))
-            late=db.execute("SELECT id FROM curation_episode_jobs WHERE project=? AND session=? AND turn=? AND status IN ('done','no_learning')",
-                (project,session,turn)).fetchall()
-            for job in late:
-                db.execute("UPDATE curation_episode_jobs SET status='pending',progress='{}',next_attempt=0,error='late_source_revision' WHERE id=?",(job[0],))
-                for derived in db.execute('SELECT document_id FROM episode_candidates WHERE job_id=? AND document_id IS NOT NULL',(job[0],)):
-                    db.execute("UPDATE enterprise_documents SET active=0,blocked_reason='late_source_revision' WHERE id=?",(derived[0],))
-                    db.execute('DELETE FROM knowledge_fts WHERE document_id=?',(derived[0],))
-                if table_exists(db,'backend_observers'):
-                    db.execute("UPDATE backend_observers SET provider_session=NULL,pending_session=NULL,observer_epoch=observer_epoch+1,status='reconstruct' WHERE connection=? AND conversation=?",
-                        (value['connection'],value['conversation']))
-            if value['event']['kind']=='PostCompact' and table_exists(db,'backend_observers'):
-                db.execute('UPDATE backend_observers SET source_epoch=source_epoch+1 WHERE connection=? AND conversation=?',
-                    (value['connection'],value['conversation']))
             self._audit(db,ctx,'ingest_v2',value['disposition'],source_id,connection['policy_version'])
             if value['source_type'] in {'agent','conversation'} and value['disposition'] in {'accepted','redacted'}:
                 from agenthub.source_index import queue

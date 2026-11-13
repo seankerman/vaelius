@@ -218,7 +218,7 @@ class AccessMigrationTests(unittest.TestCase):
                               ('search_passage_granted', 3), ('search_passage_session_granted', 5),
                               ('search_document_allowed', 1)})
         receipts = migrate(self.admin_dsn)
-        self.assertEqual((receipts[-1]['version'], receipts[-1]['status']), (57, 'applied'))
+        self.assertEqual({r['version']: r['status'] for r in receipts}[57], 'applied')
         with connect(self.admin_dsn) as db:
             run = db.execute
             self.assertEqual({tuple(r.values()) for r in run(functions, (self.schema,)).fetchall()},

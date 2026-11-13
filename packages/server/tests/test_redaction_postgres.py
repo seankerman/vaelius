@@ -51,7 +51,6 @@ class RedactionPostgresTests(unittest.TestCase):
         with self.store.open() as state:
             self.assertEqual(state.db.execute('SELECT count(*) FROM backend_parts').fetchone()[0], 0)
             self.assertEqual(state.db.execute('SELECT count(*) FROM backend_source_revisions').fetchone()[0], 0)
-            self.assertEqual(state.db.execute('SELECT count(*) FROM backend_jobs').fetchone()[0], 0)
 
     def test_normalized_redaction_round_trip_and_duplicate(self):
         event = normalize_capture({'hook_event_name': 'PostToolUse', 'event_id': 'source',

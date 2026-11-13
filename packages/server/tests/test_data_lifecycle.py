@@ -95,23 +95,11 @@ class DataLifecycleTests(PostgresFixture, unittest.TestCase):
         return {'hook': hook, 'note': note, 'conversation': conversation, 'document': document}
 
     def curation_rows(self, source, document, marker, tag):
-        """Stores only the optional curation pipeline writes, seeded directly."""
+        """A reconciliation key of the derived note, seeded directly."""
         now = time.time()
         with self.store.open() as state, state.db:
             db = state.db
             project = db.execute('SELECT internal_project FROM enterprise_sources WHERE id=?', (source,)).fetchone()[0]
-            db.execute("INSERT INTO knowledge_generations VALUES(?,?,?,?,?,?,NULL,NULL)",
-                       ('gen-' + tag, 'v1', 'retired', 'sources', 'hash', now))
-            db.execute('''INSERT INTO curation_episode_jobs(id,generation_id,episode_id,project,session,turn,
-                source_ids,source_hash,created,updated,version) VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
-                       ('job-' + tag, 'gen-' + tag, 'episode', project, 's-' + tag, '1', json.dumps([source]), 'hash', now, now, 'v1'))
-            db.execute('INSERT INTO episode_occurrences VALUES(?,?,?,?,?)', ('occ-' + tag, project, 's-' + tag, '1', now))
-            db.execute('''INSERT INTO episode_revisions VALUES(?,?,?,?,1,NULL,'hash',?,'learned',?,'initial_curation',?)''',
-                       ('erv-' + tag, 'occ-' + tag, 'gen-' + tag, 'job-' + tag, json.dumps([source]),
-                        json.dumps({'atoms': [{'text': f'{marker} episode summary'}]}), now))
-            db.execute('INSERT INTO episode_revision_evidence VALUES(?,?,?,?)', ('erv-' + tag, 'atom', source, ''))
-            db.execute("INSERT INTO memory_metadata VALUES(?,1,'unknown','observation','[]','[]',?,'{}','unknown','r','[]',?)",
-                       (source, f'{marker} applicability', now))
             revision = db.execute('SELECT active_revision_id FROM knowledge_documents WHERE document_id=?', (document,)).fetchone()[0]
             db.execute("INSERT INTO knowledge_candidate_keys VALUES(?,'subject',?,?,?) ON CONFLICT DO NOTHING",
                        (project, marker + '-subject', document, revision))
@@ -181,10 +169,9 @@ class DataLifecycleTests(PostgresFixture, unittest.TestCase):
             for name in ('hook', 'conversation', 'document'):
                 self.delete(self.ctx, sources[name], 'unprotected-' + name)
         leaked = self.scan('qzxbravo')
-        # The pre-existing purge left the original document, its metadata, an
-        # episode summary, reconciliation keys and every vector behind.
+        # The pre-existing purge left the original document, its metadata,
+        # reconciliation keys and every vector behind.
         self.assertIn('backend_document_versions.title', leaked)
-        self.assertIn('episode_revisions.payload_json', leaked)
         self.assertIn('knowledge_candidate_keys.key_value', leaked)
         self.assertTrue(self.object_hits('qzxbravo'))
         self.assertGreater(self.vectors(sources.values()), 0)

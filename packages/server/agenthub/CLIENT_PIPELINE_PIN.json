@@ -9,7 +9,7 @@
     "agentclient.secret_detection": "256aeb9445e3fcff8e9a76460754d5b6049fb39a3d8aa514be9f121d1d293f34",
     "agenthub.processing.__init__": "961019d775e8e3a8a4280fc7ec84281af060dd3004e6a52cdeb973b37b4a02a5",
     "agenthub.processing.context_delivery": "d691d0b662dafff3ca47ad27c4cb710e346685fe866f0cf01003fc490dae5d91",
-    "agenthub.processing.knowledge": "421ad889c6a4dd6fa2b0422c308a18e8a1f4f6bb45736597be05d7d0444efdb0",
+    "agenthub.processing.knowledge": "3e1d13a830f3f87ad6e801a52075ffa2c62e1e51b9c106cc7f4ac58cecb56b15",
     "agenthub.processing.media_projection": "e6c9da56d4f22d6f88dd1c1c8e2f32be28c17fdcf29770596b04846a7ed98d42",
     "agenthub.processing.retrieval": "b7b366086fcedf09d6b2ba24ac4545c47dfcac079c7bf25e84aa73f1aed16b59",
     "agenthub.processing.segments": "12d6d19a565d6b23b678410d64d132bd4d29cb3fc6d0db6521d798fc071f5f87",

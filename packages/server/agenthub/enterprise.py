@@ -413,9 +413,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             AND NOT EXISTS(SELECT 1 FROM knowledge_generation_documents gd
                 JOIN knowledge_generations g ON g.generation_id=gd.generation_id
                 WHERE gd.document_id=d.document_id AND g.status!='active')
-        ), jobs AS MATERIALIZED (
-            SELECT e.document_id,c.job_id FROM eligible e
-            JOIN episode_candidates c ON c.document_id=e.document_id
         ), sources AS MATERIALIZED (
             SELECT e.document_id,s.id AS source_id FROM eligible e
             JOIN knowledge_document_members m ON m.document_id=e.document_id
@@ -427,24 +424,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             UNION
             SELECT e.document_id,s.source_memory_id FROM eligible e
             JOIN knowledge_support s ON s.revision_id=e.active_revision_id
-            UNION
-            SELECT j.document_id,raw.source_id FROM jobs j
-            JOIN curation_episode_jobs c ON c.id=j.job_id
-            CROSS JOIN LATERAL jsonb_array_elements_text(c.source_ids::jsonb) raw(source_id)
-            UNION
-            SELECT j.document_id,p.source_id FROM jobs j
-            JOIN backend_processing_dependencies p ON p.episode_job=j.job_id
-            UNION
-            SELECT j.document_id,s.source_memory_id FROM jobs j
-            JOIN enterprise_model_inputs i ON i.job_id=j.job_id
-            JOIN knowledge_documents d ON d.document_id=i.related_document_id
-            JOIN knowledge_support s ON s.revision_id=d.active_revision_id
-            WHERE NOT EXISTS(SELECT 1 FROM backend_jobs b WHERE b.episode_job=j.job_id AND b.dependency_snapshot_complete=1)
-            UNION
-            SELECT j.document_id,x.source_id FROM jobs j
-            JOIN enterprise_model_inputs i ON i.job_id=j.job_id
-            JOIN enterprise_dependencies x ON x.document_id=i.related_document_id
-            WHERE NOT EXISTS(SELECT 1 FROM backend_jobs b WHERE b.episode_job=j.job_id AND b.dependency_snapshot_complete=1)
         ), valid AS MATERIALIZED (
             SELECT e.document_id,e.project,e.active_revision_id,min(s.tenant) AS tenant,
                 CASE WHEN count(DISTINCT s.external_project)=1 THEN min(s.external_project) END AS source_project
@@ -537,10 +516,8 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
                     "source_version":row["source_version"]}
 
     def _invalidate_processing_source(self, db, source_id, reason):
-        """Discard private recovery material when any influencing source changes.
+        """Hold legacy observer work when any influencing source changes.
 
-        Attempts and usage receipts remain for accounting. Provider outputs,
-        checkpoints and validation progress cannot be reused under a new policy.
         The caller holds the tenant policy/delivery lock in this transaction.
         """
         if table_exists(db,'observer_jobs'):
@@ -549,39 +526,12 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
             for job in legacy:
                 db.execute('DELETE FROM observer_progress WHERE job_id=?',(job,))
                 db.execute("UPDATE observer_jobs SET status='held',error=? WHERE id=?",(reason,job))
-        jobs={r['id'] for r in db.execute('SELECT id,source_ids FROM curation_episode_jobs')
-            if source_id in json.loads(r['source_ids'] or '[]')}
-        if table_exists(db,'backend_processing_dependencies'):
-            jobs.update(r[0] for r in db.execute(
-                'SELECT episode_job FROM backend_processing_dependencies WHERE source_id=?',(source_id,)))
-        observers=[]
-        if table_exists(db,'backend_observer_dependencies'):
-            observers=[r[0] for r in db.execute(
-                'SELECT observer_id FROM backend_observer_dependencies WHERE source_id=?',(source_id,))]
-            if table_exists(db,'backend_jobs'):
-                for observer in observers:
-                    jobs.update(r[0] for r in db.execute(
-                        'SELECT episode_job FROM backend_jobs WHERE observer_id=? AND dependency_snapshot_complete=0',(observer,)))
-        for job in jobs:
-            db.execute("UPDATE curation_episode_jobs SET progress='{}',error=? WHERE id=?",(reason,job))
-            db.execute("UPDATE episode_candidates SET candidate_json='{}',resolution_json='{}',status='withdrawn' WHERE job_id=?",(job,))
-            db.execute("UPDATE episode_candidate_history SET candidate_json='{}',resolution_json='{}',status='withdrawn' WHERE job_id=?",(job,))
-            if table_exists(db,'backend_provider_returns'):
-                db.execute('DELETE FROM backend_provider_returns WHERE job_id IN (SELECT id FROM backend_jobs WHERE episode_job=?)',(job,))
-            if table_exists(db,'backend_jobs'):
-                db.execute("UPDATE backend_jobs SET status='held',pending_result=NULL,last_error=? WHERE episode_job=?",(reason,job))
-        for observer in observers:
-            db.execute("""UPDATE backend_observers SET status='invalidated',provider_session=NULL,
-                pending_session=NULL,checkpoint='{}',context_chars=0,observer_epoch=observer_epoch+1 WHERE id=?""",(observer,))
 
     def _purge_deleted_source(self, db, source_id):
         """Same deletion semantics on the live authority and a restored copy."""
         self._invalidate_processing_source(db,source_id,'source_deleted')
         docs=[r[0] for r in db.execute('SELECT document_id FROM enterprise_dependencies WHERE source_id=?',(source_id,))]
         for document in docs:
-            db.execute('DELETE FROM knowledge_temporal_relations WHERE new_assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE document_id=?) OR old_assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE document_id=?)',(document,document))
-            db.execute('DELETE FROM knowledge_temporal_evidence WHERE assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE document_id=?)',(document,))
-            db.execute('DELETE FROM knowledge_temporal_assertions WHERE document_id=?',(document,))
             db.execute('DELETE FROM knowledge_support WHERE revision_id IN (SELECT revision_id FROM knowledge_revisions WHERE document_id=?)',(document,))
             db.execute('DELETE FROM knowledge_relations WHERE document_id=? OR related_document_id=?',(document,document))
             db.execute("UPDATE knowledge_revisions SET claim_json='{}',identity_json='{}' WHERE document_id=?",(document,))
@@ -597,16 +547,7 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
         db.execute("UPDATE events SET payload='{}' WHERE id=?",(source_id,))
         db.execute('DELETE FROM source_event_metadata WHERE source_id=?',(source_id,))
         db.execute("UPDATE backend_source_revisions SET payload='{}',disposition='excluded' WHERE source_id=?",(source_id,))
-        jobs={r['id'] for r in db.execute('SELECT id,source_ids FROM curation_episode_jobs') if source_id in json.loads(r['source_ids'])}
-        if table_exists(db,'backend_processing_dependencies'):
-            jobs.update(r[0] for r in db.execute('SELECT episode_job FROM backend_processing_dependencies WHERE source_id=?',(source_id,)))
-        for job in jobs:
-            db.execute("UPDATE curation_episode_jobs SET status='withdrawn',progress='{}',error='source_deleted' WHERE id=?",(job,))
-            db.execute("UPDATE episode_candidates SET candidate_json='{}',resolution_json='{}',status='withdrawn' WHERE job_id=?",(job,))
-            db.execute("UPDATE episode_candidate_history SET candidate_json='{}',resolution_json='{}',status='withdrawn' WHERE job_id=?",(job,))
-            if table_exists(db,'backend_jobs'):
-                db.execute("UPDATE backend_jobs SET status='held',pending_result=NULL,last_error='source_deleted' WHERE episode_job=?",(job,))
-        # Vectors, reconciliation keys, episode summaries and original-object
+        # Vectors, reconciliation keys and original-object
         # references derived from this source; objects are queued for deletion.
         from agenthub.data_lifecycle import purge_retained_derivatives
         purge_retained_derivatives(db,source_id,docs)
@@ -741,8 +682,6 @@ class EnterpriseStore(GovernanceMixin,OwnerControlsMixin,WorkspaceAccessMixin,Re
                 revisions=[r[0] for r in db.execute(
                     'SELECT revision_id FROM knowledge_revisions WHERE document_id=?',(d[0],))]
                 for revision in revisions:
-                    db.execute('DELETE FROM knowledge_temporal_evidence WHERE assertion_id IN (SELECT assertion_id FROM knowledge_temporal_assertions WHERE revision_id=?)',(revision,))
-                    db.execute('DELETE FROM knowledge_temporal_assertions WHERE revision_id=?',(revision,))
                     db.execute('DELETE FROM knowledge_support WHERE revision_id=?',(revision,))
                 db.execute("UPDATE knowledge_revisions SET claim_json='{}',identity_json='{}' WHERE document_id=?",(d[0],))
                 db.execute("UPDATE knowledge_documents SET lifecycle='deleted',active_revision_id=NULL WHERE document_id=?",(d[0],))

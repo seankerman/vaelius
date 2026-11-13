@@ -423,18 +423,6 @@ def retire_memory(db, memory_id, *, withdrawn=False, replacement_memory_id=None)
         elif withdrawn:
             db.execute("DELETE FROM knowledge_relations WHERE document_id=? OR related_document_id=?",(doc_id,doc_id))
             db.execute("DELETE FROM knowledge_support WHERE revision_id IN (SELECT revision_id FROM knowledge_revisions WHERE document_id=?)",(doc_id,))
-            # Temporal assertions are revision derivatives, not independent
-            # evidence. Remove their children before deleting the unsupported
-            # revisions (PostgreSQL enforces these provenance foreign keys).
-            if table_exists(db,'knowledge_temporal_assertions'):
-                assertions="SELECT assertion_id FROM knowledge_temporal_assertions WHERE document_id=?"
-                if table_exists(db,'knowledge_temporal_relations'):
-                    db.execute("DELETE FROM knowledge_temporal_relations WHERE new_assertion_id IN ("+
-                        assertions+") OR old_assertion_id IN ("+assertions+")",(doc_id,doc_id))
-                if table_exists(db,'knowledge_temporal_evidence'):
-                    db.execute("DELETE FROM knowledge_temporal_evidence WHERE assertion_id IN ("+
-                        assertions+")",(doc_id,))
-                db.execute("DELETE FROM knowledge_temporal_assertions WHERE document_id=?",(doc_id,))
             db.execute("DELETE FROM knowledge_revisions WHERE document_id=?",(doc_id,))
             db.execute("UPDATE knowledge_documents SET lifecycle='withdrawn',active_revision_id=NULL,updated=? WHERE document_id=?",(time.time(),doc_id))
             refresh_index(db,doc_id)

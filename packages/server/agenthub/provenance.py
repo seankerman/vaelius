@@ -99,7 +99,7 @@ def derived_provenance(db, groups):
 
 
 def document_metadata(db, document_ids):
-    """{id: (block, flagged, origin)}; temporal assertion IDs resolve to their document.
+    """{id: (block, flagged, origin)} for the given documents.
 
     `origin` is the machine-readable origin label: the source workspace (None when
     the sources span several), the CURRENT audience on the private < team <
@@ -114,14 +114,7 @@ def document_metadata(db, document_ids):
     ids = sorted({i for i in document_ids if isinstance(i, str)})
     if not ids or not _postgres(db):
         return {}
-    assertions = {}
-    temporal = [i for i in ids if i.startswith('ta_')]
-    if temporal:
-        assertions = {row['assertion_id']: row['document_id'] for row in db.execute(
-            'SELECT assertion_id,document_id FROM knowledge_temporal_assertions WHERE assertion_id=ANY(?::text[])',
-            (temporal,)).fetchall()}
-    documents = sorted({assertions.get(i, i) for i in ids})
-    rows = db.execute(_METADATA_SQL, (documents,)).fetchall()
+    rows = db.execute(_METADATA_SQL, (ids,)).fetchall()
     found = {}
     for row in rows:
         original = row['representation'] in ORIGINAL and row['sources'] == 1
@@ -140,16 +133,7 @@ def document_metadata(db, document_ids):
                                             row['last_captured'], row['source_types'],
                                             'original' if original else 'derived', role),
                                      bool(row['flagged']), label)
-    result = {}
-    for ident in ids:
-        document = assertions.get(ident, ident)
-        if document in found:
-            block, flagged, origin = found[document]
-            if ident.startswith('ta_'):
-                block = dict(block, wording='derived')
-                block.pop('role', None)
-            result[ident] = (block, flagged, origin)
-    return result
+    return {ident: found[ident] for ident in ids if ident in found}
 
 
 _METADATA_SQL = '''WITH requested AS MATERIALIZED (
@@ -185,7 +169,7 @@ _METADATA_SQL = '''WITH requested AS MATERIALIZED (
 
 
 def document_provenance(db, document_ids):
-    """{document_id: (block, flagged)}; temporal assertion IDs resolve to their document."""
+    """{document_id: (block, flagged)} for the given documents."""
     return {ident: (block, flagged) for ident, (block, flagged, _) in document_metadata(db, document_ids).items()}
 
 

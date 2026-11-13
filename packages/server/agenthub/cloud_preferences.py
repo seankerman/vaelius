@@ -82,13 +82,6 @@ class CloudPreferencesMixin:
         db.execute('UPDATE cloud_preferences SET valid_until=%s WHERE source_id=%s AND valid_until IS NULL',
             (time.time(),source_id))
         db.execute("UPDATE cloud_preference_candidates SET candidate_json='[]',status='held' WHERE source_id=%s",(source_id,))
-        if db.table_exists('backend_provider_returns'):
-            jobs={r['id'] for r in db.execute('''SELECT b.id,j.source_ids FROM backend_jobs b
-                JOIN curation_episode_jobs j ON j.id=b.episode_job''') if source_id in json.loads(r['source_ids'])}
-            jobs.update(r['id'] for r in db.execute('''SELECT b.id FROM backend_jobs b
-                JOIN backend_processing_dependencies d ON d.episode_job=b.episode_job WHERE d.source_id=%s''',(source_id,)))
-            for job in jobs:
-                db.execute("UPDATE backend_provider_returns SET result='{}',provider_handle=NULL WHERE job_id=%s",(job,))
 
     def _preference_source_allowed(self,db,ctx,source):
         if not ctx.get('processing_connection'):return self._visible_source(db,ctx,source)
@@ -206,11 +199,6 @@ class CloudPreferencesMixin:
         # Current source dependencies and context epochs are authoritative. Clear
         # offered receipts so corrected values can arrive after the current turn.
         db.execute('DELETE FROM enterprise_receipts WHERE document_id=%s',(document,))
-        if db.table_exists('backend_observers'):
-            db.execute('''UPDATE backend_observers SET status='reconstruct',provider_session=NULL,
-                pending_session=NULL,checkpoint='{}',context_chars=0,observer_epoch=observer_epoch+1
-                WHERE id IN (SELECT j.observer_id FROM backend_jobs j JOIN enterprise_model_inputs i
-                    ON i.job_id=j.episode_job WHERE i.related_document_id=%s)''',(document,))
 
     def withdraw_preference(self,ctx,document_id):
         from agenthub.enterprise import Denied

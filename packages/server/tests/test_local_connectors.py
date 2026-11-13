@@ -58,7 +58,6 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(self.connector.sync(self.ctx,'docs')['upserts'],1)
         self.assertTrue(self.store.search(self.ctx,query)['results'])
         with self.store.open() as state:
-            self.assertEqual(state.db.execute('SELECT count(*) FROM model_calls').fetchone()[0],0)
             self.assertEqual(state.db.execute('SELECT count(*) FROM memory_fts').fetchone()[0],0)
 
     def test_failed_snapshot_does_not_delete_and_symlinks_do_not_escape(self):

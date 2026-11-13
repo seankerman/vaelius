@@ -78,9 +78,8 @@ def scan(store, *, objects=None):
         # Multi-part transport staging held until reassembly completes.
         for row in db.execute('SELECT data FROM backend_parts').fetchall():
             _tally(report, 'staged_transport_parts', _rules(bytes(row['data']).decode('utf-8', 'ignore')))
-        for table in ('backend_jobs', 'outbox'):
-            for row in db.execute(f'SELECT last_error FROM {table} WHERE last_error IS NOT NULL').fetchall():
-                _tally(report, table + '_errors', _rules(row['last_error']))
+        for row in db.execute('SELECT last_error FROM outbox WHERE last_error IS NOT NULL').fetchall():
+            _tally(report, 'outbox_errors', _rules(row['last_error']))
         located = []
         if objects is not None:
             located += [('segment_objects', r['object_key'], r['owner'], None) for r in db.execute(

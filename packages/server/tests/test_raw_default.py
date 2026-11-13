@@ -48,9 +48,6 @@ class RawDefaultTests(PostgresFixture, unittest.TestCase):
         self.assertIn('/data/drafts/orchard.csv',evidence['sources'][0]['text'])
         self.assertEqual(self.ingest(),source);self.drain()
         self.assertEqual(first['results'],self.search()['results'])
-        with self.store.open() as state:
-            self.assertEqual(state.db.execute('SELECT count(*) FROM backend_observers').fetchone()[0],0)
-            self.assertEqual(state.db.execute('SELECT count(*) FROM episode_candidates').fetchone()[0],0)
 
     def test_owner_only_even_with_team_connection_and_read_only_credential(self):
         source=self.ingest();self.drain()

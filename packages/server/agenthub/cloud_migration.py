@@ -19,24 +19,30 @@ from agenthub.source_objects import object_key, verify
 
 TABLES = (
  'backend_capture_gaps','backend_connections','backend_connector_items','backend_connectors',
- 'backend_ingest_receipts','backend_jobs','backend_native_artifacts','backend_native_spans',
- 'backend_observer_dependencies','backend_observers','backend_part_hashes','backend_parts','backend_provider_returns',
- 'backend_processing_dependencies','backend_releases','backend_source_heads','backend_source_links',
- 'backend_source_revisions','backend_worker_receipts','codex_backfill_events','codex_backfill_runs',
- 'codex_backfill_sessions','consolidation_decisions','context_boundaries','context_receipts',
- 'context_retained','context_state','contribution_reviews','counters','curation_decisions',
- 'curation_episode_jobs','curation_episode_receipts','enterprise_audit','enterprise_credentials',
- 'enterprise_delegations','enterprise_deletion_journal','enterprise_dependencies','enterprise_documents',
- 'enterprise_lifecycle','enterprise_legacy_ids','enterprise_memberships','enterprise_model_inputs','enterprise_organizations',
- 'enterprise_principals','enterprise_projects','enterprise_receipts','enterprise_sources',
- 'episode_candidate_history','episode_candidates','events','health','historical_sources',
+ 'backend_ingest_receipts','backend_native_artifacts','backend_native_spans','backend_part_hashes',
+ 'backend_parts','backend_releases','backend_source_heads','backend_source_links','backend_source_revisions',
+ 'codex_backfill_events','codex_backfill_runs','codex_backfill_sessions','consolidation_decisions',
+ 'context_boundaries','context_receipts','context_retained','context_state','contribution_reviews','counters',
+ 'curation_decisions','enterprise_audit','enterprise_credentials','enterprise_delegations',
+ 'enterprise_deletion_journal','enterprise_dependencies','enterprise_documents','enterprise_lifecycle',
+ 'enterprise_legacy_ids','enterprise_memberships','enterprise_organizations','enterprise_principals',
+ 'enterprise_projects','enterprise_receipts','enterprise_sources','events','health','historical_sources',
  'knowledge_document_members','knowledge_documents','knowledge_embedding_build','knowledge_embedding_state',
  'knowledge_embeddings','knowledge_generation_documents','knowledge_generation_state','knowledge_generations',
- 'knowledge_relations','knowledge_revisions','knowledge_search_shadow_comparisons','knowledge_shadow_comparisons',
- 'knowledge_support','knowledge_temporal_assertions','knowledge_temporal_evidence','knowledge_temporal_relations',
- 'memories','memory_access','memory_candidates','memory_exclusions','memory_feedback','memory_metadata',
- 'memory_outcome_support','memory_reviews','model_call_details','model_calls','observation_sources',
- 'observer_jobs','observer_progress','observer_seen','offers','outbox','outcomes','remote_offers','source_event_metadata')
+ 'knowledge_relations','knowledge_revisions','knowledge_search_shadow_comparisons',
+ 'knowledge_shadow_comparisons','knowledge_support','memories','memory_access','memory_candidates',
+ 'memory_exclusions','memory_feedback','memory_outcome_support','memory_reviews','model_call_details',
+ 'observation_sources','observer_jobs','observer_progress','observer_seen','offers','outbox','outcomes',
+ 'remote_offers','source_event_metadata')
+
+# Tables of removed features (migration 058 dropped them): a snapshot that still
+# carries them imports without them.
+REMOVED = frozenset((
+ 'backend_jobs','backend_observer_dependencies','backend_observers','backend_provider_returns',
+ 'backend_processing_dependencies','backend_worker_receipts','curation_episode_jobs',
+ 'curation_episode_receipts','enterprise_model_inputs','episode_candidate_history','episode_candidates',
+ 'knowledge_temporal_assertions','knowledge_temporal_evidence','knowledge_temporal_relations',
+ 'memory_metadata','model_calls'))
 
 # Existing enterprise identity constraints are deliberately immediate. Import
 # their parents first; deferred canonical constraints then validate at commit.
@@ -101,6 +107,9 @@ def migrate_snapshot(snapshot, store, *, expected_sha256, objects, allow_missing
         for table in sorted(present - set(TABLES)):
             if table.startswith(('memory_fts_', 'knowledge_fts_', 'sqlite_')) or table in DERIVED:
                 omitted.append({'table':table,'reason':'rebuildable_index_or_backend_schema_receipt'})
+                continue
+            if table in REMOVED:
+                omitted.append({'table':table,'reason':'removed_feature_table'})
                 continue
             # Do not discard a newly introduced authoritative table silently.
             escaped = table.replace('"', '""')

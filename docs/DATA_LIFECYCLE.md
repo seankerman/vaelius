@@ -44,9 +44,6 @@ are emptied.
 | `cloud_document_vectors` | pgvector embeddings of dependent documents, in every generation | Deleted. *(New: the purge previously left these in place and relied on the search filter)* |
 | `knowledge_temporal_*`, `knowledge_support`, `knowledge_relations` | Dated assertions and evidence links | Deleted. |
 | `knowledge_candidate_keys` | Reconciliation keys derived from claims | Deleted. *(New)* |
-| `memory_metadata` | Subjects, tags and applicability text of curated observations | Deleted. *(New)* |
-| `episode_revisions` | Curated episode summaries citing the source | Payload cleared. *(New)* |
-| `episode_candidates`, `curation_episode_jobs`, `backend_jobs`, `backend_provider_returns`, `backend_observers` | Curation progress, model returns and observer checkpoints | Cleared, held or invalidated. |
 | `cloud_preferences`, `cloud_preference_candidates` | Preferences derived from the source | Ended, cleared and held. |
 | `backend_native_artifacts`, `backend_native_spans` | Passage source URL and heading | Cleared. |
 | `outbox`, `enterprise_receipts`, `cloud_metrics`, `enterprise_lifecycle`, `enterprise_audit`, `enterprise_deletion_journal` | Identifiers, counts and hashes only | Kept as the audit trail. |

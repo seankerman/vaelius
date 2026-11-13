@@ -2,7 +2,6 @@
 import json
 import unittest
 from agenthub.cloud_runtime import CloudStore
-from agentclient.enterprise_contract import VERSION
 from test_cloud_postgres import PostgresFixture,SERVICES
 
 

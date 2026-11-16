@@ -4,7 +4,7 @@
 # in RELEASING.md.
 authlib==1.9.5
 boto3==1.43.118
-joserfc==1.7.7
+joserfc==1.8.0
 jsonschema==4.26.0
 mcp==2.3.0
 numpy==2.5.4
